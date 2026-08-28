@@ -47,7 +47,7 @@ export default function HomeScreen() {
       }
 
       const fetchedUsers = (data ?? []) as User[];
-      console.log('Supabase users取得結果:', fetchedUsers);
+      if (__DEV__) console.log('Supabase users取得結果:', fetchedUsers);
       setUsers(fetchedUsers);
       setIsLoading(false);
     }
