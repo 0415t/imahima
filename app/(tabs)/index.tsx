@@ -32,7 +32,8 @@ export default function HomeScreen() {
 
       const { data, error } = await supabase
         .from('users')
-        .select('id, username, is_free');
+        .select('id, username, is_free')
+        .limit(50);
 
       if (!isMounted) {
         return;
