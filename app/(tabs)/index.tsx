@@ -1,4 +1,4 @@
-import { StyleSheet } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -6,12 +6,13 @@ import { ThemedView } from '@/components/themed-view';
 export default function HomeScreen() {
   return (
     <ThemedView lightColor="#ffffff" darkColor="#ffffff" style={styles.container}>
-      <ThemedText lightColor="#000000" darkColor="#000000" type="title">
-        Home
-      </ThemedText>
-      <ThemedText lightColor="#000000" darkColor="#000000" style={styles.description}>
-        ここからアプリを作っていきます。
-      </ThemedText>
+      <Pressable
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
+        <ThemedText lightColor="#ffffff" darkColor="#ffffff" type="defaultSemiBold">
+          いまひま！
+        </ThemedText>
+      </Pressable>
     </ThemedView>
   );
 }
@@ -19,11 +20,18 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
     padding: 24,
   },
-  description: {
-    marginTop: 12,
+  button: {
+    width: '45%',
+    height: '18%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0a7ea4',
+  },
+  buttonPressed: {
+    opacity: 0.7,
   },
 });
