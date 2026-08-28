@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -73,6 +72,8 @@ export default function HomeScreen() {
       {!isLoading && !errorMessage && users.length === 0 ? (
         <ThemedText lightColor="#000000" darkColor="#000000" style={styles.status}>
           usersテーブルにデータがありません。
+        </ThemedText>
+      ) : null}
       <View style={styles.header}>
         <ThemedText
           lightColor="#11181C"
@@ -106,7 +107,7 @@ export default function HomeScreen() {
           style={styles.buttonLabel}>
           いまひま！
         </ThemedText>
-      ) : null}
+      </Pressable>
       <View style={styles.userList}>
         {users.map((user) => (
           <View key={user.id} style={styles.userRow}>
@@ -171,6 +172,15 @@ const styles = StyleSheet.create({
     borderBottomColor: '#cccccc',
     paddingBottom: 12,
     gap: 2,
+  },
+  button: {
+    marginTop: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
+    backgroundColor: '#11181C',
+    paddingVertical: 12,
+  },
   buttonLabel: {
     fontSize: 48,
     lineHeight: 72,
