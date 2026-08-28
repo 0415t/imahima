@@ -40,7 +40,7 @@ export default function HomeScreen() {
 
       if (error) {
         console.error('Supabase users取得エラー:', error);
-        setErrorMessage(error.message);
+        setErrorMessage(__DEV__ ? error.message : 'ユーザー情報の取得に失敗しました。');
         setIsLoading(false);
         return;
       }
