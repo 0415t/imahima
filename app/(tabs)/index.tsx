@@ -1,12 +1,78 @@
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { hasSupabaseConfig, supabase } from '@/lib/supabase';
+
+type User = {
+  id: string;
+  username: string;
+  is_free: boolean;
+};
 
 export default function HomeScreen() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchUsers() {
+      if (!hasSupabaseConfig || !supabase) {
+        setErrorMessage(
+          'Supabaseの設定がありません。.envにEXPO_PUBLIC_SUPABASE_URLとEXPO_PUBLIC_SUPABASE_ANON_KEYを設定してください。'
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, username, is_free')
+        .limit(50);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        console.error('Supabase users取得エラー:', error);
+        setErrorMessage(__DEV__ ? error.message : 'ユーザー情報の取得に失敗しました。');
+        setIsLoading(false);
+        return;
+      }
+
+      const fetchedUsers = (data ?? []) as User[];
+      if (__DEV__) console.log('Supabase users取得結果:', fetchedUsers);
+      setUsers(fetchedUsers);
+      setIsLoading(false);
+    }
+
+    void fetchUsers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <ThemedView lightColor="#ffffff" darkColor="#ffffff" style={styles.container}>
+      <ThemedText lightColor="#000000" darkColor="#000000" type="title">
+        Supabase users
+      </ThemedText>
+      {isLoading ? <ActivityIndicator style={styles.status} /> : null}
+      {errorMessage ? (
+        <ThemedText lightColor="#b42318" darkColor="#b42318" style={styles.status}>
+          {errorMessage}
+        </ThemedText>
+      ) : null}
+      {!isLoading && !errorMessage && users.length === 0 ? (
+        <ThemedText lightColor="#000000" darkColor="#000000" style={styles.status}>
+          usersテーブルにデータがありません。
       <View style={styles.header}>
         <ThemedText
           lightColor="#11181C"
@@ -40,7 +106,22 @@ export default function HomeScreen() {
           style={styles.buttonLabel}>
           いまひま！
         </ThemedText>
-      </Pressable>
+      ) : null}
+      <View style={styles.userList}>
+        {users.map((user) => (
+          <View key={user.id} style={styles.userRow}>
+            <ThemedText lightColor="#000000" darkColor="#000000" type="defaultSemiBold">
+              {user.username}
+            </ThemedText>
+            <ThemedText lightColor="#000000" darkColor="#000000">
+              id: {user.id}
+            </ThemedText>
+            <ThemedText lightColor="#000000" darkColor="#000000">
+              is_free: {String(user.is_free)}
+            </ThemedText>
+          </View>
+        ))}
+      </View>
     </ThemedView>
   );
 }
@@ -48,8 +129,8 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'flex-start',
-    justifyContent: 'flex-end',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
     padding: 24,
     paddingTop: 60,
   },
@@ -78,13 +159,18 @@ const styles = StyleSheet.create({
     borderRadius: 33,
     backgroundColor: '#F1F4F5',
   },
-  button: {
-    width: '45%',
-    height: '18%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#0a7ea4',
+  status: {
+    marginTop: 12,
   },
+  userList: {
+    marginTop: 24,
+    gap: 12,
+  },
+  userRow: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#cccccc',
+    paddingBottom: 12,
+    gap: 2,
   buttonLabel: {
     fontSize: 48,
     lineHeight: 72,
