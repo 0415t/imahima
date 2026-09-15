@@ -5,6 +5,7 @@
   "scripts": {
     "start": "expo start",
     "server": "tsx server/index.ts",
+    "test:login": "tsx test-login.ts",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
