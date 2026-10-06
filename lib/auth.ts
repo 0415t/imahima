@@ -7,20 +7,16 @@ export type SignOutResult = { error: AuthError | Error | null };
 export type GetSessionResult = { session: Session | null; error: AuthError | Error | null };
 
 /**
- * ユーザーを新規登録する。username は profiles テーブル自動挿入用のトリガーに渡される。
+ * メールアドレスとパスワードでユーザーを新規登録する。
  * @param email メールアドレス
  * @param password パスワード
- * @param username ユーザー名
  * @returns 成功時は user、失敗時は error
  */
-export async function signUpUser(email: string, password: string, username: string): Promise<SignUpResult> {
+export async function signUpUser(email: string, password: string): Promise<SignUpResult> {
     try {
         const { data, error } = await supabase!.auth.signUp({
             email,
             password,
-            options: {
-                data: { username },
-            },
         });
 
         if (error) {
