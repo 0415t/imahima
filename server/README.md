@@ -27,3 +27,9 @@ The server validates the access token with Supabase Auth, derives the profile ID
 ```json
 { "is_free": true }
 ```
+
+Run the endpoint tests without connecting to Supabase:
+
+```powershell
+npm run test:profile-toggle
+```
