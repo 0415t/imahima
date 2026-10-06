@@ -7,6 +7,7 @@
     "server": "tsx server/index.ts",
     "test": "tsx --test tests/**/*.ts",
     "test:login": "tsx tests/test-login.ts",
+    "test:persistence": "tsx tests/test-session-persistence.ts",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

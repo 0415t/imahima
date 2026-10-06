@@ -6,13 +6,17 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
 
+export function createSupabaseClient(url: string, anonKey: string) {
+    return createClient(url, anonKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: true,
+            detectSessionInUrl: false,
+            storage: AsyncStorage,
+        },
+    });
+}
+
 export const supabase = hasSupabaseConfig
-    ? createClient(supabaseUrl!, supabaseAnonKey!, {
-          auth: {
-              autoRefreshToken: false,
-              persistSession: true,
-              detectSessionInUrl: false,
-              storage: AsyncStorage,
-          },
-      })
+    ? createSupabaseClient(supabaseUrl!, supabaseAnonKey!)
     : null;
