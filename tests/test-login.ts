@@ -25,20 +25,19 @@ async function runBackEndTest() {
 
     const myEmail = process.env.TEST_EMAIL;
     const myPassword = process.env.TEST_PASSWORD;
-    const myUsername = process.env.TEST_USERNAME;
 
     if (!hasSupabaseConfig) {
         throw new Error('.env に EXPO_PUBLIC_SUPABASE_URL と EXPO_PUBLIC_SUPABASE_ANON_KEY を設定してください');
     }
 
-    if (!myEmail || !myPassword || !myUsername) {
-        throw new Error('❌ .env に TEST_EMAIL, TEST_PASSWORD, TEST_USERNAME を設定してください');
+    if (!myEmail || !myPassword) {
+        throw new Error('❌ .env に TEST_EMAIL と TEST_PASSWORD を設定してください');
     }
 
     console.log('🚀 --- バックエンド単体テスト開始 ---');
 
     console.log('\n1. 新規ユーザー登録を実行中...');
-    const { user, error: signUpError } = await signUpUser(myEmail, myPassword, myUsername);
+    const { user, error: signUpError } = await signUpUser(myEmail, myPassword);
 
     if (signUpError) {
         throw new Error(`新規登録エラー: ${signUpError.message}`);
