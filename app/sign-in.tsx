@@ -17,7 +17,6 @@ export default function SignInScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -29,7 +28,7 @@ export default function SignInScreen() {
 
     try {
       if (isSignUp) {
-        const { user, error } = await signUpUser(email.trim(), password, username.trim());
+        const { user, error } = await signUpUser(email.trim(), password);
         if (error) {
           setErrorMessage(error.message);
         } else if (!user) {
@@ -71,17 +70,6 @@ export default function SignInScreen() {
             {isSignUp ? 'アカウントを作成して始めましょう' : 'ログインして続けましょう'}
           </ThemedText>
 
-          {isSignUp ? (
-            <TextInput
-              accessibilityLabel="ユーザー名"
-              autoCapitalize="none"
-              onChangeText={setUsername}
-              placeholder="ユーザー名"
-              placeholderTextColor="#74818A"
-              style={styles.input}
-              value={username}
-            />
-          ) : null}
           <TextInput
             accessibilityLabel="メールアドレス"
             autoCapitalize="none"
@@ -120,13 +108,12 @@ export default function SignInScreen() {
 
           <Pressable
             accessibilityRole="button"
-            disabled={isSubmitting || !email.trim() || !password || (isSignUp && !username.trim())}
+            disabled={isSubmitting || !email.trim() || !password}
             onPress={() => void handleSubmit()}
             style={({ pressed }) => [
               styles.submitButton,
               pressed && styles.pressed,
-              (isSubmitting || !email.trim() || !password || (isSignUp && !username.trim())) &&
-                styles.disabled,
+              (isSubmitting || !email.trim() || !password) && styles.disabled,
             ]}>
             {isSubmitting ? (
               <ActivityIndicator color="#ffffff" />
