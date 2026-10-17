@@ -69,11 +69,42 @@ export default function RootLayout() {
     if (!userId) {
       return;
     }
-    void registerForPushNotificationsAsync()
-      .then((token) => (token ? saveDeviceToken(token) : null))
-      .catch((error: unknown) => {
+
+    let isActive = true;
+    let retryTimeout: ReturnType<typeof setTimeout> | undefined;
+    let retryDelay = 1000;
+
+    const register = async () => {
+      try {
+        const token = await registerForPushNotificationsAsync();
+        if (!isActive || !token) {
+          return;
+        }
+
+        const { error } = await saveDeviceToken(token);
+        if (error) {
+          throw error;
+        }
+      } catch (error: unknown) {
         console.log('[push] 取得・保存に失敗しました:', error);
-      });
+
+        if (isActive) {
+          retryTimeout = setTimeout(() => {
+            void register();
+          }, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 60_000);
+        }
+      }
+    };
+
+    void register();
+
+    return () => {
+      isActive = false;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
   }, [userId]);
 
   return (
