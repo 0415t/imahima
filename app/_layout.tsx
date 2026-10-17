@@ -1,3 +1,4 @@
+import { registerForPushNotificationsAsync, saveDeviceToken } from '@/lib/push-notifications';
 import type { Session } from '@supabase/supabase-js';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -19,6 +20,7 @@ export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(hasSupabaseConfig && supabase));
   const [authError, setAuthError] = useState<string | null>(null);
+  const userId = session?.user.id;
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
@@ -62,6 +64,17 @@ export default function RootLayout() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+    void registerForPushNotificationsAsync()
+      .then((token) => (token ? saveDeviceToken(token) : null))
+      .catch((error: unknown) => {
+        console.log('[push] 取得・保存に失敗しました:', error);
+      });
+  }, [userId]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
