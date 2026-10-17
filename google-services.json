@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "673321705733",
+    "project_id": "imahima-cb104",
+    "storage_bucket": "imahima-cb104.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:673321705733:android:1cfa7c29ce5df695f4576c",
+        "android_client_info": {
+          "package_name": "com.imahima.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjsUZedtY6Sznx7Ro98CaADEA0yXxA0dc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
