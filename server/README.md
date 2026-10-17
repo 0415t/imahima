@@ -6,8 +6,21 @@ Copy `.env.example` to `.env` and set the server-only Supabase values.
 
 ```powershell
 Copy-Item server/.env.example server/.env
+```
+
+Run the API locally:
+
+```bash
 npm run server
 ```
+
+Or run it with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+Stop the container with `Ctrl+C` or run `docker compose down`.
 
 Health check: `http://localhost:3000/health`
 

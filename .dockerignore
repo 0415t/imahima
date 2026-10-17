@@ -1,0 +1,8 @@
+.git
+.expo
+node_modules
+**/node_modules
+**/.env*
+dist
+web-build
+*.tsbuildinfo
