@@ -1,0 +1,196 @@
+# imahima（いまひま？）開発ガイド
+
+このドキュメントは、現在の `main` ブランチの実装に基づくプロジェクト概要、セットアップ方法、機能の進捗をまとめたものです。
+
+---
+
+## 目次
+
+1. [アプリの構成](#1-アプリの構成)
+2. [データベース](#2-データベース)
+3. [環境変数](#3-環境変数)
+4. [開発環境の起動](#4-開発環境の起動)
+5. [ブランチ運用](#5-ブランチ運用)
+6. [実装機能と進捗](#6-実装機能と進捗)
+7. [APIエンドポイント](#7-apiエンドポイント)
+8. [トラブルシューティング](#8-トラブルシューティング)
+
+---
+
+## 1. アプリの構成
+
+本プロジェクトは、Expo／React Nativeのモバイルアプリ、ExpressのAPIサーバー、Supabaseの認証・データベースで構成されています。APIサーバーはDocker Composeでも起動できます。
+
+| 領域 | 技術・場所 |
+| --- | --- |
+| モバイルアプリ | Expo、React Native、TypeScript、Expo Router |
+| APIサーバー | Node.js 22、Express、TypeScript（`server/`） |
+| 認証・データベース | Supabase Auth、PostgreSQL |
+| コンテナ | Docker Compose（`docker-compose.yml`、`server/Dockerfile`） |
+| プッシュ通知 | Expo Notifications。現在は端末トークンの登録まで実装 |
+
+## 2. データベース
+
+Supabaseのマイグレーションは `supabase/migrations/` にあります。
+
+| テーブル／関数 | 現在確認できる用途 |
+| --- | --- |
+| `users` | ホーム画面で `id`、`username`、`is_free` を取得して一覧表示 |
+| `profiles` | `toggle_profile_is_free` 関数が `is_free` を反転 |
+| `user_device_tokens` | ユーザーごとのExpoプッシュトークン、プラットフォーム、端末名を管理 |
+| `toggle_profile_is_free(target_profile_id)` | 対象プロフィールの空き状態を反転し、新しい値を返す |
+| `upsert_device_token(p_token, p_platform, p_device_name)` | 認証中ユーザーの端末トークンを登録・更新 |
+
+このリポジトリのマイグレーションには `users` テーブルの作成定義がありません。また、`users` と `profiles` の関係もコード上では確認できないため、利用中のSupabaseプロジェクトのスキーマと合わせて確認してください。
+
+### マイグレーションの適用
+
+Supabaseプロジェクトに、必要なSQLを適用してください。空き状態切り替えAPIには `20261006000000_toggle_profile_is_free.sql`、端末トークン登録には `20261017000000_create_user_device_tokens.sql` が必要です。
+
+## 3. 環境変数
+
+### Expoアプリ（リポジトリ直下の `.env`）
+
+`.env.example` を参考に、SupabaseのURLと公開用のanon keyを設定します。
+
+```env
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+### APIサーバー（`server/.env`）
+
+`server/.env.example` をコピーし、サーバー用の値を設定します。
+
+```env
+PORT=3000
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` はサーバー専用の機密情報です。アプリ側に設定したり、Gitにコミットしたりしないでください。
+
+### Androidプッシュ通知
+
+Android設定は `app.json` が `google-services.json` を参照します。利用するFirebaseプロジェクトの設定ファイルを用意し、アプリIDが `com.imahima.app` と一致することを確認してください。設定ファイルはGitの追跡対象外です。必要に応じて `app.config.js` の `GOOGLE_SERVICES_JSON` でファイルパスを指定できます。
+
+## 4. 開発環境の起動
+
+### APIサーバーをDocker Composeで起動
+
+PowerShellでリポジトリルートから実行します。
+
+```powershell
+Copy-Item server/.env.example server/.env
+```
+
+`server/.env` にSupabaseの値を設定してから起動します。
+
+```powershell
+docker compose up --build
+```
+
+APIは `http://localhost:3000` で待ち受けます。疎通確認先は `http://localhost:3000/health` です。停止する場合は次を実行します。
+
+```powershell
+docker compose down
+```
+
+Composeは `server/.env` をコンテナ実行時に読み込み、`server/` の変更をコンテナに反映します。
+
+### APIサーバーをローカルで起動
+
+Node.js 22以上を使用します。`server/.env` を設定し、`server/` の依存関係をインストールしてから起動してください。
+
+```powershell
+npm ci --prefix server
+npm --prefix server run start
+```
+
+### Expoアプリを起動
+
+リポジトリルートで依存関係をインストールし、Expoを起動します。
+
+```powershell
+npm install
+npx expo start
+```
+
+### テスト
+
+空き状態切り替えAPIのテストは、Supabaseへの接続なしで実行できます。
+
+```powershell
+npm run test:profile-toggle
+```
+
+## 5. ブランチ運用
+
+`main` に直接コミットせず、作業用ブランチで変更してPull Requestを作成します。
+
+```bash
+git switch main
+git pull origin main
+git switch -c feature/機能名
+```
+
+作業後、変更をコミットしてブランチをpushし、GitHubでPull Requestを作成してください。作業中の変更がある場合は、ブランチを切り替える前にコミットするか、安全な方法で退避してください。
+
+## 6. 実装機能と進捗
+
+この節では、コード上で動作を確認できる範囲と、これから実装する内容を分けて記載します。未実装の項目は予定であり、完了したら実装内容と動作確認結果を更新してください。
+
+### 現在までにできていること
+
+| 分野 | 実装状況 |
+| --- | --- |
+| アプリ基盤 | Expo／React Native／TypeScriptとExpo Routerを使用したアプリ構成 |
+| 認証 | Supabase Authによるサインアップ・ログイン、セッション確認と永続化 |
+| ユーザー表示 | ホーム画面からSupabaseの `users` を読み込み、ユーザー名と空き状態を表示 |
+| 空き状態API | Expressサーバー、ヘルスチェック、アクセストークンで認証したユーザー自身の状態を反転するAPI |
+| データベース | 空き状態切り替え関数と、プッシュ通知トークンを管理するテーブル・登録関数のマイグレーション |
+| プッシュ通知の準備 | ログイン後に通知許可を確認し、Expoプッシュトークンを取得してSupabaseに保存。保存に失敗した場合は再試行 |
+| 開発・テスト環境 | Docker ComposeによるAPI起動環境と、空き状態切り替えAPIのテスト |
+
+### これから進めること
+
+#### 1. 「いまひま！」操作を完成させる
+
+- ホーム画面のボタンから、ログイン中のユーザーのアクセストークンを使って空き状態切り替えAPIを呼び出す。
+- 通信中の二重押しを防ぎ、成功後に画面上の状態を更新する。
+- 通信失敗時に利用者へエラーを表示し、再試行できるようにする。
+- `users` の一覧表示とAPIが更新する `profiles` の対応を確認し、状態表示が一貫するようにする。
+
+#### 2. 空き状態の変更を通知につなげる
+
+- 誰に、どの条件で通知するか（例：友だちへの通知、通知を受け取る設定）を決める。
+- サーバー側で通知対象の端末トークンを取得し、Expo Push Service経由で通知を送信する。
+- サービスロールキーや通知送信処理はサーバー内に置き、モバイルアプリから直接扱わない。
+- 通知送信の成功・失敗を確認し、無効な端末トークンを適切に扱う。
+
+#### 3. 通知・設定画面を実装する
+
+- 通知アイコンから通知一覧を開き、通知がない場合も分かる画面にする。
+- 設定アイコンからプロフィールや通知設定など、必要な項目を操作できるようにする。
+- 画面に表示するデータ、保存先、未読状態などの仕様を決めてから実装する。
+
+#### 4. 動作確認と仕上げ
+
+- AndroidのFirebase設定を使ってビルドし、実機で通知許可・トークン登録・通知受信を確認する。
+- ログイン状態、通信失敗、プロフィール未作成、通知許可なしなどのケースをテストする。
+- 画面表示や操作性を調整し、必要なテストを追加する。
+
+**次に着手する作業:** まず「いまひま！」ボタンと既存APIを接続し、画面上の状態更新とエラー表示までを確認します。その後、通知対象・通知条件を決めてからサーバー側の通知送信を実装します。
+
+**現時点で未完了の点:** 通知トークンの取得・保存は実装済みですが、プッシュ通知の送信は未実装です。また、ホーム画面の「いまひま！」ボタンと通知・設定アイコンには、まだ操作処理が接続されていません。
+
+## 7. APIエンドポイント
+
+APIサーバーの実装は `server/` にあります。
+
+| メソッド | パス | 説明 | 認証／レスポンス |
+| --- | --- | --- | --- |
+| `GET` | `/health` | サーバーの疎通確認 | 認証不要。`{"ok": true}` |
+| `POST` | `/profiles/me/is-free/toggle` | 認証ユーザー自身の `profiles.is_free` を反転 | `Authorization: Bearer <access token>` が必要。成功時は `{"is_free": true}` または `{"is_free": false}` |
+
+切り替えAPIはリクエストボディを必要としません。ユーザーIDはアクセストークンから取得し、クライアントから指定させません。トークン不備・無効時は `401`、プロフィールが見つからない場合は `404` を返します。
