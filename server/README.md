@@ -19,7 +19,7 @@ Create `server/.env` from the example and fill in the Supabase server credential
 
 ```powershell
 Copy-Item server/.env.example server/.env
-docker compose up --build
+docker compose up --build --renew-anon-volumes
 ```
 
 The API listens on `http://localhost:3000`. Check `http://localhost:3000/health`. Compose passes `server/.env` to the container at runtime; the Docker build excludes local env files. Changes under `server/` restart the development server automatically.
