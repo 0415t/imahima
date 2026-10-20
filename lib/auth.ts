@@ -1,20 +1,29 @@
 import type { AuthError, Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
+function requireSupabase() {
+    if (!supabase) {
+        throw new Error(
+            'Supabase の接続設定(EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY)がアプリに含まれていません',
+        );
+    }
+    return supabase;
+}
+
 export type SignUpResult = { user: User | null; error: AuthError | Error | null };
 export type SignInResult = { session: Session | null; error: AuthError | Error | null };
 export type SignOutResult = { error: AuthError | Error | null };
 export type GetSessionResult = { session: Session | null; error: AuthError | Error | null };
 
 /**
- * メールアドレスとパスワードでユーザーを新規登録する。
+ * メールアドレスとパスワードでユーザーを新規登録する、E
  * @param email メールアドレス
- * @param password パスワード
- * @returns 成功時は user、失敗時は error
+ * @param password パスワーチE
+ * @returns 成功時�E user、失敗時は error
  */
 export async function signUpUser(email: string, password: string): Promise<SignUpResult> {
     try {
-        const { data, error } = await supabase!.auth.signUp({
+        const { data, error } = await requireSupabase().auth.signUp({
             email,
             password,
         });
@@ -30,14 +39,14 @@ export async function signUpUser(email: string, password: string): Promise<SignU
 }
 
 /**
- * メールアドレスとパスワードでサインインする。
+ * メールアドレスとパスワードでサインインする、E
  * @param email メールアドレス
- * @param password パスワード
- * @returns 成功時は session、失敗時は error
+ * @param password パスワーチE
+ * @returns 成功時�E session、失敗時は error
  */
 export async function signInUser(email: string, password: string): Promise<SignInResult> {
     try {
-        const { data, error } = await supabase!.auth.signInWithPassword({ email, password });
+        const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
 
         if (error) {
             return { session: null, error };
@@ -50,12 +59,12 @@ export async function signInUser(email: string, password: string): Promise<SignI
 }
 
 /**
- * 現在のユーザーをサインアウトする。
- * @returns 失敗時は error、成功時は null
+ * 現在のユーザーをサインアウトする、E
+ * @returns 失敗時は error、�E功時は null
  */
 export async function signOutUser(): Promise<SignOutResult> {
     try {
-        const { error } = await supabase!.auth.signOut();
+        const { error } = await requireSupabase().auth.signOut();
         return { error };
     } catch (error) {
         return { error: error instanceof Error ? error : new Error(String(error)) };
@@ -63,12 +72,12 @@ export async function signOutUser(): Promise<SignOutResult> {
 }
 
 /**
- * 現在のセッション情報を取得する。
- * @returns 成功時は session、失敗時は error
+ * 現在のセチE��ョン惁E��を取得する、E
+ * @returns 成功時�E session、失敗時は error
  */
 export async function getCurrentSession(): Promise<GetSessionResult> {
     try {
-        const { data, error } = await supabase!.auth.getSession();
+        const { data, error } = await requireSupabase().auth.getSession();
 
         if (error) {
             return { session: null, error };
