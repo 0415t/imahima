@@ -16,10 +16,10 @@ export type SignOutResult = { error: AuthError | Error | null };
 export type GetSessionResult = { session: Session | null; error: AuthError | Error | null };
 
 /**
- * メールアドレスとパスワードでユーザーを新規登録する、E
+ * メールアドレスとパスワードでユーザーを新規登録する。
  * @param email メールアドレス
- * @param password パスワーチE
- * @returns 成功時�E user、失敗時は error
+ * @param password パスワード
+ * @returns 成功時は user、失敗時は error
  */
 export async function signUpUser(email: string, password: string): Promise<SignUpResult> {
     try {
@@ -39,10 +39,10 @@ export async function signUpUser(email: string, password: string): Promise<SignU
 }
 
 /**
- * メールアドレスとパスワードでサインインする、E
+ * メールアドレスとパスワードでサインインする。
  * @param email メールアドレス
- * @param password パスワーチE
- * @returns 成功時�E session、失敗時は error
+ * @param password パスワード
+ * @returns 成功時は session、失敗時は error
  */
 export async function signInUser(email: string, password: string): Promise<SignInResult> {
     try {
@@ -59,8 +59,8 @@ export async function signInUser(email: string, password: string): Promise<SignI
 }
 
 /**
- * 現在のユーザーをサインアウトする、E
- * @returns 失敗時は error、�E功時は null
+ * 現在のユーザーをサインアウトする。
+ * @returns 失敗時は error、成功時は null
  */
 export async function signOutUser(): Promise<SignOutResult> {
     try {
@@ -72,8 +72,8 @@ export async function signOutUser(): Promise<SignOutResult> {
 }
 
 /**
- * 現在のセチE��ョン惁E��を取得する、E
- * @returns 成功時�E session、失敗時は error
+ * 現在のセッション情報を取得する。
+ * @returns 成功時は session、失敗時は error
  */
 export async function getCurrentSession(): Promise<GetSessionResult> {
     try {
