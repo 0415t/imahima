@@ -25,6 +25,18 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Push token registration
+
+After a user signs in, the app requests notification permission on a physical device, obtains an Expo Push Token, and saves it to Supabase's `user_device_tokens` table. iOS tokens are recorded with `platform = 'ios'`.
+
+Before testing:
+
+1. Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` in the app environment.
+2. Apply `supabase/migrations/20261017000000_create_user_device_tokens.sql` to the Supabase project.
+3. Run the app in an iOS development or production build on a physical device; remote push notifications are not supported in Expo Go for this SDK.
+
+The app needs a signed-in Supabase user to save a token. Configure the app's push credentials in EAS if you also want to send notifications through Expo's push service.
+
 ## Get a fresh project
 
 When you're ready, run:

@@ -1,6 +1,15 @@
 import type { AuthError, Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
+function requireSupabase() {
+    if (!supabase) {
+        throw new Error(
+            'Supabase の接続設定(EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY)がアプリに含まれていません',
+        );
+    }
+    return supabase;
+}
+
 export type SignUpResult = { user: User | null; error: AuthError | Error | null };
 export type SignInResult = { session: Session | null; error: AuthError | Error | null };
 export type SignOutResult = { error: AuthError | Error | null };
@@ -14,7 +23,7 @@ export type GetSessionResult = { session: Session | null; error: AuthError | Err
  */
 export async function signUpUser(email: string, password: string): Promise<SignUpResult> {
     try {
-        const { data, error } = await supabase!.auth.signUp({
+        const { data, error } = await requireSupabase().auth.signUp({
             email,
             password,
         });
@@ -37,7 +46,7 @@ export async function signUpUser(email: string, password: string): Promise<SignU
  */
 export async function signInUser(email: string, password: string): Promise<SignInResult> {
     try {
-        const { data, error } = await supabase!.auth.signInWithPassword({ email, password });
+        const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
 
         if (error) {
             return { session: null, error };
@@ -55,7 +64,7 @@ export async function signInUser(email: string, password: string): Promise<SignI
  */
 export async function signOutUser(): Promise<SignOutResult> {
     try {
-        const { error } = await supabase!.auth.signOut();
+        const { error } = await requireSupabase().auth.signOut();
         return { error };
     } catch (error) {
         return { error: error instanceof Error ? error : new Error(String(error)) };
@@ -68,7 +77,7 @@ export async function signOutUser(): Promise<SignOutResult> {
  */
 export async function getCurrentSession(): Promise<GetSessionResult> {
     try {
-        const { data, error } = await supabase!.auth.getSession();
+        const { data, error } = await requireSupabase().auth.getSession();
 
         if (error) {
             return { session: null, error };
