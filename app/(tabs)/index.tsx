@@ -89,12 +89,7 @@ export default function HomeScreen() {
             style={({ pressed }) => [styles.iconButton, pressed && styles.buttonPressed]}>
             <MaterialIcons name="notifications-none" size={33} color="#11181C" />
           </Pressable>
-          <Pressable
-            accessibilityLabel="設定"
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.iconButton, pressed && styles.buttonPressed]}>
-            <MaterialIcons name="settings" size={31.5} color="#11181C" />
-          </Pressable>
+          <View style={styles.iconPlaceholder} />
         </View>
       </View>
       <Pressable
@@ -157,6 +152,12 @@ const styles = StyleSheet.create({
     height: 66,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 33,
+    backgroundColor: '#F1F4F5',
+  },
+  iconPlaceholder: {
+    width: 66,
+    height: 66,
     borderRadius: 33,
     backgroundColor: '#F1F4F5',
   },
