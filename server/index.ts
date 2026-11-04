@@ -1,6 +1,6 @@
 import 'dotenv/config';
-import { serverSupabase } from './services/supabase';
 import { createApp } from './app';
+import { serverSupabase } from './services/supabase';
 
 const app = createApp({
   getUserId: async (accessToken) => {
@@ -12,6 +12,14 @@ const app = createApp({
       target_profile_id: userId,
     });
     return { isFree: data, error };
+  },
+    setIsFree: async (userId, isFree) => {
+    const { data, error } = await serverSupabase.rpc('set_profile_is_free', {
+      target_profile_id: userId,
+      new_is_free: isFree,
+    });
+    const row = Array.isArray(data) ? data[0] : data;
+    return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
   },
 });
 const port = Number(process.env.PORT ?? 3000);

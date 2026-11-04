@@ -28,6 +28,13 @@ describe('POST /profiles/me/is-free/toggle', () => {
         toggleCalls.push(userId);
         return { isFree: true, error: null };
       },
+      setIsFree: async (userId, isFree) => {
+        return {
+          isFree,
+          freeUntil: isFree ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
+          error: null,
+        };
+      },
     };
     server = createServer(createApp(dependencies));
     server.listen(0, '127.0.0.1');
@@ -105,6 +112,173 @@ describe('POST /profiles/me/is-free/toggle', () => {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'Unable to update availability' });
+  });
+});
+
+describe('PUT /profiles/me/is-free', () => {
+  let server: Server;
+  let endpoint: string;
+  let dependencies: AvailabilityDependencies;
+  let getUserIdCalls: string[];
+  let setIsFreeCalls: { userId: string; isFree: boolean }[];
+
+  beforeEach(async () => {
+    getUserIdCalls = [];
+    setIsFreeCalls = [];
+    dependencies = {
+      getUserId: async (token) => {
+        getUserIdCalls.push(token);
+        return { userId: authenticatedUserId, error: null };
+      },
+      toggleIsFree: async () => {
+        return { isFree: true, error: null };
+      },
+      setIsFree: async (userId, isFree) => {
+        setIsFreeCalls.push({ userId, isFree });
+        return {
+          isFree,
+          freeUntil: isFree ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
+          error: null,
+        };
+      },
+    };
+    server = createServer(createApp(dependencies));
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    endpoint = `http://127.0.0.1:${address.port}/profiles/me/is-free`;
+  });
+
+  afterEach(async () => {
+    server.close();
+    await once(server, 'close');
+  });
+
+  it('rejects requests without a bearer token', async () => {
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_free: true }),
+    });
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'Bearer token is required' });
+    assert.deepEqual(getUserIdCalls, []);
+    assert.deepEqual(setIsFreeCalls, []);
+  });
+
+  it('rejects requests with a non-boolean is_free', async () => {
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: 'yes' }),
+    });
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'is_free (boolean) is required' });
+    assert.deepEqual(setIsFreeCalls, []);
+  });
+
+  it('sets is_free to true and returns free_until about one hour later', async () => {
+    const before = Date.now();
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true }),
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.is_free, true);
+    assert.ok(typeof body.free_until === 'string');
+    const freeUntilMs = new Date(body.free_until).getTime();
+    assert.ok(freeUntilMs > before, 'free_until should be in the future');
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true }]);
+  });
+
+  it('sets is_free to false and returns null free_until', async () => {
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: false }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { is_free: false, free_until: null });
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: false }]);
+  });
+
+  it('returns is_free false when free_until is already expired', async () => {
+    dependencies.setIsFree = async (userId, isFree) => {
+      setIsFreeCalls.push({ userId, isFree });
+      return {
+        isFree: true,
+        freeUntil: new Date(Date.now() - 1000).toISOString(),
+        error: null,
+      };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true }),
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.is_free, false);
+  });
+
+  it('returns 404 when the authenticated user has no profile', async () => {
+    dependencies.setIsFree = async (userId, isFree) => {
+      setIsFreeCalls.push({ userId, isFree });
+      return { isFree: null, freeUntil: null, error: null };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true }),
+    });
+
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { error: 'Profile not found' });
+  });
+
+  it('returns 500 when the profile update fails', async () => {
+    dependencies.setIsFree = async (userId, isFree) => {
+      setIsFreeCalls.push({ userId, isFree });
+      return { isFree: null, freeUntil: null, error: new Error('database unavailable') };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true }),
     });
 
     assert.equal(response.status, 500);

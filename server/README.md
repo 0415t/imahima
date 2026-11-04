@@ -46,3 +46,25 @@ Run the endpoint tests without connecting to Supabase:
 ```powershell
 npm run test:profile-toggle
 ```
+
+## Set the current user's availability explicitly
+
+Apply `supabase/migrations/20261104000000_profile_free_until.sql` to the Supabase project before using the endpoint. The function sets `profiles.is_free` explicitly and manages a 1-hour timer via `free_until`.
+
+```http
+PUT /profiles/me/is-free
+Authorization: ****** access token>
+Content-Type: application/json
+
+{ "is_free": true }
+```
+
+- `is_free: true` を設定すると、`free_until` が現在時刻+1時間に設定される
+- `is_free: false` を設定すると、`free_until` が `null` になる
+- 有効判定は `is_free = true AND free_until > now()`。期限切れの場合は `is_free: false` が返る
+
+成功時のレスポンス:
+
+```json
+{ "is_free": true, "free_until": "2026-11-04T18:00:00.000Z" }
+```
