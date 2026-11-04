@@ -28,10 +28,10 @@ describe('POST /profiles/me/is-free/toggle', () => {
         toggleCalls.push(userId);
         return { isFree: true, error: null };
       },
-      setIsFree: async (userId, isFree) => {
+      setIsFree: async (userId, isFree, durationMinutes) => {
         return {
           isFree,
-          freeUntil: isFree ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
+          freeUntil: isFree ? new Date(Date.now() + (durationMinutes ?? 60) * 60 * 1000).toISOString() : null,
           error: null,
         };
       },
@@ -124,7 +124,7 @@ describe('PUT /profiles/me/is-free', () => {
   let endpoint: string;
   let dependencies: AvailabilityDependencies;
   let getUserIdCalls: string[];
-  let setIsFreeCalls: { userId: string; isFree: boolean }[];
+  let setIsFreeCalls: { userId: string; isFree: boolean; durationMinutes?: number }[];
 
   beforeEach(async () => {
     getUserIdCalls = [];
@@ -137,11 +137,11 @@ describe('PUT /profiles/me/is-free', () => {
       toggleIsFree: async () => {
         return { isFree: true, error: null };
       },
-      setIsFree: async (userId, isFree) => {
-        setIsFreeCalls.push({ userId, isFree });
+      setIsFree: async (userId, isFree, durationMinutes) => {
+        setIsFreeCalls.push({ userId, isFree, durationMinutes });
         return {
           isFree,
-          freeUntil: isFree ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : null,
+          freeUntil: isFree ? new Date(Date.now() + (durationMinutes ?? 60) * 60 * 1000).toISOString() : null,
           error: null,
         };
       },
@@ -205,7 +205,7 @@ describe('PUT /profiles/me/is-free', () => {
     assert.ok(typeof body.free_until === 'string');
     const freeUntilMs = new Date(body.free_until).getTime();
     assert.ok(freeUntilMs > before, 'free_until should be in the future');
-    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true }]);
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true, durationMinutes: undefined }]);
   });
 
   it('sets is_free to false and returns null free_until', async () => {
@@ -220,12 +220,12 @@ describe('PUT /profiles/me/is-free', () => {
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { is_free: false, free_until: null });
-    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: false }]);
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: false, durationMinutes: undefined }]);
   });
 
   it('returns is_free false when free_until is already expired', async () => {
-    dependencies.setIsFree = async (userId, isFree) => {
-      setIsFreeCalls.push({ userId, isFree });
+    dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
+      setIsFreeCalls.push({ userId, isFree, durationMinutes });
       return {
         isFree: true,
         freeUntil: new Date(Date.now() - 1000).toISOString(),
@@ -248,8 +248,8 @@ describe('PUT /profiles/me/is-free', () => {
   });
 
   it('returns 404 when the authenticated user has no profile', async () => {
-    dependencies.setIsFree = async (userId, isFree) => {
-      setIsFreeCalls.push({ userId, isFree });
+    dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
+      setIsFreeCalls.push({ userId, isFree, durationMinutes });
       return { isFree: null, freeUntil: null, error: null };
     };
 
@@ -267,8 +267,8 @@ describe('PUT /profiles/me/is-free', () => {
   });
 
   it('returns 500 when the profile update fails', async () => {
-    dependencies.setIsFree = async (userId, isFree) => {
-      setIsFreeCalls.push({ userId, isFree });
+    dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
+      setIsFreeCalls.push({ userId, isFree, durationMinutes });
       return { isFree: null, freeUntil: null, error: new Error('database unavailable') };
     };
 
@@ -283,5 +283,36 @@ describe('PUT /profiles/me/is-free', () => {
 
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), { error: 'Unable to update availability' });
+  });
+
+  it('sets is_free with 30 minutes duration', async () => {
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true, duration_minutes: 30 }),
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.is_free, true);
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true, durationMinutes: 30 }]);
+  });
+
+  it('rejects requests with invalid duration_minutes', async () => {
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true, duration_minutes: 45 }),
+    });
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: 'duration_minutes must be one of: 30, 60, 120, 180' });
+    assert.deepEqual(setIsFreeCalls, []);
   });
 });

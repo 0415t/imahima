@@ -5,7 +5,8 @@ export type AvailabilityDependencies = {
   toggleIsFree: (userId: string) => Promise<{ isFree: boolean | null; error: unknown | null }>;
   setIsFree: (
     userId: string,
-    newIsFree: boolean
+    newIsFree: boolean,
+    durationMinutes?: number
   ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
 };
 
@@ -68,6 +69,11 @@ export function createApp(dependencies: AvailabilityDependencies) {
       response.status(400).json({ error: 'is_free (boolean) is required' });
       return;
     }
+    const durationMinutes = request.body?.duration_minutes;
+    if (durationMinutes !== undefined && ![30, 60, 120, 180].includes(durationMinutes)) {
+      response.status(400).json({ error: 'duration_minutes must be one of: 30, 60, 120, 180' });
+      return;
+    }
 
     try {
       const { userId, error: authError } = await dependencies.getUserId(bearerToken);
@@ -79,7 +85,8 @@ export function createApp(dependencies: AvailabilityDependencies) {
 
       const { isFree, freeUntil, error: setError } = await dependencies.setIsFree(
         userId,
-        requestedIsFree
+        requestedIsFree,
+        durationMinutes
       );
 
       if (setError) {
