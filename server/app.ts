@@ -70,8 +70,8 @@ export function createApp(dependencies: AvailabilityDependencies) {
       return;
     }
     const durationMinutes = request.body?.duration_minutes;
-    if (durationMinutes !== undefined && ![30, 60, 120, 180].includes(durationMinutes)) {
-      response.status(400).json({ error: 'duration_minutes must be one of: 30, 60, 120, 180' });
+    if (durationMinutes !== undefined && durationMinutes !== null && ![30, 60, 120, 180].includes(durationMinutes)) {
+      response.status(400).json({ error: 'duration_minutes must be one of: 30, 60, 120, 180, or null' });
       return;
     }
 
@@ -86,7 +86,7 @@ export function createApp(dependencies: AvailabilityDependencies) {
       const { isFree, freeUntil, error: setError } = await dependencies.setIsFree(
         userId,
         requestedIsFree,
-        durationMinutes
+        durationMinutes ?? null
       );
 
       if (setError) {
@@ -100,9 +100,9 @@ export function createApp(dependencies: AvailabilityDependencies) {
         return;
       }
 
-      // 有効判定: is_free = true AND free_until > now()
+      // 有効判定: is_free = true AND (free_until IS NULL OR free_until > now())
       const effectiveIsFree =
-        isFree && freeUntil !== null && new Date(freeUntil).getTime() > Date.now();
+        isFree && (freeUntil === null || new Date(freeUntil).getTime() > Date.now());
 
       response.json({ is_free: effectiveIsFree, free_until: freeUntil });
     } catch (error) {

@@ -12,12 +12,12 @@ const app = createApp({
       target_profile_id: userId,
     });
     return { isFree: data, error };
-  },
+  },  
     setIsFree: async (userId, isFree, durationMinutes) => {
     const { data, error } = await serverSupabase.rpc('set_profile_is_free', {
       target_profile_id: userId,
       new_is_free: isFree,
-      duration_minutes: durationMinutes ?? 60,
+        duration_minutes: durationMinutes ?? null,
     });
     const row = Array.isArray(data) ? data[0] : data;
     return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };

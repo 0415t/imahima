@@ -124,7 +124,7 @@ describe('PUT /profiles/me/is-free', () => {
   let endpoint: string;
   let dependencies: AvailabilityDependencies;
   let getUserIdCalls: string[];
-  let setIsFreeCalls: { userId: string; isFree: boolean; durationMinutes?: number }[];
+  let setIsFreeCalls: { userId: string; isFree: boolean; durationMinutes?: number | null }[];
 
   beforeEach(async () => {
     getUserIdCalls = [];
@@ -141,7 +141,11 @@ describe('PUT /profiles/me/is-free', () => {
         setIsFreeCalls.push({ userId, isFree, durationMinutes });
         return {
           isFree,
-          freeUntil: isFree ? new Date(Date.now() + (durationMinutes ?? 60) * 60 * 1000).toISOString() : null,
+          freeUntil: isFree
+            ? durationMinutes === null
+              ? null
+              : new Date(Date.now() + durationMinutes * 60 * 1000).toISOString()
+            : null,
           error: null,
         };
       },
@@ -188,8 +192,7 @@ describe('PUT /profiles/me/is-free', () => {
     assert.deepEqual(setIsFreeCalls, []);
   });
 
-  it('sets is_free to true and returns free_until about one hour later', async () => {
-    const before = Date.now();
+  it('sets is_free to true with no timer when duration_minutes is omitted', async () => {
     const response = await fetch(endpoint, {
       method: 'PUT',
       headers: {
@@ -202,10 +205,76 @@ describe('PUT /profiles/me/is-free', () => {
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.is_free, true);
+    assert.equal(body.free_until, null);
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true, durationMinutes: null }]);
+  });
+
+  it('sets is_free to true with 30 minutes duration', async () => {
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true, duration_minutes: 30 }),
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.is_free, true);
     assert.ok(typeof body.free_until === 'string');
-    const freeUntilMs = new Date(body.free_until).getTime();
-    assert.ok(freeUntilMs > before, 'free_until should be in the future');
-    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true, durationMinutes: undefined }]);
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true, durationMinutes: 30 }]);
+  });
+
+  it('keeps existing state when already on and on is requested again', async () => {
+    const existingFreeUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
+      setIsFreeCalls.push({ userId, isFree, durationMinutes });
+      return {
+        isFree: true,
+        freeUntil: existingFreeUntil,
+        error: null,
+      };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true, duration_minutes: 60 }),
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.is_free, true);
+    assert.equal(body.free_until, existingFreeUntil);
+  });
+
+  it('allows re-on after expiration', async () => {
+    dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
+      setIsFreeCalls.push({ userId, isFree, durationMinutes });
+      return {
+        isFree: true,
+        freeUntil: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        error: null,
+      };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ is_free: true, duration_minutes: 60 }),
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.is_free, true);
+    assert.ok(typeof body.free_until === 'string');
   });
 
   it('sets is_free to false and returns null free_until', async () => {
@@ -220,7 +289,7 @@ describe('PUT /profiles/me/is-free', () => {
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { is_free: false, free_until: null });
-    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: false, durationMinutes: undefined }]);
+    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: false, durationMinutes: null }]);
   });
 
   it('returns is_free false when free_until is already expired', async () => {
@@ -285,22 +354,6 @@ describe('PUT /profiles/me/is-free', () => {
     assert.deepEqual(await response.json(), { error: 'Unable to update availability' });
   });
 
-  it('sets is_free with 30 minutes duration', async () => {
-    const response = await fetch(endpoint, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ is_free: true, duration_minutes: 30 }),
-    });
-
-    assert.equal(response.status, 200);
-    const body = await response.json();
-    assert.equal(body.is_free, true);
-    assert.deepEqual(setIsFreeCalls, [{ userId: authenticatedUserId, isFree: true, durationMinutes: 30 }]);
-  });
-
   it('rejects requests with invalid duration_minutes', async () => {
     const response = await fetch(endpoint, {
       method: 'PUT',
@@ -312,7 +365,59 @@ describe('PUT /profiles/me/is-free', () => {
     });
 
     assert.equal(response.status, 400);
-    assert.deepEqual(await response.json(), { error: 'duration_minutes must be one of: 30, 60, 120, 180' });
+    assert.deepEqual(await response.json(), { error: 'duration_minutes must be one of: 30, 60, 120, 180, or null' });
     assert.deepEqual(setIsFreeCalls, []);
+  });
+
+  it('handles concurrent on requests without overwriting the timer', async () => {
+    let storedIsFree = false;
+    let storedFreeUntil: string | null = null;
+
+    // DB側の FOR UPDATE による直列化を模倣するステートフルなモック
+    // （実際の同時実行制御はDB側で行われるため、ここではON中の再ONが既存状態を維持する契約を検証する）
+    dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
+      setIsFreeCalls.push({ userId, isFree, durationMinutes });
+      if (isFree) {
+        if (storedIsFree && (storedFreeUntil === null || new Date(storedFreeUntil).getTime() > Date.now())) {
+          return { isFree: true, freeUntil: storedFreeUntil, error: null };
+        }
+        storedIsFree = true;
+        storedFreeUntil =
+          durationMinutes == null
+            ? null
+            : new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
+        return { isFree: true, freeUntil: storedFreeUntil, error: null };
+      }
+      storedIsFree = false;
+      storedFreeUntil = null;
+      return { isFree: false, freeUntil: null, error: null };
+    };
+
+    const requestHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    };
+    const [first, second] = await Promise.all([
+      fetch(endpoint, {
+        method: 'PUT',
+        headers: requestHeaders,
+        body: JSON.stringify({ is_free: true, duration_minutes: 60 }),
+      }),
+      fetch(endpoint, {
+        method: 'PUT',
+        headers: requestHeaders,
+        body: JSON.stringify({ is_free: true, duration_minutes: 30 }),
+      }),
+    ]);
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+    assert.equal(firstBody.is_free, true);
+    assert.equal(secondBody.is_free, true);
+    // 後から届いたONリクエストでタイマーが上書きされず、両方が同じ free_until を返す
+    assert.equal(firstBody.free_until, secondBody.free_until);
+    assert.equal(setIsFreeCalls.length, 2);
   });
 });
