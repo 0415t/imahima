@@ -8,6 +8,9 @@ export type AvailabilityDependencies = {
     newIsFree: boolean,
     durationMinutes?: number
   ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
+  extendIsFree: (
+    userId: string
+  ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
 };
 
 export function createApp(dependencies: AvailabilityDependencies) {
@@ -55,6 +58,7 @@ export function createApp(dependencies: AvailabilityDependencies) {
       response.status(500).json({ error: 'Unable to update availability' });
     }
   });
+
   app.put('/profiles/me/is-free', async (request, response) => {
     const authorization = request.get('authorization');
     const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -69,6 +73,7 @@ export function createApp(dependencies: AvailabilityDependencies) {
       response.status(400).json({ error: 'is_free (boolean) is required' });
       return;
     }
+
     const durationMinutes = request.body?.duration_minutes;
     if (durationMinutes !== undefined && durationMinutes !== null && ![30, 60, 120, 180].includes(durationMinutes)) {
       response.status(400).json({ error: 'duration_minutes must be one of: 30, 60, 120, 180, or null' });
@@ -108,6 +113,57 @@ export function createApp(dependencies: AvailabilityDependencies) {
     } catch (error) {
       console.error('profiles.is_free set request failed:', error);
       response.status(500).json({ error: 'Unable to update availability' });
+    }
+  });
+
+  app.post('/profiles/me/is-free/extend', async (request, response) => {
+    const authorization = request.get('authorization');
+    const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+
+    if (!bearerToken) {
+      response.status(401).json({ error: 'Bearer token is required' });
+      return;
+    }
+
+    try {
+      const { userId, error: authError } = await dependencies.getUserId(bearerToken);
+
+      if (authError || !userId) {
+        response.status(401).json({ error: 'Invalid or expired access token' });
+        return;
+      }
+
+      const { isFree, freeUntil, error: extendError } = await dependencies.extendIsFree(userId);
+
+      if (extendError) {
+        // OFF・無期限ON・期限切れの場合は409（厳密なメッセージ一致）
+        let errorMessage: string;
+        if (extendError instanceof Error) {
+          errorMessage = extendError.message;
+        } else if (typeof extendError === 'object' && extendError !== null && 'message' in extendError) {
+          errorMessage = String(extendError.message);
+        } else {
+          errorMessage = String(extendError);
+        }
+
+        if (errorMessage === 'Cannot extend: not in an active timed free state') {
+          response.status(409).json({ error: 'Cannot extend: not in an active timed free state' });
+          return;
+        }
+        console.error('profiles.is_free extend failed:', errorMessage);
+        response.status(500).json({ error: 'Unable to extend availability' });
+        return;
+      }
+
+      if (typeof isFree !== 'boolean') {
+        response.status(404).json({ error: 'Profile not found' });
+        return;
+      }
+
+      response.json({ is_free: isFree, free_until: freeUntil });
+    } catch (error) {
+      console.error('profiles.is_free extend request failed:', error);
+      response.status(500).json({ error: 'Unable to extend availability' });
     }
   });
 

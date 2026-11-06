@@ -22,6 +22,13 @@ const app = createApp({
     const row = Array.isArray(data) ? data[0] : data;
     return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
   },
+  extendIsFree: async (userId) => {
+    const { data, error } = await serverSupabase.rpc('extend_profile_is_free', {
+      target_profile_id: userId,
+    });
+    const row = Array.isArray(data) ? data[0] : data;
+    return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
+  },
 });
 const port = Number(process.env.PORT ?? 3000);
 

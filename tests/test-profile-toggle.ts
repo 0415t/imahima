@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -34,6 +34,9 @@ describe('POST /profiles/me/is-free/toggle', () => {
           freeUntil: isFree ? new Date(Date.now() + (durationMinutes ?? 60) * 60 * 1000).toISOString() : null,
           error: null,
         };
+      },
+      extendIsFree: async () => {
+        return { isFree: true, freeUntil: null, error: null };
       },
     };
     server = createServer(createApp(dependencies));
@@ -142,10 +145,17 @@ describe('PUT /profiles/me/is-free', () => {
         return {
           isFree,
           freeUntil: isFree
-            ? durationMinutes === null
+            ? durationMinutes == null
               ? null
               : new Date(Date.now() + durationMinutes * 60 * 1000).toISOString()
             : null,
+          error: null,
+        };
+      },
+      extendIsFree: async (userId) => {
+        return {
+          isFree: true,
+          freeUntil: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
           error: null,
         };
       },
@@ -373,8 +383,8 @@ describe('PUT /profiles/me/is-free', () => {
     let storedIsFree = false;
     let storedFreeUntil: string | null = null;
 
-    // DB側の FOR UPDATE による直列化を模倣するステートフルなモック
-    // （実際の同時実行制御はDB側で行われるため、ここではON中の再ONが既存状態を維持する契約を検証する）
+    // DB側の FOR UPDATE による直列化を模倣するスチE�EトフルなモチE��
+    // �E�実際の同時実行制御はDB側で行われるため、ここではON中の再ONが既存状態を維持する契紁E��検証する�E�E
     dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
       setIsFreeCalls.push({ userId, isFree, durationMinutes });
       if (isFree) {
@@ -416,8 +426,189 @@ describe('PUT /profiles/me/is-free', () => {
     const secondBody = await second.json();
     assert.equal(firstBody.is_free, true);
     assert.equal(secondBody.is_free, true);
-    // 後から届いたONリクエストでタイマーが上書きされず、両方が同じ free_until を返す
+    // 後から届いたONリクエストでタイマ�Eが上書きされず、両方が同ぁEfree_until を返す
     assert.equal(firstBody.free_until, secondBody.free_until);
     assert.equal(setIsFreeCalls.length, 2);
+  });
+});
+
+describe('POST /profiles/me/is-free/extend', () => {
+  let server: Server;
+  let endpoint: string;
+  let dependencies: AvailabilityDependencies;
+  let getUserIdCalls: string[];
+  let extendIsFreeCalls: string[];
+
+  beforeEach(async () => {
+    getUserIdCalls = [];
+    extendIsFreeCalls = [];
+    dependencies = {
+      getUserId: async (token) => {
+        getUserIdCalls.push(token);
+        return { userId: authenticatedUserId, error: null };
+      },
+      toggleIsFree: async () => {
+        return { isFree: true, error: null };
+      },
+      setIsFree: async () => {
+        return { isFree: true, freeUntil: null, error: null };
+      },
+      extendIsFree: async (userId) => {
+        extendIsFreeCalls.push(userId);
+        return {
+          isFree: true,
+          freeUntil: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
+          error: null,
+        };
+      },
+    };
+    server = createServer(createApp(dependencies));
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    endpoint = `http://127.0.0.1:${address.port}/profiles/me/is-free/extend`;
+  });
+
+  afterEach(async () => {
+    server.close();
+    await once(server, 'close');
+  });
+
+  it('rejects requests without a bearer token', async () => {
+    const response = await fetch(endpoint, { method: 'POST' });
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'Bearer token is required' });
+    assert.deepEqual(getUserIdCalls, []);
+    assert.deepEqual(extendIsFreeCalls, []);
+  });
+
+  it('rejects requests with an invalid bearer token', async () => {
+    dependencies.getUserId = async (token) => {
+      getUserIdCalls.push(token);
+      return { userId: null, error: new Error('invalid token') };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'Invalid or expired access token' });
+    assert.deepEqual(getUserIdCalls, [accessToken]);
+    assert.deepEqual(extendIsFreeCalls, []);
+  });
+
+  it('extends the timer by 30 minutes', async () => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.is_free, true);
+    assert.ok(typeof body.free_until === 'string');
+    assert.deepEqual(extendIsFreeCalls, [authenticatedUserId]);
+  });
+
+  it('returns 409 when not in an active timed free state', async () => {
+    dependencies.extendIsFree = async (userId) => {
+      extendIsFreeCalls.push(userId);
+      return {
+        isFree: null,
+        freeUntil: null,
+        error: new Error('Cannot extend: not in an active timed free state'),
+      };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: 'Cannot extend: not in an active timed free state' });
+  });
+
+  it('returns 404 when the authenticated user has no profile', async () => {
+    dependencies.extendIsFree = async (userId) => {
+      extendIsFreeCalls.push(userId);
+      return { isFree: null, freeUntil: null, error: null };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { error: 'Profile not found' });
+  });
+
+  it('returns 500 when the extend fails', async () => {
+    dependencies.extendIsFree = async (userId) => {
+      extendIsFreeCalls.push(userId);
+      return { isFree: null, freeUntil: null, error: new Error('database unavailable') };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'Unable to extend availability' });
+  });
+
+  it('returns 409 for Supabase RAISE EXCEPTION error format', async () => {
+    dependencies.extendIsFree = async (userId) => {
+      extendIsFreeCalls.push(userId);
+      return {
+        isFree: null,
+        freeUntil: null,
+        error: {
+          message: 'Cannot extend: not in an active timed free state',
+          details: null,
+          hint: null,
+          code: 'P0001',
+        },
+      };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: 'Cannot extend: not in an active timed free state' });
+  });
+
+  it('returns 500 for unexpected Supabase errors', async () => {
+    dependencies.extendIsFree = async (userId) => {
+      extendIsFreeCalls.push(userId);
+      return {
+        isFree: null,
+        freeUntil: null,
+        error: {
+          message: 'connection to server lost',
+          details: null,
+          hint: null,
+          code: '08006',
+        },
+      };
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'Unable to extend availability' });
   });
 });
