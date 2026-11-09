@@ -9,6 +9,7 @@
     "test:login": "tsx tests/test-login.ts",
     "test:persistence": "tsx tests/test-session-persistence.ts",
     "test:profile-toggle": "tsx --test tests/test-profile-toggle.ts",
+    "test:notifications": "tsx --test tests/test-notifications.ts",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
@@ -47,6 +48,7 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@expo/ngrok": "^4.1.0",
     "@types/express": "^5.0.6",
     "@types/node": "^26.2.0",
     "@types/react": "~19.2.4",
