@@ -37,6 +37,8 @@ GoogleService-Info.plist
 # local env files
 .env*.local
 .env
+.env.test
+.env.*.local
 
 # typescript
 *.tsbuildinfo
