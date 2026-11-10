@@ -1,26 +1,32 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { ActivityIndicator, AppState, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { hasSupabaseConfig, supabase } from '@/lib/supabase';
+import { subscribeAvailabilityChanged } from '@/lib/availability-events';
 
 type User = {
   id: string;
-  username: string;
-  is_free: boolean;
+  username: string | null;
+  is_free: boolean | null;
+  free_until: string | null;
 };
 
 export default function HomeScreen() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [ownUserId, setOwnUserId] = useState<string | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let isMounted = true;
+    let requestId = 0;
 
     async function fetchUsers() {
+      const currentRequest = ++requestId;
       if (!hasSupabaseConfig || !supabase) {
         setErrorMessage(
           'Supabaseの設定がありません。.envにEXPO_PUBLIC_SUPABASE_URLとEXPO_PUBLIC_SUPABASE_ANON_KEYを設定してください。'
@@ -29,39 +35,52 @@ export default function HomeScreen() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, username, is_free')
-        .limit(50);
-
-      if (!isMounted) {
-        return;
-      }
-
-      if (error) {
-        console.error('Supabase users取得エラー:', error);
-        setErrorMessage(__DEV__ ? error.message : 'ユーザー情報の取得に失敗しました。');
+      try {
+        const { data: auth, error: authError } = await supabase.auth.getSession();
+        if (authError || !auth.session) throw new Error('ログイン状態を確認できませんでした。');
+        const id = auth.session.user.id;
+        const [list, own] = await Promise.all([
+          supabase.from('profiles').select('id, username, is_free, free_until').limit(50),
+          supabase.from('profiles').select('id, username, is_free, free_until').eq('id', id).maybeSingle(),
+        ]);
+        if (!isMounted || currentRequest !== requestId) return;
+        if (list.error || own.error) throw list.error ?? own.error;
+        // 一覧の上限にかかわらず、自分の更新後の状態を先頭に表示する。
+        const others = ((list.data ?? []) as User[]).filter((user) => user.id !== id);
+        setUsers(own.data ? [own.data as User, ...others] : others);
+        setOwnUserId(id);
+        setErrorMessage(null);
         setIsLoading(false);
-        return;
+      } catch {
+        if (isMounted && currentRequest === requestId) {
+          setErrorMessage('暇状態の取得に失敗しました。');
+          setIsLoading(false);
+        }
       }
-
-      const fetchedUsers = (data ?? []) as User[];
-      if (__DEV__) console.log('Supabase users取得結果:', fetchedUsers);
-      setUsers(fetchedUsers);
-      setIsLoading(false);
     }
 
     void fetchUsers();
+    const unsubscribe = subscribeAvailabilityChanged(() => { void fetchUsers(); });
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void fetchUsers();
+    });
+    // 期限を過ぎた表示も更新する。バックグラウンド中は問い合わせない。
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') void fetchUsers();
+    }, 30_000);
 
     return () => {
       isMounted = false;
+      unsubscribe();
+      subscription.remove();
+      clearInterval(timer);
     };
-  }, []);
+  }, []));
 
   return (
     <ThemedView lightColor="#ffffff" darkColor="#ffffff" style={styles.container}>
       <ThemedText lightColor="#000000" darkColor="#000000" type="title">
-        Supabase users
+        暇状態
       </ThemedText>
       {isLoading ? <ActivityIndicator style={styles.status} /> : null}
       {errorMessage ? (
@@ -71,7 +90,7 @@ export default function HomeScreen() {
       ) : null}
       {!isLoading && !errorMessage && users.length === 0 ? (
         <ThemedText lightColor="#000000" darkColor="#000000" style={styles.status}>
-          usersテーブルにデータがありません。
+          プロフィールがありません。
         </ThemedText>
       ) : null}
       <View style={styles.header}>
@@ -112,13 +131,16 @@ export default function HomeScreen() {
         {users.map((user) => (
           <View key={user.id} style={styles.userRow}>
             <ThemedText lightColor="#000000" darkColor="#000000" type="defaultSemiBold">
-              {user.username}
+              {user.username ?? '名無し'}{user.id === ownUserId ? '（自分）' : ''}
             </ThemedText>
             <ThemedText lightColor="#000000" darkColor="#000000">
               id: {user.id}
             </ThemedText>
             <ThemedText lightColor="#000000" darkColor="#000000">
-              is_free: {String(user.is_free)}
+              暇状態: {user.is_free && (!user.free_until || Date.parse(user.free_until) > Date.now()) ? 'ON' : 'OFF'}
+            </ThemedText>
+            <ThemedText lightColor="#000000" darkColor="#000000">
+              終了予定: {user.is_free ? (user.free_until ? new Date(user.free_until).toLocaleString() : '無期限') : 'なし'}
             </ThemedText>
           </View>
         ))}
