@@ -46,6 +46,14 @@ const app = createApp({
     const row = Array.isArray(data) ? data[0] : data;
     return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
   },
+  extendIsFreeFromNotification: async (userId, claimId) => {
+    const { data, error } = await serverSupabase.rpc('extend_profile_is_free_from_notification', {
+      target_profile_id: userId,
+      claim_id: claimId,
+    });
+    const row = Array.isArray(data) ? data[0] : data;
+    return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
+  },
 }, {
   getDeviceTokens: async (userId) => {
     const { data, error } = await serverSupabase

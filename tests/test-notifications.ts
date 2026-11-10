@@ -34,6 +34,7 @@ describe('POST /notifications/test', () => {
       toggleIsFree: async () => ({ isFree: true, error: null }),
       setIsFree: async (_userId, isFree) => ({ isFree, freeUntil: null, error: null }),
       extendIsFree: async () => ({ isFree: true, freeUntil: null, error: null }),
+      extendIsFreeFromNotification: async () => ({ isFree: true, freeUntil: null, error: null }),
     };
     notifications = {
       getDeviceTokens: async (userId) => {

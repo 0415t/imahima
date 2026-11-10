@@ -11,6 +11,10 @@ export type AvailabilityDependencies = {
   extendIsFree: (
     userId: string
   ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
+  extendIsFreeFromNotification: (
+    userId: string,
+    claimId: string
+  ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
 };
 
 export type NotificationDependencies = {
@@ -178,6 +182,72 @@ export function createApp(
       response.json({ is_free: isFree, free_until: freeUntil });
     } catch (error) {
       console.error('profiles.is_free extend request failed:', error);
+      response.status(500).json({ error: 'Unable to extend availability' });
+    }
+  });
+
+  app.post('/profiles/me/is-free/extend-from-notification', async (request, response) => {
+    const authorization = request.get('authorization');
+    const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+
+    if (!bearerToken) {
+      response.status(401).json({ error: '****** is required' });
+      return;
+    }
+
+    const claimId = request.body?.claim_id;
+    if (typeof claimId !== 'string' || claimId.length === 0) {
+      response.status(400).json({ error: 'claim_id (string) is required' });
+      return;
+    }
+
+    try {
+      const { userId, error: authError } = await dependencies.getUserId(bearerToken);
+
+      if (authError || !userId) {
+        response.status(401).json({ error: 'Invalid or expired access token' });
+        return;
+      }
+
+      const { isFree, freeUntil, error: extendError } = await dependencies.extendIsFreeFromNotification(
+        userId,
+        claimId
+      );
+
+      if (extendError) {
+        let errorMessage: string;
+        if (extendError instanceof Error) {
+          errorMessage = extendError.message;
+        } else if (typeof extendError === 'object' && extendError !== null && 'message' in extendError) {
+          errorMessage = String(extendError.message);
+        } else {
+          errorMessage = String(extendError);
+        }
+
+        // 延長できない状態は全て409（厳密なメッセージ一致）
+        const conflictMessages = [
+          'Cannot extend: not in an active timed free state',
+          'Cannot extend: notification claim not found',
+          'Cannot extend: notification claim is not sent',
+          'Cannot extend: free_until has changed since notification',
+        ];
+        if (conflictMessages.includes(errorMessage)) {
+          response.status(409).json({ error: errorMessage });
+          return;
+        }
+        console.error('profiles.is_free extend-from-notification failed:', errorMessage);
+        response.status(500).json({ error: 'Unable to extend availability' });
+        return;
+      }
+
+      if (typeof isFree !== 'boolean') {
+        response.status(404).json({ error: 'Profile not found' });
+        return;
+      }
+
+      response.json({ is_free: isFree, free_until: freeUntil });
+    } catch (error) {
+      console.error('profiles.is_free extend-from-notification request failed:', error);
       response.status(500).json({ error: 'Unable to extend availability' });
     }
   });

@@ -38,6 +38,9 @@ describe('POST /profiles/me/is-free/toggle', () => {
       extendIsFree: async () => {
         return { isFree: true, freeUntil: null, error: null };
       },
+      extendIsFreeFromNotification: async () => {
+        return { isFree: true, freeUntil: null, error: null };
+      },
     };
     server = createServer(createApp(dependencies));
     server.listen(0, '127.0.0.1');
@@ -158,6 +161,9 @@ describe('PUT /profiles/me/is-free', () => {
           freeUntil: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
           error: null,
         };
+      },
+      extendIsFreeFromNotification: async () => {
+        return { isFree: true, freeUntil: null, error: null };
       },
     };
     server = createServer(createApp(dependencies));
@@ -460,6 +466,9 @@ describe('POST /profiles/me/is-free/extend', () => {
           freeUntil: new Date(Date.now() + 90 * 60 * 1000).toISOString(),
           error: null,
         };
+      },
+      extendIsFreeFromNotification: async () => {
+        return { isFree: true, freeUntil: null, error: null };
       },
     };
     server = createServer(createApp(dependencies));
