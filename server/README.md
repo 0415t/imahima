@@ -46,3 +46,53 @@ Run the endpoint tests without connecting to Supabase:
 ```powershell
 npm run test:profile-toggle
 ```
+
+## Set the current user's availability explicitly
+
+Apply `supabase/migrations/20261104000000_profile_free_until.sql` to the Supabase project before using the endpoint. The function sets `profiles.is_free` explicitly and manages a timer via `free_until`.
+
+```http
+PUT /profiles/me/is-free
+Authorization: ****** access token>
+Content-Type: application/json
+
+{ "is_free": true, "duration_minutes": 60 }
+```
+
+- `is_free: true` を設定すると、`free_until` が現在時刻+指定時間に設定される
+- `duration_minutes` は省略可能（デフォルト: 60）。許可値: 30, 60, 120, 180
+- `is_free: false` を設定すると、`free_until` が `null` になる
+- 有効判定は `is_free = true AND free_until > now()`。期限切れの場合は `is_free: false` が返る
+
+成功時のレスポンス:
+
+```json
+{ "is_free": true, "free_until": "2026-11-04T18:00:00.000Z" }
+```
+
+## Send a test push notification
+
+Apply `supabase/migrations/20261017000000_create_user_device_tokens.sql` and sign in on a physical device so the Expo Push Token is stored in `user_device_tokens` before using the endpoint.
+
+```http
+POST /notifications/test
+Authorization: ****** access token>
+```
+
+The server validates the access token with Supabase Auth, fetches only the authenticated user's device tokens, and sends a fixed test notification via the Expo Push API. The request body cannot specify a destination user or push token.
+
+- `200 { "sent": 1 }` — accepted by the Expo Push API (push ticket `status: "ok"`)
+- `200 { "sent": 0, "message": "No registered devices" }` — no registered devices
+- `401` — missing or invalid access token
+- `429` — rate limited (one successful test notification per user per minute; failed sends and users without devices do not consume the limit)
+- `502` — failed to send to the Expo Push API
+
+Tokens reported as `DeviceNotRegistered` in push tickets are deleted from `user_device_tokens`. Set `EXPO_ACCESS_TOKEN` in `server/.env` to authenticate against the Expo Push API (optional but recommended). Never expose it to the Expo app.
+
+**Known limitation / future work:** delivery is only confirmed at the push-ticket stage. A ticket `status: "ok"` means the Expo Push API accepted the notification, not that the device received it. Delayed verification via push receipts (`getPushNotificationReceiptsAsync`) and cleanup of tokens that fail at the delivery stage are future work.
+
+Run the endpoint tests without connecting to Supabase or Expo:
+
+```powershell
+npm run test:notifications
+```

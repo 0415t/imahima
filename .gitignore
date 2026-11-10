@@ -37,6 +37,8 @@ GoogleService-Info.plist
 # local env files
 .env*.local
 .env
+.env.test
+.env.*.local
 
 # typescript
 *.tsbuildinfo
@@ -46,3 +48,6 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Supabase CLI temporary files
+supabase/.temp/
