@@ -6,6 +6,8 @@
 // - 外部送信のexactly-onceは保証できない（at-least-once）。
 //   送信成功後〜sent記録前にプロセスが停止すると、lease期限切れ後の再試行で重複送信しうる。
 
+import { PushSendError } from '../services/notifications';
+
 export type FreeEndNotificationClaim = {
   claimId: string;
   userId: string;
@@ -29,7 +31,7 @@ export type FreeEndNotificationDependencies = {
   getDeviceTokens: (userId: string) => Promise<{ tokens: string[]; error: unknown | null }>;
   sendPushNotifications: (
     tokens: string[],
-    message: { title: string; body: string; data?: Record<string, unknown> }
+    message: { title: string; body: string; data?: Record<string, unknown>; categoryId?: string }
   ) => Promise<{ sent: number; error: unknown | null }>;
   completeNotification: (
     claimId: string,
@@ -114,28 +116,34 @@ export function createFreeEndNotificationPoller(
     }
 
     if (tokens.length === 0) {
-      // 登録端末なし。再試行しても変わらないためsent扱いで終了する
-      await dependencies.completeNotification(claim.claimId, claim.leaseToken, 'sent');
+      // 受付成功はないため、送信対象なしとして終了する。
+      await dependencies.completeNotification(claim.claimId, claim.leaseToken, 'cancelled');
       return;
     }
 
-    const { error: sendError } = await dependencies.sendPushNotifications(tokens, {
+    const { sent, error: sendError } = await dependencies.sendPushNotifications(tokens, {
       title: message.title,
       body: message.body,
-      data: { type: 'free_end_reminder', freeUntil: claim.freeUntil },
+      categoryId: 'free_end',
+      data: {
+        type: 'free_end',
+        expectedFreeUntil: claim.freeUntil,
+        notificationId: claim.claimId,
+      },
     });
 
-    if (sendError) {
+    if (sent === 0) {
       console.error('[free-end-notifications] push send failed:', sendError);
       await dependencies.completeNotification(
         claim.claimId,
         claim.leaseToken,
-        'failed',
-        `send: ${formatError(sendError)}`
+        sendError instanceof PushSendError && sendError.permanentOnly ? 'cancelled' : 'failed',
+        `send: ${formatError(sendError ?? 'No push acceptance confirmed')}`
       );
       return;
     }
 
+    // sentはExpo受付成功。部分成功でも重複を避けるためclaim全体の再試行を終了する。
     const { completed, error: completeError } = await dependencies.completeNotification(
       claim.claimId,
       claim.leaseToken,

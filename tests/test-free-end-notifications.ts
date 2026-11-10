@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { PushSendError } from '../server/services/notifications';
 
 import {
   createFreeEndNotificationPoller,
@@ -20,7 +21,7 @@ type CallLog = {
   claims: number;
   validations: { claimId: string; leaseToken: string }[];
   tokenFetches: string[];
-  sends: { tokens: string[]; message: { title: string; body: string; data?: Record<string, unknown> } }[];
+  sends: { tokens: string[]; message: Parameters<FreeEndNotificationDependencies['sendPushNotifications']>[1] }[];
   completions: { claimId: string; leaseToken: string; status: string; error?: string }[];
 };
 
@@ -64,7 +65,10 @@ describe('free-end notification poller', () => {
     assert.deepEqual(log.tokenFetches, ['user-1']);
     assert.equal(log.sends.length, 1);
     assert.deepEqual(log.sends[0].tokens, ['ExponentPushToken[device-1]']);
-    assert.equal(log.sends[0].message.data?.type, 'free_end_reminder');
+    assert.equal(log.sends[0].message.categoryId, 'free_end');
+    assert.equal(log.sends[0].message.data?.type, 'free_end');
+    assert.equal(log.sends[0].message.data?.expectedFreeUntil, baseClaim.freeUntil);
+    assert.equal(log.sends[0].message.data?.notificationId, baseClaim.claimId);
     assert.deepEqual(log.completions, [
       { claimId: 'claim-1', leaseToken: 'lease-token-1', status: 'sent', error: undefined },
     ]);
@@ -133,7 +137,7 @@ describe('free-end notification poller', () => {
     assert.match(log.completions[0].error ?? '', /tokens/);
   });
 
-  it('marks sent without sending when the user has no devices', async () => {
+  it('cancels without sending when the user has no devices', async () => {
     const { dependencies, log } = createMocks({
       getDeviceTokens: async () => ({ tokens: [], error: null }),
     });
@@ -143,7 +147,7 @@ describe('free-end notification poller', () => {
 
     assert.equal(log.sends.length, 0);
     assert.deepEqual(log.completions, [
-      { claimId: 'claim-1', leaseToken: 'lease-token-1', status: 'sent', error: undefined },
+      { claimId: 'claim-1', leaseToken: 'lease-token-1', status: 'cancelled', error: undefined },
     ]);
   });
 
@@ -163,6 +167,47 @@ describe('free-end notification poller', () => {
     assert.equal(log.completions.length, 1);
     assert.equal(log.completions[0].status, 'failed');
     assert.match(log.completions[0].error ?? '', /send/);
+  });
+
+  for (const [label, result, status] of [
+    ['permanent failures', { sent: 0, error: new PushSendError({ temporary: 0, permanent: 1, unknown: 0 }) }, 'cancelled'],
+    ['temporary failures', { sent: 0, error: new PushSendError({ temporary: 1, permanent: 0, unknown: 0 }) }, 'failed'],
+    ['unknown failures', { sent: 0, error: new PushSendError({ temporary: 0, permanent: 0, unknown: 1 }) }, 'failed'],
+    ['unclassified zero acceptance', { sent: 0, error: null }, 'failed'],
+    ['partial acceptance', { sent: 1, error: new Error('another device failed') }, 'sent'],
+  ] as const) {
+    it(`completes ${label} as ${status} with the original lease`, async () => {
+      const { dependencies, log } = createMocks({ sendPushNotifications: async () => result });
+      await createFreeEndNotificationPoller(dependencies).runOnce();
+      assert.equal(log.completions.length, 1);
+      assert.equal(log.completions[0].status, status);
+      assert.equal(log.completions[0].claimId, baseClaim.claimId);
+      assert.equal(log.completions[0].leaseToken, baseClaim.leaseToken);
+    });
+  }
+
+  it('leaves retry limits to DB claims and does not resend after the DB stops returning claims', async () => {
+    let attempts = 0;
+    let sends = 0;
+    // DBの最大3回というclaim契約を模擬。実SQLの上限検証はSQLテストにある。
+    const { dependencies, log } = createMocks({
+      claimNotifications: async () => ({
+        claims: attempts < 3 ? [{ ...baseClaim, attempts: ++attempts, leaseToken: `lease-${attempts}` }] : [],
+        error: null,
+      }),
+      sendPushNotifications: async () => {
+        sends += 1;
+        return { sent: 0, error: new PushSendError({ temporary: 1, permanent: 0, unknown: 0 }) };
+      },
+    });
+    const poller = createFreeEndNotificationPoller(dependencies);
+    for (let i = 0; i < 5; i += 1) await poller.runOnce();
+    assert.equal(sends, 3);
+    assert.deepEqual(log.completions.map(({ status, leaseToken }) => ({ status, leaseToken })), [
+      { status: 'failed', leaseToken: 'lease-1' },
+      { status: 'failed', leaseToken: 'lease-2' },
+      { status: 'failed', leaseToken: 'lease-3' },
+    ]);
   });
 
   it('does not overlap runOnce executions', async () => {
