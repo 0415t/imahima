@@ -281,11 +281,14 @@ async function run() {
 
   // Test 4: re-notify after extension
   console.log('TEST 4: re-notify after extension');
-  const { data: profileB } = await supabase
+  const { data: profileB, error: profileBError } = await supabase
     .from('profiles')
     .select('free_until')
     .eq('id', userB)
     .single();
+  if (profileBError || !profileB || typeof profileB.free_until !== 'string') {
+    throw new Error(`Unable to read userB free_until: ${profileBError?.message ?? 'missing free_until'}`);
+  }
   const extendedUntil = new Date(new Date(profileB.free_until).getTime() + 30 * 60 * 1000);
   await supabase.from('profiles').update({ free_until: extendedUntil.toISOString() }).eq('id', userB);
   sendCalls = [];
