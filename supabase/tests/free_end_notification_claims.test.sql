@@ -21,22 +21,23 @@ where id in ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-22
              '55555555-5555-5555-5555-555555555555');
 
 -- テストユーザー作成（ローカルSupabase標準のinstance_idを使用）
-insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at)
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password, created_at, updated_at)
 values
-  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test1@example.com', '', now(), now(), now()),
-  ('22222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test2@example.com', '', now(), now(), now()),
-  ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test3@example.com', '', now(), now(), now()),
-  ('44444444-4444-4444-4444-444444444444', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test4@example.com', '', now(), now(), now()),
-  ('55555555-5555-5555-5555-555555555555', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test5@example.com', '', now(), now(), now());
+  ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test1@example.com', '', now(), now()),
+  ('22222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test2@example.com', '', now(), now()),
+  ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test3@example.com', '', now(), now()),
+  ('44444444-4444-4444-4444-444444444444', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test4@example.com', '', now(), now()),
+  ('55555555-5555-5555-5555-555555555555', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test5@example.com', '', now(), now());
 
--- 注意: profiles に id/is_free/free_until 以外の NOT NULL 列がある場合は値を追加すること
--- （profiles作成マイグレーションがリポジトリに無く全列構成は未確認）
+-- auth.users のトリガーが作成したプロフィールを更新する。
 insert into public.profiles (id, is_free, free_until) values
   ('11111111-1111-1111-1111-111111111111', true, now() + interval '4 minutes'),  -- 通常対象
   ('22222222-2222-2222-2222-222222222222', true, now() + interval '4 minutes'),  -- 延長テスト用
   ('33333333-3333-3333-3333-333333333333', true, now() - interval '1 minute'),   -- 期限切れ: 対象外
   ('44444444-4444-4444-4444-444444444444', true, null),                          -- 無期限ON: 対象外
-  ('55555555-5555-5555-5555-555555555555', true, now() + interval '4 minutes');  -- 手動OFFテスト用
+  ('55555555-5555-5555-5555-555555555555', true, now() + interval '4 minutes')  -- 手動OFFテスト用
+
+on conflict (id) do update set is_free = excluded.is_free, free_until = excluded.free_until;
 
 -- 1. 通常の通知対象取得 + 期限切れ/無期限ONの除外
 do $$

@@ -39,10 +39,10 @@ export function createPushNotificationService(options: {
     try {
       const { error } = await deleteDeviceToken(token);
       if (error) {
-        console.error('[push] 無効トークンの削除に失敗しました:', error);
+        console.error('[push] 無効トークンの削除に失敗しました');
       }
-    } catch (error) {
-      console.error('[push] 無効トークンの削除中に例外が発生しました:', error);
+    } catch {
+      console.error('[push] 無効トークンの削除中に例外が発生しました');
     }
   };
 
@@ -78,9 +78,9 @@ export function createPushNotificationService(options: {
       let tickets: ExpoPushTicket[];
       try {
         tickets = await expo.sendPushNotificationsAsync(chunk);
-      } catch (error) {
+      } catch {
         // 応答が得られないチャンクは受付結果不明。先行チャンクの成功は保持する。
-        console.error('[push] Expoへの送信に失敗しました:', error);
+        console.error('[push] Expoへの送信に失敗しました（受付結果不明）');
         failures.unknown += chunk.length;
         continue;
       }

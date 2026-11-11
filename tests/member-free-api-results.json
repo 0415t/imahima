@@ -1,0 +1,114 @@
+{
+  "at": "2026-11-11T05:03:27.242Z",
+  "checks": [
+    "A: real Auth password login 200",
+    "B: real Auth password login 200",
+    "missing/invalid Bearer: 401 and no DB mutation",
+    "B ON: HTTP response matches DB; event/outbox counts correct",
+    "A ON: HTTP response matches DB; event/outbox counts correct",
+    "A re-ON: unchanged event/outbox and ON period",
+    "manual push: 503; no DB change; workers not loaded"
+  ],
+  "users": {
+    "A": "0cefe9b9-8a3d-4a6d-aaea-f22190859cc6",
+    "B": "0f39a8b5-ac12-4dcc-bb87-67c7cd83aa86"
+  },
+  "responses": {
+    "failedLogin": {
+      "status": 400,
+      "code": "invalid_credentials"
+    },
+    "missingToken": {
+      "status": 401,
+      "body": {
+        "error": "Bearer token is required"
+      }
+    },
+    "invalidToken": {
+      "status": 401,
+      "body": {
+        "error": "Invalid or expired access token"
+      }
+    },
+    "BOn": {
+      "status": 200,
+      "body": {
+        "is_free": true,
+        "free_until": "2026-11-11T05:33:29.120257+00:00"
+      }
+    },
+    "AOn": {
+      "status": 200,
+      "body": {
+        "is_free": true,
+        "free_until": "2026-11-11T05:33:29.308062+00:00"
+      }
+    },
+    "AReOn": {
+      "status": 200,
+      "body": {
+        "is_free": true,
+        "free_until": "2026-11-11T05:33:29.308062+00:00"
+      }
+    },
+    "manualPush": {
+      "status": 503,
+      "body": {
+        "error": "Notifications are not configured"
+      }
+    }
+  },
+  "db": {
+    "profiles": [
+      {
+        "id": "0f39a8b5-ac12-4dcc-bb87-67c7cd83aa86",
+        "is_free": true,
+        "free_until": "2026-11-11T05:33:29.120257+00:00",
+        "free_period_id": "7d1815a1-f546-4ad5-a8fc-3b8a4ccf99db"
+      },
+      {
+        "id": "0cefe9b9-8a3d-4a6d-aaea-f22190859cc6",
+        "is_free": true,
+        "free_until": "2026-11-11T05:33:29.308062+00:00",
+        "free_period_id": "9847ac8c-a907-48c7-b27f-28ac8d30a3ee"
+      }
+    ],
+    "events": [
+      {
+        "id": "ed0decb7-b380-4512-ab13-1a74089e7148",
+        "actor_user_id": "0f39a8b5-ac12-4dcc-bb87-67c7cd83aa86",
+        "actor_period_id": "7d1815a1-f546-4ad5-a8fc-3b8a4ccf99db",
+        "actor_name": "API B",
+        "occurred_at": "2026-11-11T05:03:29.120257+00:00"
+      },
+      {
+        "id": "429b501a-2bb8-4cc1-85ec-7685681e6bfa",
+        "actor_user_id": "0cefe9b9-8a3d-4a6d-aaea-f22190859cc6",
+        "actor_period_id": "9847ac8c-a907-48c7-b27f-28ac8d30a3ee",
+        "actor_name": "API A",
+        "occurred_at": "2026-11-11T05:03:29.308062+00:00"
+      }
+    ],
+    "outbox": [
+      {
+        "id": "aca4ec09-44d7-43f3-9a89-762ee18dcf62",
+        "event_id": "429b501a-2bb8-4cc1-85ec-7685681e6bfa",
+        "recipient_user_id": "0f39a8b5-ac12-4dcc-bb87-67c7cd83aa86",
+        "recipient_period_id": "7d1815a1-f546-4ad5-a8fc-3b8a4ccf99db",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T05:03:29.308062+00:00",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T05:03:29.308062+00:00",
+        "updated_at": "2026-11-11T05:03:29.308062+00:00"
+      }
+    ]
+  },
+  "room": "89975738-774e-4629-a339-d4a362069d75",
+  "passed": true
+}

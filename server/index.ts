@@ -7,6 +7,7 @@ import {
 } from './jobs/free-end-notifications';
 import { createPushNotificationService } from './services/notifications';
 import { serverSupabase } from './services/supabase';
+import { createMemberFreeNotificationPoller, type MemberFreeClaim } from './jobs/member-free-notifications';
 
 const pushNotifications = createPushNotificationService({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
@@ -67,9 +68,11 @@ const app = createApp({
 });
 const port = Number(process.env.PORT ?? 3000);
 
-const server = app.listen(port, () => {
+const server = app.listen({ port, ...(process.env.HOST ? { host: process.env.HOST } : {}) }, () => {
   console.log(`API server listening on http://localhost:${port}`);
 });
+
+const notificationPollers: { stop: () => Promise<void> }[] = [];
 
 // 暇状態終了5分前通知ポーラー（環境変数で有効化。デフォルト無効）
 if (process.env.FREE_END_NOTIFICATIONS_ENABLED === 'true') {
@@ -121,10 +124,52 @@ if (process.env.FREE_END_NOTIFICATIONS_ENABLED === 'true') {
   });
 
   poller.start();
+  notificationPollers.push(poller);
   console.log('Free-end notification poller started');
+}
 
+if (process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true') {
+  const poller = createMemberFreeNotificationPoller({
+    claimNotifications: async () => {
+      const { data, error } = await serverSupabase.rpc('claim_member_free_notifications', {
+        p_limit: 20, p_lease_seconds: 120,
+        p_max_attempts: Number(process.env.MEMBER_FREE_NOTIFICATIONS_MAX_ATTEMPTS ?? 3),
+      });
+      const claims: MemberFreeClaim[] = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+        notificationId: String(row.notification_id), eventId: String(row.event_id),
+        recipientUserId: String(row.recipient_user_id), actorName: typeof row.actor_name === 'string' ? row.actor_name : null,
+        attempts: Number(row.attempts), leaseToken: String(row.lease_token),
+      }));
+      return { claims, error };
+    },
+    validateNotification: async (id, lease) => {
+      const { data, error } = await serverSupabase.rpc('validate_member_free_notification', {
+        p_notification: id, p_lease_token: lease,
+      });
+      const row = Array.isArray(data) ? data[0] : data;
+      return { validation: row ? { owned: row.owned === true, stillValid: row.still_valid === true } : null, error };
+    },
+    getDeviceTokens: async (userId) => {
+      const { data, error } = await serverSupabase.from('user_device_tokens').select('expo_push_token').eq('user_id', userId);
+      return { tokens: (data ?? []).map((row) => row.expo_push_token), error };
+    },
+    sendPushNotifications: pushNotifications.sendPushNotifications,
+    completeNotification: async (id, lease, status, errorMessage, acceptedCount) => {
+      const { data, error } = await serverSupabase.rpc('complete_member_free_notification', {
+        p_notification: id, p_lease_token: lease, p_status: status,
+        p_error: errorMessage ?? null, p_accepted_count: acceptedCount ?? 0,
+      });
+      return { completed: data === true, error };
+    },
+  }, { intervalMs: Number(process.env.MEMBER_FREE_NOTIFICATIONS_INTERVAL_MS ?? 5_000) });
+  poller.start();
+  notificationPollers.push(poller);
+  console.log('Member-free notification poller started');
+}
+
+if (notificationPollers.length) {
   const shutdown = () => {
-    void poller.stop().finally(() => {
+    void Promise.all(notificationPollers.map((poller) => poller.stop())).finally(() => {
       server.close(() => process.exit(0));
     });
   };
