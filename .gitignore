@@ -52,3 +52,24 @@ app-example
 /backups/
 *.dump
 *.backup
+
+# Local chat verification artifacts and unredacted historical records
+/supabase/.temp/
+.runtime/
+.env.local
+/verification/group-chat-local/archive-classification.local.json
+/verification/group-chat-local/prepare-archive-classification.mjs
+/verification/group-chat-local/apply-archive-migration.mjs
+/verification/group-chat-local/final-creator-exit.mjs
+/verification/group-chat-local/archive-realtime-followup.mjs
+/verification/group-chat-local/repair-archived-fixture.mjs
+/docs/group-chat-mvp-detailed-design.md
+/docs/group-chat-db-implementation.md
+/docs/group-chat-api-implementation.md
+/docs/group-chat-timeouts.md
+/docs/group-archive-implementation.md
+/verification/group-chat-local/INTEGRATION-RESULTS.md
+/verification/group-chat-local/PHASE3-RESULTS.md
+/verification/group-chat-local/FINAL-VALIDATION-RESULTS.md
+/verification/group-chat-local/ROOM-REPAIR-RESULTS.md
+/verification/group-chat-local/SCHEMA-APPLICATION.md
