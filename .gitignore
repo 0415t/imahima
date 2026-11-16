@@ -46,3 +46,9 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Manual database backups: may contain Auth credentials and Push Tokens
+/.local-backups/
+/backups/
+*.dump
+*.backup

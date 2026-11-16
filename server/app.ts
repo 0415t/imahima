@@ -1,14 +1,16 @@
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
+import { groupRouter, type GroupDependencies } from './groups';
 
 export type AvailabilityDependencies = {
   getUserId: (accessToken: string) => Promise<{ userId: string | null; error: unknown | null }>;
   toggleIsFree: (userId: string) => Promise<{ isFree: boolean | null; error: unknown | null }>;
 };
 
-export function createApp(dependencies: AvailabilityDependencies) {
+export function createApp(dependencies: AvailabilityDependencies, groups?: GroupDependencies) {
   const app = express();
 
   app.use(express.json());
+  if (groups) app.use('/groups', groupRouter(groups));
 
   app.get('/health', (_request, response) => {
     response.json({ ok: true });
@@ -51,5 +53,13 @@ export function createApp(dependencies: AvailabilityDependencies) {
     }
   });
 
+  const groupParseError: ErrorRequestHandler = (error, request, response, next) => {
+    if (!/^\/groups(?:\/|$)/.test(request.path)) { next(error); return; }
+    const status = error?.status === 413 ? 413 : error?.status === 400 ? 400 : 503;
+    response.set('Cache-Control', 'no-store').status(status).json({
+      error: status === 413 ? 'Request too large' : status === 400 ? 'Invalid JSON body' : 'Group service unavailable',
+    });
+  };
+  app.use(groupParseError);
   return app;
 }
