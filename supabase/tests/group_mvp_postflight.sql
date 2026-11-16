@@ -15,7 +15,10 @@ from pg_class c where c.oid in ('public.rooms'::regclass,'public.room_members'::
 ),
 general_table_privileges_rows AS (
 select r.role_name,t.table_name,x.privilege,
-       has_table_privilege(r.role_name,t.table_name,x.privilege) as allowed
+       case when x.privilege in ('SELECT','INSERT','UPDATE','REFERENCES')
+            then has_any_column_privilege(r.role_name,t.table_name,x.privilege)
+            else has_table_privilege(r.role_name,t.table_name,x.privilege)
+       end as allowed
 from (values ('anon'),('authenticated')) r(role_name)
 cross join (values ('public.rooms'),('public.room_members'),('public.group_mvp_rate_limits')) t(table_name)
 cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) x(privilege)
@@ -73,7 +76,7 @@ UNION ALL
 SELECT 3 AS section_order, 'general_table_privileges'::text AS section,
        jsonb_build_object(
          'status', CASE WHEN (SELECT count(*) FROM general_table_privileges_rows)=42 AND NOT EXISTS(SELECT 1 FROM general_table_privileges_rows WHERE allowed IS DISTINCT FROM false) THEN 'PASS' ELSE 'FAIL' END,
-         'expected', 'All 42 role/table/privilege combinations must have allowed=false, including TRUNCATE, REFERENCES and TRIGGER.',
+         'expected', 'All 42 role/table/privilege combinations must have allowed=false. SELECT, INSERT, UPDATE and REFERENCES include table-level and column-level privileges; DELETE, TRUNCATE and TRIGGER check table-level privileges.',
          'actual', (SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text), '[]'::jsonb) FROM general_table_privileges_rows r)
        ) AS data
 UNION ALL
