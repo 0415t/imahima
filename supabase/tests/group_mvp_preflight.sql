@@ -37,9 +37,25 @@ select n.nspname, c.relname, c.relkind, i.indisvalid, i.indisready,
        coalesce(c.relkind='i' AND i.indisvalid AND i.indisready
          AND i.indrelid=to_regclass('public.room_members') AND am.amname='btree'
          AND i.indnkeyatts=2 AND i.indnatts=2
+         AND NOT i.indisunique
          AND i.indpred IS NULL AND i.indexprs IS NULL
-         AND pg_get_indexdef(i.indexrelid,1,true)='user_id'
-         AND pg_get_indexdef(i.indexrelid,2,true)='room_id', false) as is_expected_definition
+         AND NOT EXISTS (
+           -- Catalog vectors use zero-based key positions. Both keys must match;
+           -- LEFT JOIN plus IS DISTINCT FROM true also rejects missing metadata.
+           select 1
+           from (values (0, 'user_id'), (1, 'room_id')) k(position, column_name)
+           left join pg_catalog.pg_attribute a
+             on a.attrelid=i.indrelid and a.attnum=i.indkey[k.position]
+           left join pg_catalog.pg_opclass opc on opc.oid=i.indclass[k.position]
+           left join pg_catalog.pg_namespace opn on opn.oid=opc.opcnamespace
+           where (a.attnum > 0 AND NOT a.attisdropped
+             AND a.attname=k.column_name AND a.atttypid='pg_catalog.uuid'::regtype
+             -- For B-tree, zero means ASC and NULLS LAST (neither flag set).
+             AND i.indoption[k.position]=0 AND i.indcollation[k.position]=0
+             AND opn.nspname='pg_catalog' AND opc.opcname='uuid_ops'
+             AND opc.opcmethod=c.relam AND opc.opcintype='pg_catalog.uuid'::regtype
+             AND opc.opcdefault) IS DISTINCT FROM true
+         ), false) as is_expected_definition
 from pg_class c join pg_namespace n on n.oid=c.relnamespace
 left join pg_index i on i.indexrelid=c.oid
 left join pg_am am on am.oid=c.relam
@@ -114,7 +130,7 @@ UNION ALL
 SELECT 6 AS section_order, 'membership_index'::text AS section,
        jsonb_build_object(
          'status', CASE WHEN EXISTS (SELECT 1 FROM membership_index_rows WHERE is_expected_definition IS DISTINCT FROM true) THEN 'FAIL' ELSE 'PASS' END,
-         'expected', 'Absent, or valid/ready ordinary btree index on public.room_members(user_id, room_id), with no predicate, expressions, INCLUDE columns or nondefault key formatting.',
+         'expected', 'Absent, or valid/ready ordinary non-UNIQUE btree index on public.room_members with exactly two UUID keys in order: user_id, room_id. Both keys must use ASC, NULLS LAST, pg_catalog.uuid_ops (default UUID btree operator class), and collation OID 0. No predicate, expressions or INCLUDE columns.',
          'actual', (SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text), '[]'::jsonb) FROM membership_index_rows r)
        ) AS data
 UNION ALL
