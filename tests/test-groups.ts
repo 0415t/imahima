@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { AuthApiError } from '@supabase/supabase-js';
 import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -41,7 +42,7 @@ describe('Group API authorization and contracts', () => {
     assert.equal(calls.length, 0); assert.equal(rateCalls.length, 0);
   });
   it('rejects invalid authentication before database access', async () => {
-    deps.getUserId = async () => ({ userId: null, error: new Error('invalid') });
+    deps.getUserId = async () => ({ userId: null, error: new AuthApiError('test invalid JWT', 403, 'bad_jwt') });
     assert.equal((await request('')).status, 401); assert.equal(calls.length, 0);
   });
   it('derives the creator from auth and ignores forged actor fields', async () => {

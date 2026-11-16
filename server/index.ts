@@ -2,12 +2,14 @@ import 'dotenv/config';
 import { serverSupabase } from './services/supabase';
 import { createApp } from './app';
 import { groupService } from './services/groups';
+import { chatService } from './services/chat';
 
 const getUserId = async (accessToken: string) => {
   const { data, error } = await serverSupabase.auth.getUser(accessToken);
   return { userId: data.user?.id ?? null, error };
 };
 
+const groups = groupService(serverSupabase, getUserId);
 const app = createApp({
   getUserId,
   toggleIsFree: async (userId) => {
@@ -16,7 +18,7 @@ const app = createApp({
     });
     return { isFree: data, error };
   },
-}, groupService(serverSupabase, getUserId));
+}, groups, chatService(serverSupabase, groups));
 const port = Number(process.env.PORT ?? 3000);
 
 app.listen(port, () => {
