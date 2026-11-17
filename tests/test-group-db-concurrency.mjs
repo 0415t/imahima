@@ -24,7 +24,7 @@ const rateKey = createHash('sha256').update(run).digest('hex');
 let observerSequence = 0;
 let interrupted;
 const interrupt = signal => {
-  interrupted = new Error(`Interrupted: ${signal}`);
+  interrupted ??= new Error(`Interrupted: ${signal}`);
   for (const session of sessions) session.fail(interrupted);
 };
 const onInterrupt = () => interrupt('SIGINT');
@@ -104,10 +104,22 @@ class Session {
     assert.ok(Number.isInteger(this.pid) && this.pid > 0, 'Missing backend PID');
     return this;
   }
-  async finish() {
-    await this.query('rollback;');
-    this.child.stdin.end('\\q\n');
-    await bounded(this.done, 5000, `Session exit: ${this.name}`);
+  finish() {
+    // Closing is independent of query failure and may be requested more than once.
+    this.finishing ??= (async () => {
+      let failure;
+      try {
+        if (!this.closed && !this.failure) await this.query('rollback;');
+      } catch (error) { failure = error; }
+      finally {
+        if (!this.closed && !this.child.stdin.destroyed && !this.child.stdin.writableEnded) {
+          this.child.stdin.end('\\q\n');
+        }
+      }
+      await bounded(this.done, 5000, `Session exit: ${this.name}`);
+      if (failure) throw failure;
+    })();
+    return this.finishing;
   }
 }
 
@@ -167,19 +179,26 @@ async function cleanup() {
   const errors = [];
   try { sql(`select pg_cancel_backend(pid) from pg_stat_activity where ${owned} and state='active';`); }
   catch (error) { errors.push(error); }
-  for (const session of sessions.filter(item => !item.closed)) {
-    try {
-      if (session.pending) await bounded(session.done, 1000, 'Cancelled backend exit');
-      if (!session.closed && !session.failure) await session.finish();
-    } catch { /* Scoped termination below handles failed/unresponsive sessions. */ }
+  // Stop outstanding jobs before closing their input; rejecting a query is not cancellation.
+  for (const session of sessions) {
+    if (session.pending) session.fail(new Error('Session stopped for cleanup'));
   }
+  const exits = await Promise.allSettled(sessions.filter(item => !item.closed).map(session => session.finish()));
+  for (const exit of exits) if (exit.status === 'rejected') errors.push(exit.reason);
+  try { sql(`select pg_terminate_backend(pid) from pg_stat_activity where ${owned};`); }
+  catch (error) { errors.push(error); }
+  // A terminated backend does not imply that docker/psql has closed its input or exited.
+  for (const session of sessions.filter(item => !item.closed)) {
+    session.child.stdin.destroy(); session.child.kill();
+  }
+  let safeToDelete = false;
   try {
-    sql(`select pg_terminate_backend(pid) from pg_stat_activity where ${owned};`);
     await bounded(Promise.all(sessions.map(session => session.done)), 5000, 'All session exits');
     assert.equal(sql(`select count(*) from pg_stat_activity where ${owned};`), '0', 'Test backends remain');
+    safeToDelete = true;
   } catch (error) { errors.push(error); }
-  // Never DELETE while a failed test session might still hold locks.
-  if (!errors.length) {
+  // Recovered exit errors still fail the test, but do not prevent safe data cleanup.
+  if (safeToDelete) {
     try {
       sql(`begin;
         ${rooms.map(id => `delete from public.rooms where id='${id}';`).join('\n')}
@@ -196,9 +215,6 @@ async function cleanup() {
         (select count(*) from public.group_mvp_rate_limits where key_hash='${rateKey}');`), '0', 'Test data remains');
       console.log(JSON.stringify({ event: 'cleanup', run, sessions: 'zero', test_data: 'zero' }));
     } catch (error) { errors.push(error); }
-  }
-  for (const session of sessions.filter(item => !item.closed)) {
-    session.child.stdin.destroy(); session.child.kill(); // Backend termination checked separately.
   }
   if (errors.length) throw new AggregateError(errors, 'Cleanup failed');
 }
@@ -242,5 +258,7 @@ finally {
   catch (error) { failure = failure ? new AggregateError([failure, error], 'Test and cleanup failed') : error; }
   process.off('SIGINT', onInterrupt); process.off('SIGTERM', onTerminate);
 }
-if (failure) throw failure;
+if (failure || interrupted) {
+  throw failure ?? interrupted;
+}
 console.log('PASS: leave/join, two departures, rate limit (one observed pair; remaining eight attempts not proven concurrent)');
