@@ -9,14 +9,14 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance, monitorEventLoopDelay } from 'node:perf_hooks';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { Client } from 'pg';
 import { connectVerified, runtime } from './schema-tools.mjs';
 import { createApp } from '../../server/app.ts';
 import { groupService } from '../../server/services/groups.ts';
 import { chatService } from '../../server/services/chat.ts';
 import { timeoutFetch } from '../../server/timeouts.ts';
-import { waitForBarrier } from './barriers.mjs';
+import { waitForBarrier, waitForBlockedRpc } from './barriers.mjs';
+import { assertRpcLockTimeout } from './timeout-evidence.mjs';
 
 const require = createRequire(new URL('../../server/index.ts', import.meta.url));
 const { createClient } = require('@supabase/supabase-js');
@@ -38,31 +38,32 @@ async function main() {
   assert.equal(status.API_URL, 'http://127.0.0.1:56321');
   const dbUrl = new URL(status.DB_URL);
   blocker = new Client({ host: '127.0.0.1', port: 56322, database: 'postgres',
-    user: decodeURIComponent(dbUrl.username), password: decodeURIComponent(dbUrl.password), ssl: false, connectionTimeoutMillis: 5000 });
+    user: decodeURIComponent(dbUrl.username), password: decodeURIComponent(dbUrl.password), ssl: false, connectionTimeoutMillis: 5000, query_timeout: 10000 });
   await blocker.connect();
   const { rows: [pid] } = await blocker.query('select pg_backend_pid() as id');
   const fetcher = async (input, init) => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     assert.equal(url.origin, 'http://127.0.0.1:56321');
     const timing = { request_id: correlation.getStore(), stage: url.pathname.startsWith('/auth/') ? 'auth' :
-      url.pathname.startsWith('/rest/v1/rpc/') ? 'rpc' : 'membership', started_at: new Date().toISOString() };
+      url.pathname.startsWith('/rest/v1/rpc/') ? 'rpc' : 'membership', operation: url.pathname.split('/').at(-1), started_at: new Date().toISOString() };
     upstream.push(timing); const start = performance.now();
-    let response;
-    try { response = await fetch(input, { ...init, redirect: 'error' }); }
-    catch (error) { timing.error_type = error.name; timing.elapsed_ms = Math.round(performance.now() - start); throw error; }
-    timing.headers_ms = Math.round(performance.now() - start); timing.http_status = response.status;
-    if (url.pathname === '/rest/v1/rpc/chat_send_message' && delayedId && JSON.parse(init.body).p_client_message_id === delayedId) {
-      delayedId = null;
+    try {
+      const response = await fetch(input, { ...init, redirect: 'error' });
+      timing.headers_ms = Math.round(performance.now() - start); timing.http_status = response.status;
       const body = await response.arrayBuffer();
-      // Successful RPC response proves its transaction has completed; suppress
-      // its delivery to Express to reproduce a lost post-COMMIT response.
-      committed();
-      await new Promise(resolve => { releaseResponse = resolve; });
-      timing.elapsed_ms = Math.round(performance.now() - start);
-      return new Response(body, { status: response.status, headers: response.headers });
-    }
-    const body = await response.arrayBuffer(); timing.elapsed_ms = Math.round(performance.now() - start);
-    return new Response([204, 205, 304].includes(response.status) ? null : body, { status: response.status, headers: response.headers });
+      if (timing.stage === 'rpc' && !response.ok) {
+        // Keep only the SQLSTATE, never message contents or credentials.
+        try { timing.db_error_code = JSON.parse(new TextDecoder().decode(body)).code; } catch { /* Non-JSON transport response. */ }
+      }
+      if (url.pathname === '/rest/v1/rpc/chat_send_message' && delayedId && JSON.parse(init.body).p_client_message_id === delayedId) {
+        delayedId = null;
+        assert.equal(response.status, 200, 'COMMIT barrier requires a successful RPC response');
+        committed();
+        await new Promise(resolve => { releaseResponse = resolve; });
+      }
+      return new Response([204, 205, 304].includes(response.status) ? null : body, { status: response.status, headers: response.headers });
+    } catch (error) { timing.error_type = error.name; throw error; }
+    finally { timing.elapsed_ms = Math.round(performance.now() - start); }
   };
   admin = createClient(status.API_URL, status.SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: timeoutFetch(fetcher) },
@@ -111,27 +112,24 @@ async function main() {
   stage = 'test-execution';
   const send = (id, body = 'timeout verification', signal) => api(`/groups/${room}/messages`, 'POST', { body, client_message_id: id }, signal);
   async function lock() { await blocker.query('begin'); await blocker.query('select id from public.rooms where id=$1 for update', [room]); }
-  async function waitBlocked() {
-    for (let i = 0; i < 60; i++) {
-      const { rows: [r] } = await db.query('select exists(select 1 from pg_stat_activity where $1=any(pg_blocking_pids(pid))) as waiting', [pid.id]);
-      if (r.waiting) return;
-      await sleep(50);
-    }
-    throw Error('Expected blocked RPC');
-  }
+  const waitBlocked = request => waitForBlockedRpc(db, pid.id, 'chat_send_message', request);
   await test('real RPC lock wait expires with HTTP 503 and same ID retry succeeds once', async () => {
     const id = randomUUID(); await lock();
-    const started = Date.now(); const r = await send(id);
-    assert.equal(r.status, 503); assert.ok(Date.now() - started >= 4500);
+    const first = send(id), requestId = String(requestNumber);
+    await waitBlocked(first);
+    diagnostics.push({ request_id: requestId, event: 'send-rpc-blocked-on-room' });
+    const r = await first;
+    assert.equal(r.status, 503); assert.equal(r.data.code, 'CHAT_UNAVAILABLE');
+    assertRpcLockTimeout(upstream, requestId);
     await blocker.query('commit'); assert.equal((await send(id)).status, 201);
   });
   await test('disconnect before COMMIT then parallel replay creates one row and one event', async () => {
     const id = randomUUID(); await lock();
     const controller = new AbortController();
     const first = send(id, 'timeout verification', controller.signal).then(() => 'response', () => 'disconnected');
-    await waitBlocked(); controller.abort(); assert.equal(await first, 'disconnected');
+    await waitBlocked(first); controller.abort(); assert.equal(await first, 'disconnected');
     const retries = [send(id), send(id)];
-    await sleep(100); await blocker.query('commit');
+    await waitBlocked(Promise.all(retries)); await blocker.query('commit');
     const statuses = (await Promise.all(retries)).map(r => r.status);
     assert.ok(statuses.every(s => [200, 201].includes(s)));
     const { rows: [r] } = await db.query('select count(*)::int as n from public.messages where sender_id=$1 and client_message_id=$2', [user, id]);

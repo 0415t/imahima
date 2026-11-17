@@ -96,11 +96,15 @@ describe('Chat HTTP contracts', () => {
     deps.isMember = async () => { throw Error('secret'); }; await check();
     deps.getUserId = async () => { throw Error('secret'); }; await check();
   });
-  it('returns safe coded JSON for invalid JSON and oversized bodies', async () => {
+  for (const route of ['lowercase', 'upper-resource', 'mixed-prefix']) it(`returns safe coded JSON for invalid JSON and oversized bodies: ${route}`, async () => {
+    const url = route === 'mixed-prefix' ? base.replace('/groups/', '/GrOuPs/') + '/MeSsAgEs'
+      : base + (route === 'upper-resource' ? '/MESSAGES' : '/messages');
     for (const [body, status, code] of [['{bad', 400, 'INVALID_INPUT'], [JSON.stringify({ body: 'x'.repeat(110000) }), 413, 'PAYLOAD_TOO_LARGE']] as const) {
-      const r = await fetch(base + '/messages', { method: 'POST', headers: { Authorization: 'Bearer valid', 'Content-Type': 'application/json' }, body });
+      const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer valid', 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(2000) });
       assert.equal(r.status, status); assert.equal((await r.json()).code, code);
+      assert.equal(r.headers.get('cache-control'), 'no-store');
     }
+    assert.deepEqual(calls, []);
   });
 });
 

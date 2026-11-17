@@ -77,7 +77,8 @@ for (const stage of ['auth', 'membership', 'rpc'] as const) {
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     const routes = [['POST', `/groups/${room}/messages`], ['GET', `/groups/${room}/messages`],
       ['DELETE', `/groups/${room}/messages/${message}`], ['GET', `/groups/${room}/message-events`],
-      ['GET', `/GROUPS/${room}/MeSsAgEs`], ['GET', `/GrOuPs/${room}/MESSAGE-EVENTS`], ['GET', `/groups/${room}/members`]];
+      ['GET', `/GROUPS/${room}/MeSsAgEs`], ['POST', `/GrOuPs/${room}/MESSAGES`],
+      ['GET', `/GrOuPs/${room}/MESSAGE-EVENTS`], ['GET', `/groups/${room}/members`]];
     try {
       for (const [method, path] of routes) {
         const response: Response = await fetch(`http://127.0.0.1:${address.port}${path}`, {

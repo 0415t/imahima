@@ -10,7 +10,7 @@ export type ChatDependencies = Pick<GroupDependencies, 'getUserId' | 'isMember'>
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const sequence = (v: unknown): v is string => typeof v === 'string' && /^(0|[1-9][0-9]*)$/.test(v) && v.length <= 19 && BigInt(v) <= 9223372036854775807n;
-export const isChatPath = (path: string) => /^\/groups\/[^/]+\/(?:messages|message-events)(?:\/|$)/.test(path);
+export const isChatPath = (path: string) => /^\/groups\/[^/]+\/(?:messages|message-events)(?:\/|$)/i.test(path);
 
 function decodeCursor(value: unknown, room: string, events: boolean): Record<string, unknown> {
   if (typeof value !== 'string' || value.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(value)) throw Error('cursor');

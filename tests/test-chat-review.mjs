@@ -9,6 +9,32 @@ import { dockerSocket } from '../verification/group-chat-local/docker-endpoint.m
 import { waitForBarrier, waitForBlockedRpc } from '../verification/group-chat-local/barriers.mjs';
 import { fileFingerprint, completeHistory } from '../verification/group-chat-local/diagnostic-utils.mjs';
 import { restrictSecrets, stopDedicated } from '../verification/group-chat-local/stack-safety.mjs';
+import { assertRpcLockTimeout } from '../verification/group-chat-local/timeout-evidence.mjs';
+
+it('RPC timeout evidence rejects an Auth-only 503 that satisfied the former elapsed-time check', () => {
+  const response = { status: 503, elapsed_ms: 5000 };
+  assert.ok(response.status === 503 && response.elapsed_ms >= 4500);
+  assert.throws(() => assertRpcLockTimeout([{ request_id: 'send', stage: 'auth', http_status: 503, elapsed_ms: 5000 }], 'send'), /auth must succeed/);
+});
+
+it('RPC timeout evidence requires correlated successful Auth/membership and a timed-out send RPC', () => {
+  const rows = [
+    { request_id: 'send', stage: 'auth', http_status: 200 },
+    { request_id: 'send', stage: 'membership', http_status: 200 },
+    { request_id: 'send', stage: 'rpc', operation: 'chat_send_message', http_status: 500, elapsed_ms: 5000, db_error_code: '55P03' },
+  ];
+  assertRpcLockTimeout(rows, 'send');
+  for (const error_type of ['AbortError', 'TimeoutError']) assertRpcLockTimeout([
+    ...rows.slice(0, 2), { ...rows[2], http_status: undefined, db_error_code: undefined, error_type },
+  ], 'send');
+  assert.throws(() => assertRpcLockTimeout(rows, 'other-request'), /auth must succeed/);
+  assert.throws(() => assertRpcLockTimeout([rows[0], { ...rows[1], http_status: 503 }, rows[2]], 'send'), /membership must succeed/);
+  assert.throws(() => assertRpcLockTimeout(rows.slice(0, 2), 'send'), /one send RPC/);
+  for (const mutation of [{ operation: 'chat_list_messages' }, { elapsed_ms: 10 }, { db_error_code: 'XX000' }]) {
+    assert.throws(() => assertRpcLockTimeout([...rows.slice(0, 2), { ...rows[2], ...mutation }], 'send'));
+  }
+  assert.throws(() => assertRpcLockTimeout([...rows, rows[2]], 'send'), /one send RPC/);
+});
 
 it('startup failure stops only fully verified dedicated targets and preserves volumes', () => {
   const root = path.resolve('fixture'), project = 'dedicated', network = 'isolated';

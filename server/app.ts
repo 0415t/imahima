@@ -349,7 +349,7 @@ export function createApp(
 
   const groupParseError: ErrorRequestHandler = (error, request, response, next) => {
     if (response.headersSent || response.destroyed) return;
-    if (!/^\/groups(?:\/|$)/.test(request.path)) { next(error); return; }
+    if (!/^\/groups(?:\/|$)/i.test(request.path)) { next(error); return; }
     const status = error?.status === 413 ? 413 : error?.status === 400 ? 400 : 503;
     if (chat && isChatPath(request.path)) {
       response.set('Cache-Control', 'no-store').status(status).json({
