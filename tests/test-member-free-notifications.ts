@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createMemberFreeNotificationPoller, type MemberFreeClaim, type MemberFreeDependencies } from '../server/jobs/member-free-notifications';
+import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim, type MemberFreeDependencies } from '../server/jobs/member-free-notifications';
 import { createPushNotificationService, PushSendError, type PushClient } from '../server/services/notifications';
 
 const claim: MemberFreeClaim = { notificationId: 'n1', eventId: 'e1', recipientUserId: 'recipient', actorName: '太郎', attempts: 1, leaseToken: 'lease' };
@@ -24,6 +24,71 @@ function fixture(overrides: Partial<MemberFreeDependencies> = {}) {
 }
 
 describe('member-free notification poller', () => {
+  it('accepts default and boundary max attempts and rejects invalid values', () => {
+    assert.equal(parseMemberFreeMaxAttempts(undefined), 3);
+    for (const value of ['1', '3', '10']) assert.equal(parseMemberFreeMaxAttempts(value), Number(value));
+    for (const value of ['', ' ', '0', '11', '1.1', 'NaN', 'Infinity']) {
+      assert.throws(() => parseMemberFreeMaxAttempts(value), /must be an integer from 1 to 10/);
+    }
+  });
+
+  it('does not send when stopped during the final eligibility check', async () => {
+    let checked!: () => void;
+    let release!: () => void;
+    const checking = new Promise<void>((resolve) => { checked = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let calls = 0;
+    const f = fixture({ validateNotification: async () => {
+      if (++calls === 2) { checked(); await gate; }
+      return { validation: { owned: true, stillValid: true }, error: null };
+    } });
+    const poller = createMemberFreeNotificationPoller(f.dependencies);
+    const cycle = poller.runOnce();
+    await checking;
+    const stopping = poller.stop(); release();
+    await Promise.all([cycle, stopping]);
+    assert.equal(f.sends.length, 0);
+  });
+
+  for (const stage of ['claimNotifications', 'validateNotification', 'getDeviceTokens', 'sendPushNotifications', 'completeNotification'] as const) {
+    it(`bounds a stalled ${stage}, aborts it and permits the next cycle`, { timeout: 1000 }, async () => {
+      let calls = 0;
+      let signal: AbortSignal | undefined;
+      const f = fixture();
+      const original = f.dependencies[stage];
+      Object.assign(f.dependencies, { [stage]: (...args: unknown[]) => {
+        calls++;
+        if (calls === 1) {
+          signal = args.at(-1) as AbortSignal;
+          return new Promise(() => {});
+        }
+        return (original as (...args: unknown[]) => unknown)(...args);
+      } });
+      const poller = createMemberFreeNotificationPoller(f.dependencies, { requestTimeoutMs: 20 });
+      await poller.runOnce();
+      assert.equal(signal?.aborted, true);
+      await poller.runOnce();
+      assert.ok(calls >= 2);
+      await poller.stop();
+    });
+  }
+
+  it('bounds shutdown even if an in-flight dependency ignores cancellation', { timeout: 1000 }, async () => {
+    let signal: AbortSignal | undefined;
+    let release!: (value: { claims: MemberFreeClaim[]; error: null }) => void;
+    const f = fixture({ claimNotifications: (incoming) => {
+      signal = incoming;
+      return new Promise((resolve) => { release = resolve; });
+    } });
+    const poller = createMemberFreeNotificationPoller(f.dependencies, { requestTimeoutMs: 500, stopTimeoutMs: 20 });
+    const running = poller.runOnce();
+    await poller.stop();
+    assert.equal(signal?.aborted, true);
+    release({ claims: [claim], error: null });
+    await running;
+    assert.equal(f.sends.length, 0);
+  });
+
   it('sends to every recipient device with the event ID and original lease', async () => {
     const f = fixture();
     await createMemberFreeNotificationPoller(f.dependencies).runOnce();

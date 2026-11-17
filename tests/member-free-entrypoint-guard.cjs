@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const https = require('node:https');
+const { urlToHttpOptions } = require('node:url');
 const { syncBuiltinESMExports } = require('node:module');
 const config = JSON.parse(fs.readFileSync('.env.member-free-api.local', 'utf8'));
 assert.equal(config.url, 'http://127.0.0.1:55440');
@@ -31,16 +32,22 @@ for (const [module, protocol] of [[http, 'http:'], [https, 'https:']]) {
   for (const method of ['request', 'get']) {
     const original = module[method];
     module[method] = function (input, ...args) {
-      const options = typeof input === 'string' || input instanceof URL ? {} : input;
-      const url = typeof input === 'string' || input instanceof URL ? new URL(input)
-        : new URL(`${options.protocol ?? protocol}//${options.hostname ?? options.host ?? 'localhost'}${options.port ? `:${options.port}` : ''}`);
+      const hasUrl = typeof input === 'string' || input instanceof URL;
+      const options = hasUrl ? { ...urlToHttpOptions(new URL(input)),
+        ...(typeof args[0] === 'object' && args[0] !== null ? args[0] : {}) } : { ...input };
+      const callback = args.find((arg) => typeof arg === 'function');
+      const url = new URL(`${options.protocol ?? protocol}//${options.hostname ?? options.host ?? 'localhost'}${options.port ? `:${options.port}` : ''}`);
       allowed(url);
-      return original.call(this, input, ...args);
+      return original.call(this, options, callback);
     };
   }
 }
 syncBuiltinESMExports();
 assert.throws(() => https.request('https://exp.host/--/api/v2/push/send'), /OUTBOUND_BLOCKED/);
+for (const method of ['request', 'get']) {
+  assert.throws(() => http[method](config.url, { hostname: 'example.com', port: 80 }), /OUTBOUND_BLOCKED/);
+  assert.throws(() => http[method](config.url, { port: 80 }), /OUTBOUND_BLOCKED/);
+}
 audit.blockedExternal = 0;
 audit.guardSelfTestPassed = true;
 // IPC delivers the normal shutdown signal handler on Windows, where child.kill is forceful.

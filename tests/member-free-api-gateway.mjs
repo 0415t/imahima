@@ -18,7 +18,11 @@ const server = http.createServer((req, res) => {
     path: req.url.slice(auth ? '/auth/v1'.length : '/rest/v1'.length),
     headers: { ...req.headers, host: auth ? 'imahima-member-free-api-auth:9999' : 'imahima-member-free-api-rest:3000' },
     timeout: 10000,
-  }, (response) => { res.writeHead(response.statusCode, response.headers); response.pipe(res); });
+  }, (response) => {
+    res.writeHead(response.statusCode, response.headers);
+    response.on('close', () => { if (!response.complete) res.destroy(); });
+    response.pipe(res);
+  });
   upstream.on('timeout', () => upstream.destroy());
   upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
   req.pipe(upstream);

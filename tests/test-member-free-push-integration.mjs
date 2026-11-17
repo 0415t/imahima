@@ -62,8 +62,8 @@ test('normal entrypoint and real DB push worker with mocked Expo transport', { t
   }
   async function stop(instance, graceful = true) {
     const closed = once(instance.child, 'close');
-    if (graceful) instance.child.send({ type: 'local-verification-shutdown' }); else instance.child.kill();
-    const timer = setTimeout(() => instance.child.kill(), 6000);
+    if (graceful) instance.child.send({ type: 'local-verification-shutdown' }); else instance.child.kill('SIGKILL');
+    const timer = setTimeout(() => instance.child.kill('SIGKILL'), 6000);
     const [code] = await closed; clearTimeout(timer); processes.delete(instance.child);
     if (graceful) assert.equal(code, 0);
     return instance.logs();
@@ -152,7 +152,10 @@ test('normal entrypoint and real DB push worker with mocked Expo transport', { t
     assert.equal(Date.parse(retry.failed.next_attempt_at) - Date.parse(retry.failed.updated_at), 5000);
     await stop(failing);
     const recovering = await start('success', true);
-    await pause(300); assert.equal(count(recovering, retry.notificationId), 0);
+    await pause(300);
+    if (Date.now() < Date.parse(retry.failed.next_attempt_at)) {
+      assert.equal(count(recovering, retry.notificationId), 0);
+    }
     retry.final = await state(retry.notificationId, 'sent');
     assert.equal(retry.final.attempts, 2); assert.equal(retry.final.accepted_count, 1);
     assert.equal(count(recovering, retry.notificationId), 1); await stop(recovering); retry.mockCalls = 2; retry.passed = true;
@@ -192,14 +195,22 @@ test('normal entrypoint and real DB push worker with mocked Expo transport', { t
     }
     report.passed = true;
   } finally {
-    for (const child of processes) child.kill();
+    for (const child of processes) child.kill('SIGKILL');
     // Remove only this run's synthetic token. Keep prior data, users, queue and Docker resources.
     try {
       assert.ok(identityVerified, 'No DB cleanup before identity verification');
       const result = await request(config.url, `/rest/v1/user_device_tokens?expo_push_token=eq.${encodeURIComponent(token)}`, 'DELETE');
       report.fakeTokenRemoved = result.status === 200 || result.status === 204;
     } catch { report.fakeTokenRemoved = false; }
-    if (identityVerified) report.after = (await rows('member_free_notifications')).map(({ id, status, attempts, accepted_count }) => ({ id, status, attempts, accepted_count }));
-    writeFileSync('tests/member-free-push-integration-results.json', JSON.stringify(report, null, 2));
+    if (identityVerified && !report.fakeTokenRemoved) report.passed = false;
+    try {
+      if (identityVerified) report.after = (await rows('member_free_notifications')).map(({ id, status, attempts, accepted_count }) => ({ id, status, attempts, accepted_count }));
+    } catch (error) {
+      report.passed = false;
+      throw error;
+    } finally {
+      writeFileSync('tests/member-free-push-integration-results.json', JSON.stringify(report, null, 2));
+      if (identityVerified) assert.equal(report.fakeTokenRemoved, true, 'Synthetic token cleanup failed');
+    }
   }
 });

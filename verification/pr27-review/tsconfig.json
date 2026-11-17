@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": [
+    "../../server/**/*.ts",
+    "../../tests/test-member-free-notifications.ts",
+    "../../tests/test-member-free-transport.ts",
+    "../../tests/test-push-notification-service.ts",
+    "../../tests/test-notifications.ts",
+    "../../tests/test-free-end-notifications.ts",
+    "../../tests/test-free-end-action.ts",
+    "../../tests/test-extend-from-notification.ts",
+    "../../tests/test-profile-toggle.ts"
+  ],
+  "exclude": ["../../server/node_modules"]
+}

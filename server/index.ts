@@ -7,15 +7,19 @@ import {
 } from './jobs/free-end-notifications';
 import { createPushNotificationService } from './services/notifications';
 import { serverSupabase } from './services/supabase';
-import { createMemberFreeNotificationPoller, type MemberFreeClaim } from './jobs/member-free-notifications';
+import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim } from './jobs/member-free-notifications';
+
+const memberFreeMaxAttempts = process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true'
+  ? parseMemberFreeMaxAttempts(process.env.MEMBER_FREE_NOTIFICATIONS_MAX_ATTEMPTS) : 3;
 
 const pushNotifications = createPushNotificationService({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
-  deleteDeviceToken: async (token) => {
-    const { error } = await serverSupabase
+  deleteDeviceToken: async (token, signal) => {
+    const query = serverSupabase
       .from('user_device_tokens')
       .delete()
       .eq('expo_push_token', token);
+    const { error } = await (signal ? query.abortSignal(signal) : query);
     return { error };
   },
 });
@@ -130,11 +134,11 @@ if (process.env.FREE_END_NOTIFICATIONS_ENABLED === 'true') {
 
 if (process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true') {
   const poller = createMemberFreeNotificationPoller({
-    claimNotifications: async () => {
+    claimNotifications: async (signal) => {
       const { data, error } = await serverSupabase.rpc('claim_member_free_notifications', {
         p_limit: 20, p_lease_seconds: 120,
-        p_max_attempts: Number(process.env.MEMBER_FREE_NOTIFICATIONS_MAX_ATTEMPTS ?? 3),
-      });
+        p_max_attempts: memberFreeMaxAttempts,
+      }).abortSignal(signal!);
       const claims: MemberFreeClaim[] = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
         notificationId: String(row.notification_id), eventId: String(row.event_id),
         recipientUserId: String(row.recipient_user_id), actorName: typeof row.actor_name === 'string' ? row.actor_name : null,
@@ -142,23 +146,23 @@ if (process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true') {
       }));
       return { claims, error };
     },
-    validateNotification: async (id, lease) => {
+    validateNotification: async (id, lease, signal) => {
       const { data, error } = await serverSupabase.rpc('validate_member_free_notification', {
         p_notification: id, p_lease_token: lease,
-      });
+      }).abortSignal(signal!);
       const row = Array.isArray(data) ? data[0] : data;
       return { validation: row ? { owned: row.owned === true, stillValid: row.still_valid === true } : null, error };
     },
-    getDeviceTokens: async (userId) => {
-      const { data, error } = await serverSupabase.from('user_device_tokens').select('expo_push_token').eq('user_id', userId);
+    getDeviceTokens: async (userId, signal) => {
+      const { data, error } = await serverSupabase.from('user_device_tokens').select('expo_push_token').eq('user_id', userId).abortSignal(signal!);
       return { tokens: (data ?? []).map((row) => row.expo_push_token), error };
     },
     sendPushNotifications: pushNotifications.sendPushNotifications,
-    completeNotification: async (id, lease, status, errorMessage, acceptedCount) => {
+    completeNotification: async (id, lease, status, errorMessage, acceptedCount, signal) => {
       const { data, error } = await serverSupabase.rpc('complete_member_free_notification', {
         p_notification: id, p_lease_token: lease, p_status: status,
         p_error: errorMessage ?? null, p_accepted_count: acceptedCount ?? 0,
-      });
+      }).abortSignal(signal!);
       return { completed: data === true, error };
     },
   }, { intervalMs: Number(process.env.MEMBER_FREE_NOTIFICATIONS_INTERVAL_MS ?? 5_000) });
@@ -168,9 +172,18 @@ if (process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true') {
 }
 
 if (notificationPollers.length) {
+  let shuttingDown = false;
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Bound the entire shutdown as well, including other pollers and HTTP clients.
+    const deadline = setTimeout(() => {
+      server.closeAllConnections();
+      process.exit(0);
+    }, 10_000);
+    deadline.unref();
     void Promise.all(notificationPollers.map((poller) => poller.stop())).finally(() => {
-      server.close(() => process.exit(0));
+      server.close(() => { clearTimeout(deadline); process.exit(0); });
     });
   };
   process.on('SIGINT', shutdown);
