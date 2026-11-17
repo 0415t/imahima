@@ -49,6 +49,84 @@ Run the endpoint tests without connecting to Supabase:
 npm run test:profile-toggle
 ```
 
+## Set the current user's availability explicitly
+
+Apply `supabase/migrations/20261104000000_profile_free_until.sql` to the Supabase project before using the endpoint. The function sets `profiles.is_free` explicitly and manages a timer via `free_until`.
+
+The subsequent atomic setter migration is also required for unlimited ON and
+preserved timers. In the merged migration history, group management keeps version
+`20261111000000`; profile write restrictions use
+`20261111000001_restrict_profile_client_writes.sql` to avoid a duplicate version.
+
+```http
+PUT /profiles/me/is-free
+Authorization: ****** access token>
+Content-Type: application/json
+
+{ "is_free": true, "duration_minutes": 60 }
+```
+
+- 新規ONまたは期限切れ後の再ONで時間を指定すると、`free_until` が現在時刻+指定時間に設定される
+- `duration_minutes` の許可値は 30, 60, 120, 180。省略または `null` はタイマーなしの無期限ON（`free_until: null`）になる
+- 既に有効なON状態で再度ONを指定した場合、指定時間にかかわらず既存の `free_until` を維持する。無期限ONもそのまま維持する
+- `is_free: false` を設定すると、`free_until` が `null` になる
+- 有効判定は `is_free = true AND (free_until IS NULL OR free_until > now())`。期限切れの場合は `is_free: false` が返る
+
+成功時のレスポンス:
+
+```json
+{ "is_free": true, "free_until": "2026-11-04T18:00:00.000Z" }
+```
+
+無期限ONの成功時は `{ "is_free": true, "free_until": null }` が返る。
+
+## Send a test push notification
+
+Apply `supabase/migrations/20261017000000_create_user_device_tokens.sql` and sign in on a physical device so the Expo Push Token is stored in `user_device_tokens` before using the endpoint.
+
+```http
+POST /notifications/test
+Authorization: ****** access token>
+```
+
+The server validates the access token with Supabase Auth, fetches only the authenticated user's device tokens, and sends a fixed test notification via the Expo Push API. The request body cannot specify a destination user or push token.
+
+- `200 { "sent": 1 }` — accepted by the Expo Push API (push ticket `status: "ok"`)
+- `200 { "sent": 0, "message": "No registered devices" }` — no registered devices
+- `401` — missing or invalid access token
+- `429` — rate limited (one successful test notification per user per minute; failed sends and users without devices do not consume the limit)
+- `502` — failed to send to the Expo Push API
+
+Tokens reported as `DeviceNotRegistered` in push tickets are deleted from `user_device_tokens`. Set `EXPO_ACCESS_TOKEN` in `server/.env` to authenticate against the Expo Push API (optional but recommended). Never expose it to the Expo app.
+
+**Known limitation / future work:** delivery is only confirmed at the push-ticket stage. A ticket `status: "ok"` means the Expo Push API accepted the notification, not that the device received it. Delayed verification via push receipts (`getPushNotificationReceiptsAsync`) and cleanup of tokens that fail at the delivery stage are future work.
+
+Run the endpoint tests without connecting to Supabase or Expo:
+
+```powershell
+npm run test:notifications
+```
+
+## Explicit integration and live push tests
+
+`npm test` runs the tests under `tests/`. The following scripts live under
+`integration/` and run only when explicitly selected. Each command loads `.env.test`.
+
+- `npm run test:integration:extend`: requires the API on `localhost:3000`, Supabase
+  app credentials (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`),
+  `TEST_EMAIL`, `TEST_PASSWORD`, and `ALLOWED_TEST_EMAILS`. The test account must
+  initially be OFF with `free_until: null`.
+- `npm run test:integration:free-end`: requires the dedicated local Supabase on
+  port 55321 with migrations applied, `SUPABASE_URL`, and
+  `SUPABASE_SERVICE_ROLE_KEY`. It changes DB fixtures and mocks Expo Push delivery.
+- `npm run test:integration:push`: requires the API on `localhost:3000`, Supabase
+  app credentials, `TEST_EMAIL`, `TEST_PASSWORD`, and registered device tokens.
+  This command sends a real push notification to the test user's devices.
+
+The existing `npm run test:login` and `npm run test:persistence` commands also run
+scripts under `integration/`, outside normal test discovery. They continue to load
+`.env` via dotenv and require the Supabase app credentials and test account above.
+
 ## Group management MVP
 
 Implementation uses existing `rooms`, `room_members`, and `profiles`. `users`,
@@ -118,8 +196,9 @@ NULL deadline and resets the deadline when turning expired availability back ON;
 `extend_profile_is_free` extends only active timed ON by 30 minutes from its
 existing deadline; `auto_expire_free_status` turns OFF at `free_until <= now()`
 and clears the deadline. The live toggle sets a one-hour timer on ON and clears
-the deadline on OFF. These definitions were reported by the owner, not fetched
-as full function bodies by this implementation.
+the deadline on OFF. The merged tree includes versioned SQL for explicit ON/OFF,
+extensions, and auto-expiry. The historical toggle caveat below still applies to
+live deployments.
 
 Member reads use `coalesce(is_free, false) AND
 (free_until IS NULL OR free_until > now())`. They never invoke expiration,
@@ -138,9 +217,10 @@ group migration remains required; removing the gate does not install the RPC.
 Historical drift: `20261006000000_toggle_profile_is_free.sql` only flips is_free
 and leaves free_until untouched. It is not the current live toggle definition.
 Do not replay that historical function onto the live DB. It has been left
-unchanged, as have all existing timer and Push functions. A reproducible fresh
-database needs an independently reviewed export of the exact live timer SQL;
-the behavioral summary is not sufficient to reconstruct its full implementation.
+unchanged. The explicit timer and Push SQL supplied by this PR can be tested
+together with group management on an isolated fresh database. This does not
+replace an audit of the actual live toggle, grants, policies, and jobs before
+deployment.
 
 The group migration revokes direct anon/authenticated access to rooms and
 room_members; profile/device-token privileges and timer RPC privileges are not
@@ -160,7 +240,14 @@ HTTP tests do not use Supabase:
 node --import tsx --test tests/test-profile-toggle.ts tests/test-groups.ts
 ```
 
-For DB verification use an **empty isolated database only**. Load, in order:
+For a full-schema compatibility check, apply all repository migrations
+to a dedicated local Supabase-compatible database and run
+`supabase/tests/group_timer_notifications.test.sql` plus the profile permission
+and notification SQL tests. Do not load the minimal fixture below on top of that
+schema. The compatibility test runs as service_role and rolls its data back.
+
+For group-only fixture verification, use an **empty isolated database only**.
+Load, in order:
 
 1. `supabase/tests/fixtures/group_mvp_schema.sql` (minimal test-only existing schema).
 2. `supabase/migrations/20261111000000_group_management_mvp.sql`.

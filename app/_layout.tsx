@@ -1,14 +1,17 @@
-import { registerForPushNotificationsAsync, saveDeviceToken } from '@/lib/push-notifications';
+import { registerForPushNotificationsAsync, registerNotificationCategories, saveDeviceToken } from '@/lib/push-notifications';
 import type { Session } from '@supabase/supabase-js';
+import * as Notifications from 'expo-notifications';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+// バックグラウンドタスクの定義・登録のためモジュールスコープで読み込む
+import { handleFreeEndAction } from '@/lib/notification-task';
 import { hasSupabaseConfig, supabase } from '@/lib/supabase';
 
 export const unstable_settings = {
@@ -64,6 +67,41 @@ export default function RootLayout() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    void registerNotificationCategories().catch((error: unknown) => {
+      console.error('[push] 通知カテゴリ登録失敗:', error);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!userId || Platform.OS === 'web') return;
+    let isActive = true;
+    const processResponse = async (response: Notifications.NotificationResponse) => {
+      if (!isActive) return;
+      const result = await handleFreeEndAction(response);
+      if (isActive && result && (result.ok || result.reason === 'conflict')) {
+        const last = await Notifications.getLastNotificationResponseAsync();
+        if (last?.notification.request.identifier === response.notification.request.identifier &&
+            last.actionIdentifier === response.actionIdentifier) {
+          await Notifications.clearLastNotificationResponseAsync();
+        }
+      }
+    };
+    const processSafely = (response: Notifications.NotificationResponse) => {
+      void processResponse(response).catch((error: unknown) => console.error('[push] 通知アクション処理失敗:', error));
+    };
+    const subscription = Notifications.addNotificationResponseReceivedListener(processSafely);
+    // 通知からの起動時はリスナー登録前に応答が届いている場合がある。
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) processSafely(response);
+    }).catch((error: unknown) => console.error('[push] 起動時の通知取得失敗:', error));
+
+    return () => {
+      isActive = false;
+      subscription.remove();
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) {
