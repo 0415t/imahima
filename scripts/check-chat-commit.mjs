@@ -9,6 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
 const tracked = git(['ls-files', '-z']);
 const candidates = [...new Set([...git(['diff', '--name-only', '-z', 'HEAD']), ...git(['ls-files', '--others', '--exclude-standard', '-z'])])];
+const staged = git(['diff', '--cached', '--name-only', '--diff-filter=ACMRT', '-z']);
 const issues = [];
 const uuid = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const synthetic = new Set(['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333']);
@@ -22,23 +23,26 @@ const patterns = [
   ['execution-id', /\b\d{13}-[0-9a-f]{8}\b/],
   ['private-jwk', /"d"\s*:\s*"[A-Za-z0-9_-]{30,}"/],
 ];
-for (const file of candidates) {
-  const absolute = path.join(root, file);
-  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) continue;
-  const content = fs.readFileSync(absolute, 'utf8');
-  for (const [category, pattern] of patterns) if (pattern.test(content)) issues.push({ file, category });
+function scan(file, content, source) {
+  const issue = category => issues.push({ file, category, source });
+  for (const [category, pattern] of patterns) if (pattern.test(content)) issue(category);
   for (const match of content.matchAll(uuid)) {
     const value = match[0].toLowerCase();
     // Explicit deterministic unit/SQL fixtures are not identifiers from a real run.
     if (!synthetic.has(value) && !/^00000000-0000-4000-8000-00000000000[1-5]$/.test(value)) {
-      issues.push({ file, category: 'non-fixture-uuid' }); break;
+      issue('non-fixture-uuid'); break;
     }
   }
+}
+for (const file of staged) scan(file, execFileSync('git', ['show', `:${file}`], { cwd: root, encoding: 'utf8' }), 'index');
+for (const file of candidates) {
+  const absolute = path.join(root, file);
+  if (fs.existsSync(absolute) && fs.statSync(absolute).isFile()) scan(file, fs.readFileSync(absolute, 'utf8'), 'working-tree');
 }
 const requiredIgnored = ['supabase/.temp/project-ref', 'verification/group-chat-local/archive-classification.local.json', 'verification/group-chat-local/.runtime/check.json', 'verification/group-chat-local/.env.local', 'node_modules/check'];
 for (const file of requiredIgnored) {
   try { execFileSync('git', ['check-ignore', '--quiet', file], { cwd: root, stdio: 'ignore' }); }
   catch { issues.push({ file, category: 'missing-ignore' }); }
 }
-console.log(JSON.stringify({ candidates: candidates.length, issues: [...new Map(issues.map(i => [i.file + i.category, i])).values()] }, null, 2));
+console.log(JSON.stringify({ candidates: candidates.length, staged: staged.length, issues: [...new Map(issues.map(i => [i.file + i.category + i.source, i])).values()] }, null, 2));
 assert.equal(issues.length, 0, 'Commit hygiene failed; inspect filenames/categories, never print credential values');

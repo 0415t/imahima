@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
+import { dockerSocket } from './docker-endpoint.mjs';
+import { restrictSecrets, stopDedicated } from './stack-safety.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const action = process.argv[2];
@@ -21,11 +23,12 @@ assert.ok(!fs.existsSync(path.join(root, 'supabase/.temp/project-ref')), 'Do not
 const migrations = path.join(root, 'supabase/migrations');
 assert.ok(!fs.existsSync(migrations) || fs.readdirSync(migrations).length === 0, 'Infrastructure-only directory must not contain app migrations');
 assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'node_modules/supabase/package.json'))).version, '3.1.0');
-fs.mkdirSync(path.join(root, '.runtime'), { recursive: true });
+dockerSocket(); // Reject unsupported endpoints before provisioning anything.
+restrictSecrets(root);
 const keys = path.join(root, '.runtime/signing_keys.json');
 if (action === 'start' && !fs.existsSync(keys)) {
   const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
-  fs.writeFileSync(keys, JSON.stringify([{ ...privateKey.export({ format: 'jwk' }), kid: randomUUID(), alg: 'ES256', use: 'sig', key_ops: ['sign', 'verify'] }], null, 2), { flag: 'wx' });
+  fs.writeFileSync(keys, JSON.stringify([{ ...privateKey.export({ format: 'jwk' }), kid: randomUUID(), alg: 'ES256', use: 'sig', key_ops: ['sign', 'verify'] }], null, 2), { flag: 'wx', mode: 0o600 });
 }
 // Do not inherit hosted credentials or load either application .env file.
 const env = { ...process.env };
@@ -47,6 +50,16 @@ const redact = value => value.replace(/eyJ[A-Za-z0-9_.-]+/g, '[REDACTED JWT]').r
 let stdout = '', stderr = '';
 console.log(`${action}: dedicated project ${project}; credentials are not printed or written to logs.`);
 const child = spawn(process.execPath, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+let interrupted = false;
+function failStart() {
+  try { stopDedicated(root, project, network); console.error('Startup failed; verified dedicated containers stopped; volumes retained.'); }
+  catch { console.error('Automatic stop failed. Manually stop ONLY the verified imahima-chat-local stack before proceeding (no volume deletion).'); }
+  process.exitCode = 1;
+}
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+  interrupted = true;
+  child.kill(signal);
+});
 child.stdout.on('data', data => { stdout += data; });
 child.stderr.on('data', data => { stderr += data; });
 child.on('error', () => { console.error('CLI launch failed; inspect private logs.'); process.exitCode = 1; });
@@ -54,7 +67,7 @@ child.on('close', code => {
   if (action === 'status' && code === 0) {
     const credentials = JSON.parse(stdout);
     // Explicit secret configuration artifact, separate from diagnostic logs.
-    fs.writeFileSync(path.join(root, '.runtime/local-status.credentials.json'), JSON.stringify(credentials, null, 2));
+    fs.writeFileSync(path.join(root, '.runtime/local-status.credentials.json'), JSON.stringify(credentials, null, 2), { mode: 0o600 });
     stdout = JSON.stringify({ API_URL: credentials.API_URL, credentials: 'stored in ignored local-status.credentials.json' });
   }
   fs.writeFileSync(path.join(root, `.runtime/${action}.stdout.log`), redact(stdout));
@@ -64,9 +77,10 @@ child.on('close', code => {
     const file = path.join(root, '.runtime', name);
     if (fs.existsSync(file)) fs.writeFileSync(file, redact(fs.readFileSync(file, 'utf8')));
   }
+  if (action === 'start' && (code !== 0 || interrupted)) { failStart(); return; }
   if (code === 0 && action === 'start') {
     try { execFileSync(process.execPath, [path.join(root, 'bind-loopback.mjs')], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }); }
-    catch { console.error('Dedicated loopback binding failed; inspect only the new stack before proceeding.'); process.exitCode = 1; return; }
+    catch { console.error('Dedicated loopback binding failed.'); failStart(); return; }
   }
   console.log(`${action}: ${code === 0 ? 'completed' : 'failed'} (exit ${code}).`);
   process.exitCode = code ?? 1;

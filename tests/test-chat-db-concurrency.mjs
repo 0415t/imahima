@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
+import { waitForBarrier, waitForBlockedRpc } from '../verification/group-chat-local/barriers.mjs';
 
 const container = 'imahima-chat-db-verification';
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0];
@@ -9,17 +10,21 @@ assert.equal(info.HostConfig.NetworkMode, 'none');
 assert.equal(info.Config.Image, 'postgres:16');
 const command = ['exec', '-i', container, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-qAt'];
 function sql(text) { return execFileSync('docker', command, { input: text, encoding: 'utf8' }).trim(); }
-function session(text, onOutput = () => {}) {
+function openSession(text, onOutput = () => {}, held = false) {
   const child = spawn('docker', command, { stdio: ['pipe', 'pipe', 'pipe'] });
   let output = '', error = '';
   child.stdout.on('data', chunk => { output += chunk; onOutput(output); });
   child.stderr.on('data', chunk => { error += chunk; });
-  child.stdin.end(text);
-  return new Promise((resolve, reject) => {
+  child.stdin.on('error', () => {});
+  if (held) child.stdin.write(text); else child.stdin.end(text);
+  const done = new Promise((resolve, reject) => {
     child.on('error', reject);
     child.on('close', code => code === 0 ? resolve(output.trim()) : reject(new Error(error)));
   });
+  return { done, commit: () => child.stdin.end('commit;\n'),
+    cancel: () => { if (!child.stdin.writableEnded) child.stdin.end('rollback;\n'); } };
 }
+const session = (text, onOutput) => openSession(text, onOutput).done;
 const [a, b, c, d, e] = Array.from({ length: 5 }, () => randomUUID());
 sql(`insert into auth.users(id) values ${[a, b, c, d, e].map(id => `('${id}')`).join(',')};
      insert into public.profiles(id) values ${[a, b, c, d, e].map(id => `('${id}')`).join(',')};`);
@@ -60,33 +65,47 @@ assert.ok(removes.every(value => JSON.parse(value).status === 200));
 assert.equal(sql(`select count(*) from public.room_message_events where message_id='${target.id}' and event_type='deleted';`), '1');
 assert.equal(sql(`select count(*)=max(event_seq) and count(*)=count(distinct event_seq) from public.room_message_events where room_id='${r1}';`), 't');
 
-// Deterministic barrier: leave has modified membership and holds its room lock.
+// Hold each transaction on stdin until its named competitor is observed waiting.
+async function serialization(firstSql, competingSql, rpc) {
+  const holderName = 'chat-holder-' + randomUUID();
+  const competitorName = 'chat-competitor-' + randomUUID();
+  let signal;
+  const ready = new Promise(resolve => { signal = resolve; });
+  const holder = openSession(`set application_name='${holderName}';begin;set local role service_role;
+    select ${firstSql};select 'ROOM_LOCK_HELD';\n`, output => {
+    if (output.includes('ROOM_LOCK_HELD')) signal();
+  }, true);
+  let competitor;
+  try {
+    await waitForBarrier(ready, holder.done, 'holder room lock');
+    competitor = openSession(`set application_name='${competitorName}';${asService(competingSql)}`);
+    const holderPid = Number(sql(`select pid from pg_stat_activity where application_name='${holderName}';`));
+    assert.ok(holderPid > 0);
+    // psql adapter lets the same barrier used by Auth/API harnesses run against
+    // a real DB without exposing this fixture container's network.
+    const observer = { query: async (query, values) => {
+      const statement = query.replace(/\$(\d+)/g, (_match, n) => `'${String(values[Number(n) - 1]).replaceAll("'", "''")}'`);
+      return { rows: [JSON.parse(sql(`select row_to_json(t) from (${statement}) t;`))] };
+    } };
+    await waitForBlockedRpc(observer, holderPid, rpc, competitor.done);
+    assert.equal(sql(`select exists(select 1 from pg_stat_activity c join pg_stat_activity h
+      on h.pid=any(pg_blocking_pids(c.pid)) where c.application_name='${competitorName}'
+      and h.application_name='${holderName}' and c.wait_event_type='Lock');`), 't');
+    holder.commit(); await holder.done;
+    return await competitor.done;
+  } finally {
+    holder.cancel(); await holder.done.catch(() => {});
+    await competitor?.done.catch(() => {});
+  }
+}
 const r3 = create(e);
-let release;
-const locked = new Promise(resolve => { release = resolve; });
-const leaving = session(`begin;set local role service_role;
- select public.group_mvp_execute('leave','${e}','{"room_id":"${r3}"}');
- select 'ROOM_LOCK_HELD';select pg_sleep(1);commit;`, output => {
-  if (output.includes('ROOM_LOCK_HELD')) release();
-});
-await Promise.race([locked, leaving.then(() => { throw new Error('Missing leave barrier'); })]);
-const blockedSend = session(asService(send(e, r3)));
-await leaving;
-assert.equal(JSON.parse(await blockedSend).status, 404);
+const blockedSend = await serialization(`public.group_mvp_execute('leave','${e}','{"room_id":"${r3}"}')`, send(e, r3), 'chat_send_message');
+assert.equal(JSON.parse(blockedSend).status, 404);
 assert.equal(sql(`select count(*) from public.messages where room_id='${r3}';`), '0');
 
-// Reverse ordering: send holds the room lock until COMMIT, then leave archives it.
 const r4 = create(e);
-let sendReady;
-const sentBarrier = new Promise(resolve => { sendReady = resolve; });
-const sending = session(`begin;set local role service_role;select ${send(e, r4)};
- select 'SEND_LOCK_HELD';select pg_sleep(1);commit;`, output => {
-  if (output.includes('SEND_LOCK_HELD')) sendReady();
-});
-await Promise.race([sentBarrier, sending.then(() => { throw new Error('Missing send barrier'); })]);
-const blockedLeave = session(asService(`public.group_mvp_execute('leave','${e}','{"room_id":"${r4}"}')`));
-await sending;
-assert.equal(JSON.parse(await blockedLeave).status, 204);
+const blockedLeave = await serialization(send(e, r4), `public.group_mvp_execute('leave','${e}','{"room_id":"${r4}"}')`, 'group_mvp_execute');
+assert.equal(JSON.parse(blockedLeave).status, 204);
 assert.equal(sql(`select mvp_archived_at is not null from public.rooms where id='${r4}';`), 't');
 assert.equal(sql(`select count(*) from public.messages where room_id='${r4}';`), '1');
 

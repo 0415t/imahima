@@ -8,6 +8,7 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { connectVerified, root, runtime } from './schema-tools.mjs';
+import { fileFingerprint, completeHistory } from './diagnostic-utils.mjs';
 const require = createRequire(new URL('../../server/index.ts', import.meta.url));
 const { createClient } = require('@supabase/supabase-js');
 const run = `${Date.now()}-${randomUUID().slice(0,8)}`;
@@ -33,7 +34,7 @@ function environmentSnapshot(){
   const cs=docker(['inspect',...ids]);
   const vs=execFileSync('docker',['volume','ls','-q'],{encoding:'utf8'}).trim().split(/\s+/).filter(Boolean);
   const snapshot={containers:cs.map(c=>({id:c.Id,name:c.Name,config:digest(c.Config),host:digest(c.HostConfig),mounts:digest([...c.Mounts].sort((a,b)=>a.Destination.localeCompare(b.Destination))),networks:Object.keys(c.NetworkSettings.Networks).sort()})).sort((a,b)=>a.id.localeCompare(b.id)),volumes:docker(['volume','inspect',...vs]).sort((a,b)=>a.Name.localeCompare(b.Name)),files:{}};
-  for(const name of ['../../.env','../../server/.env','../../supabase/.temp/project-ref','../../supabase/.temp/linked-project.json','../../supabase/migrations/20261111000000_group_management_mvp.sql','../../supabase/migrations/20261113000000_group_chat_mvp.sql'])snapshot.files[name]=digest(fs.readFileSync(path.resolve(root,name)).toString('utf8'));
+  for(const name of ['../../.env','../../server/.env','../../supabase/.temp/project-ref','../../supabase/.temp/linked-project.json','../../supabase/migrations/20261111000000_group_management_mvp.sql','../../supabase/migrations/20261113000000_group_chat_mvp.sql'])snapshot.files[name]=fileFingerprint(path.resolve(root,name));
   return snapshot;
 }
 let db,child,status,baselineSchema,baselineEnv;
@@ -94,7 +95,7 @@ async function initialSync(round,controls){
   const row={round,started_at:now(),events:[]};report.sync.push(row);let observer;
   try{
     observer=await pair('B',`sync-${round}`);const first=await send('A','before-baseline');row.events.push(first);
-    const historyStarted=now();const hp=api('B','/messages?limit=100');const duringPromise=send('B','concurrent-baseline');
+    const historyStarted=now();const hp=completeHistory(api);const duringPromise=send('B','concurrent-baseline');
     const history=await hp;assert.equal(history.status,200);const historyAck=now();const during=await duringPromise;row.events.push(during);
     const high=history.data.sync_event_seq;row.baseline={started_at:historyStarted,ack_at:historyAck,event_seq:high,concurrent_side:BigInt(during.event_seq)<=BigInt(high)?'included-before-baseline':'after-baseline'};
     assert.ok(BigInt(first.event_seq)<=BigInt(high));
@@ -175,7 +176,7 @@ try{
         trial.valid=trial.created.control_ok&&trial.deleted.control_ok&&[...trial.created.deliveries,...trial.deleted.deliveries].every(d=>d.state==='joined'&&d.connected&&d.errors.length===0);
         trial.outcome=trial.valid?([trial.created,trial.deleted].every(o=>o.deliveries.every(d=>d.received))?'ALL_RECEIVED':'EVENT_MISSING'):'INVALID_CONTROL_OR_CHANNEL';
         // Recover the very event(s) actually missed above, without changing subscription behavior.
-        const history=await api('B','/messages?limit=100');assert.equal(history.status,200);const h=history.data.sync_event_seq;
+        const history=await completeHistory(api);assert.equal(history.status,200);const h=history.data.sync_event_seq;
         let cursor,pages=0,events=[],states=[];
         do{const r=await api('B','/message-events?limit=1'+(cursor?'&cursor='+cursor:'&after_event_seq=0'));assert.equal(r.status,200);events.push(...r.data.events);states.push(...r.data.messages);cursor=r.data.next_cursor;pages++;}while(cursor&&pages<10);
         assert.equal(cursor,null);assert.equal(pages,2);assert.deepEqual(events.map(e=>e.type),['created','deleted']);
@@ -209,7 +210,7 @@ try{
         trial.valid=trial.created.deliveries.some(d=>d.received)&&trial.deleted.deliveries.some(d=>d.received)&&[...trial.created.deliveries,...trial.deleted.deliveries].every(d=>d.state==='joined'&&d.connected&&d.errors.length===0);
         trial.late_positive_control=trial.deleted.deliveries.some(d=>d.received);
         trial.outcome=trial.valid?([trial.created,trial.deleted].every(o=>o.deliveries.every(d=>d.received))?'ALL_RECEIVED':'EVENT_MISSING'):'INVALID_CONTROL_OR_CHANNEL';
-        const history=await api('B','/messages?limit=100');assert.equal(history.status,200);let cursor,pages=0,states=[],events=[];
+        const history=await completeHistory(api);assert.equal(history.status,200);let cursor,pages=0,states=[],events=[];
         do{const r=await api('B','/message-events?limit=1'+(cursor?'&cursor='+cursor:'&after_event_seq='+position.sequence));assert.equal(r.status,200);states.push(...r.data.messages);events.push(...r.data.events);cursor=r.data.next_cursor;pages++;}while(cursor&&pages<10);
         assert.equal(cursor,null);assert.equal(pages,2);assert.deepEqual(events.map(e=>e.type),['created','deleted']);
         const local=new Map(history.data.messages.map(m=>[m.id,m]));for(const m of [...states,...states,...history.data.messages]){const old=local.get(m.id);if(!old||BigInt(m.last_event_seq)>=BigInt(old.last_event_seq))local.set(m.id,m);}

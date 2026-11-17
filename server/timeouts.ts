@@ -24,13 +24,13 @@ export function requestStep<T>(work: () => PromiseLike<T>): Promise<T> {
 
 export function requestDeadline(milliseconds: number = TIMEOUTS.request): RequestHandler {
   return (req, res, next) => {
-    if (!/^\/groups(?:\/|$)/.test(req.path)) { next(); return; }
+    if (!/^\/groups(?:\/|$)/i.test(req.path)) { next(); return; }
+    const chat = /^\/groups\/[^/]+\/(?:messages|message-events)(?:\/|$)/i.test(req.path);
     const controller = new AbortController();
     const stop = () => controller.abort(cancelled());
     const timer = setTimeout(() => {
       stop();
       if (res.headersSent || res.destroyed) return;
-      const chat = /^\/groups\/[^/]+\/(?:messages|message-events)(?:\/|$)/.test(req.path);
       res.set('Cache-Control', 'no-store').status(503).json(chat
         ? { error: 'Chat service unavailable', code: 'CHAT_UNAVAILABLE' }
         : { error: 'Group service unavailable' });

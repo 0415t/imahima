@@ -6,10 +6,11 @@ import http from 'node:http';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dockerSocket } from './docker-endpoint.mjs';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const project = 'imahima-chat-local';
 const network = 'imahima-chat-local-net';
-const socketPath = process.platform === 'win32' ? '\\\\.\\pipe\\docker_engine' : '/var/run/docker.sock';
+const socketPath = dockerSocket();
 function request(method, url, value) {
   return new Promise((resolve, reject) => {
     const body = value === undefined ? undefined : JSON.stringify(value);

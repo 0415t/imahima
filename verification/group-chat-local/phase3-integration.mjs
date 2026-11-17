@@ -16,6 +16,7 @@ import { createApp } from '../../server/app.ts';
 import { groupService } from '../../server/services/groups.ts';
 import { chatService } from '../../server/services/chat.ts';
 import { timeoutFetch } from '../../server/timeouts.ts';
+import { waitForBarrier } from './barriers.mjs';
 
 const require = createRequire(new URL('../../server/index.ts', import.meta.url));
 const { createClient } = require('@supabase/supabase-js');
@@ -172,7 +173,7 @@ async function main() {
   await test('in-flight history response delayed past leave is stale; subsequent read is 404', 'real-stack-delayed-response', async () => {
     const r = await room(); assert.equal((await send(r)).status, 201);
     const ready = new Promise(resolve => { historyReady = resolve; }); delayedHistory = true;
-    const reading = api('A', `/groups/${r}/messages`); await ready;
+    const reading = api('A', `/groups/${r}/messages`); await waitForBarrier(ready, reading, 'history readiness');
     assert.equal((await api('A', `/groups/${r}/members/me`, 'DELETE')).status, 204); releaseHistory(); releaseHistory = null;
     assert.equal((await reading).status, 200); assert.equal((await api('A', `/groups/${r}/messages`)).status, 404);
   });

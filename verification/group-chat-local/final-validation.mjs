@@ -13,6 +13,7 @@ import { createApp } from '../../server/app.ts';
 import { groupService } from '../../server/services/groups.ts';
 import { chatService } from '../../server/services/chat.ts';
 import { timeoutFetch } from '../../server/timeouts.ts';
+import { waitForBarrier, waitForBlockedRpc } from './barriers.mjs';
 
 const require = createRequire(new URL('../../server/index.ts', import.meta.url));
 const { createClient } = require('@supabase/supabase-js');
@@ -78,7 +79,12 @@ async function main() {
       assert.equal((await db.query('select count(*)::int as n from public.profiles where id=$1', [id])).rows[0].n, 1);
     }
   });
-  const getUserId = async token => { const { data, error } = await admin.auth.getUser(token); return { userId: data.user?.id ?? null, error }; };
+  let authenticated;
+  const getUserId = async token => {
+    const { data, error } = await admin.auth.getUser(token);
+    if (authenticated && token === sessions.D.access_token && data.user && !error) { authenticated(); authenticated = null; }
+    return { userId: data.user?.id ?? null, error };
+  };
   const groups = groupService(admin, getUserId); groups.rateSecret = randomUUID();
   const app = createApp({ getUserId, toggleIsFree: async id => { const { data, error } = await admin.rpc('toggle_profile_is_free', { target_profile_id: id }); return { isFree: data, error }; } }, groups, chatService(admin, groups));
   server = createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening'); const base = `http://127.0.0.1:${server.address().port}`;
@@ -214,7 +220,11 @@ async function main() {
     // Auth CASCADE now also takes this room lock. Queue it FIRST, then the send,
     // and release the barrier before awaiting deletion (avoids self-blocking).
     const removing = deleteVictim('D'); await waitBlocked();
-    const pending = send('D', r); await sleep(100); await blocker.query('commit'); await removing;
+    const authReady = new Promise(resolve => { authenticated = resolve; });
+    const pending = send('D', r);
+    await waitForBarrier(authReady, pending, 'send authentication');
+    await waitForBlockedRpc(db, blockerPid, 'chat_send_message', pending);
+    await blocker.query('commit'); await removing;
     report.barriers.push({ phase, delete_committed_at: new Date().toISOString() });
     assert.equal((await pending).status, 404); assert.equal((await send('D', r)).status, 401);
     assert.equal((await db.query('select count(*)::int as n from public.messages where room_id=$1', [r])).rows[0].n, 0);

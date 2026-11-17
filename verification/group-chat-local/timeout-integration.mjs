@@ -15,6 +15,7 @@ import { createApp } from '../../server/app.ts';
 import { groupService } from '../../server/services/groups.ts';
 import { chatService } from '../../server/services/chat.ts';
 import { timeoutFetch } from '../../server/timeouts.ts';
+import { waitForBarrier } from './barriers.mjs';
 
 const require = createRequire(new URL('../../server/index.ts', import.meta.url));
 const { createClient } = require('@supabase/supabase-js');
@@ -138,7 +139,7 @@ async function main() {
   await test('lost response after COMMIT returns 503; parallel replays deduplicate and conflict is 409', async () => {
     const id = randomUUID(); delayedId = id;
     const commitSeen = new Promise(resolve => { committed = resolve; });
-    const first = send(id); await commitSeen;
+    const first = send(id); await waitForBarrier(commitSeen, first, 'post-COMMIT response');
     const parallel = await send(id); assert.equal(parallel.status, 200);
     assert.equal((await first).status, 503); releaseResponse(); releaseResponse = null;
     assert.equal((await send(id)).status, 200);

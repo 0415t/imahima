@@ -13,6 +13,7 @@ import { createApp } from '../../server/app.ts';
 import { groupService } from '../../server/services/groups.ts';
 import { chatService } from '../../server/services/chat.ts';
 import { timeoutFetch } from '../../server/timeouts.ts';
+import { waitForBlockedRpc } from './barriers.mjs';
 const require = createRequire(new URL('../../server/index.ts', import.meta.url));
 const { createClient } = require('@supabase/supabase-js');
 const run = `archive-${Date.now()}-${randomUUID().slice(0, 8)}`;
@@ -145,7 +146,8 @@ async function main() {
   await test('last Auth deletion before join closes room atomically', async () => {
     const id = await makeRoom('B', ['G']); await leave('B', id);
     await blocker.query('begin'); await blocker.query('select id from public.rooms where id=$1 for share', [id]);
-    const deleting = remove('G'); await waitBlocked(); const joining = rpc('join', 'C', { invite_code: roomCodes.get(id) }); await sleep(80);
+    const deleting = remove('G'); await waitBlocked(); const joining = rpc('join', 'C', { invite_code: roomCodes.get(id) });
+    await waitForBlockedRpc(db, blockerPid, 'group_mvp_execute', joining);
     await blocker.query('commit'); await deleting; assert.equal((await joining).status, 400); assert.equal((await state(id)).archived, true);
   });
   await test('join before last Auth deletion keeps newcomer and active room', async () => {

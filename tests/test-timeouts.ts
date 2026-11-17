@@ -12,6 +12,23 @@ const room = '11111111-1111-4111-8111-111111111111';
 const message = '22222222-2222-4222-8222-222222222222';
 const pending = <T>() => new Promise<T>(() => {});
 
+it('mixed-case group paths receive the deadline and cancel stalled authentication', async () => {
+  const deps: ChatDependencies = {
+    getUserId: async () => pending(), isMember: async () => { throw Error('Must not reach membership'); },
+    execute: async () => { throw Error('Must not reach RPC'); },
+  };
+  const server = createServer(createApp({ getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, deps, 30));
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/GROUPS/${room}/messages`, {
+      headers: { Authorization: 'Bearer mock' }, signal: AbortSignal.timeout(1000),
+    });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).code, 'CHAT_UNAVAILABLE');
+  } finally { server.close(); server.closeAllConnections(); await once(server, 'close'); }
+});
+
 for (const path of ['/auth/v1/user', '/rest/v1/rpc/chat_send_message']) {
   for (const bodyStall of [false, true]) {
     it(`upstream timeout bounds ${path}, stalled ${bodyStall ? 'body' : 'headers'}`, async () => {
@@ -58,15 +75,20 @@ for (const stage of ['auth', 'membership', 'rpc'] as const) {
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     const routes = [['POST', `/groups/${room}/messages`], ['GET', `/groups/${room}/messages`],
-      ['DELETE', `/groups/${room}/messages/${message}`], ['GET', `/groups/${room}/message-events`], ['GET', `/groups/${room}/members`]];
+      ['DELETE', `/groups/${room}/messages/${message}`], ['GET', `/groups/${room}/message-events`],
+      ['GET', `/GROUPS/${room}/MeSsAgEs`], ['GET', `/GrOuPs/${room}/MESSAGE-EVENTS`], ['GET', `/groups/${room}/members`]];
     try {
       for (const [method, path] of routes) {
         const response: Response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
           method, headers: { Authorization: 'Bearer mock', 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(2000),
           body: method === 'POST' ? JSON.stringify({ body: 'hello', client_message_id: message }) : undefined,
         });
         assert.equal(response.status, 503);
         const result = await response.json(); assert.ok(!JSON.stringify(result).includes('AbortError'));
+        assert.deepEqual(result, path.endsWith('/members')
+          ? { error: 'Group service unavailable' }
+          : { error: 'Chat service unavailable', code: 'CHAT_UNAVAILABLE' });
       }
       assert.equal(lookup, routes.length);
       assert.equal(member, stage === 'auth' ? 0 : routes.length);

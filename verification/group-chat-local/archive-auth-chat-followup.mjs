@@ -13,6 +13,7 @@ import { createApp } from '../../server/app.ts';
 import { groupService } from '../../server/services/groups.ts';
 import { chatService } from '../../server/services/chat.ts';
 import { timeoutFetch } from '../../server/timeouts.ts';
+import { waitForBarrier, waitForBlockedRpc } from './barriers.mjs';
 const require = createRequire(new URL('../../server/index.ts', import.meta.url)); const { createClient } = require('@supabase/supabase-js');
 const run = `archive-auth-${Date.now()}`, report = { run, tests: [], users: {}, rooms: [], deleted: [] }, tokens = {};
 let db, blocker, server;
@@ -27,7 +28,12 @@ try {
     const user = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { username: `${run}-${label}` } }); assert.equal(user.error, null); report.users[label] = user.data.user.id;
     const anon = createClient(settings.API_URL, settings.ANON_KEY, options), login = await anon.auth.signInWithPassword({ email, password }); assert.equal(login.error, null); tokens[label] = login.data.session.access_token;
   }
-  const identity = async token => { const { data, error } = await admin.auth.getUser(token); return { userId: data.user?.id ?? null, error }; }, groups = groupService(admin, identity); groups.rateSecret = randomUUID();
+  let authenticated;
+  const identity = async token => {
+    const { data, error } = await admin.auth.getUser(token);
+    if (authenticated && token === tokens.L && data.user && !error) { authenticated(); authenticated = null; }
+    return { userId: data.user?.id ?? null, error };
+  }, groups = groupService(admin, identity); groups.rateSecret = randomUUID();
   server = createServer(createApp({ getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, groups, chatService(admin, groups))); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const api = async (label, room, method = 'GET', id) => {
     const r = await fetch(`http://127.0.0.1:${server.address().port}/groups/${room}/messages${id ? '/' + id : ''}`, { method, headers: { Authorization: `Bearer ${tokens[label]}`, 'Content-Type': 'application/json' },
@@ -48,7 +54,11 @@ try {
   }
   const first = await prepare('L');
   await blocker.query('begin'); await blocker.query('select id from public.rooms where id=$1 for share', [first.room]);
-  const deletingUser = remove('L'); await waitBlocked(); const deletingMessage = api('L', first.room, 'DELETE', first.message); await sleep(100);
+  const deletingUser = remove('L'); await waitBlocked();
+  const authReady = new Promise(resolve => { authenticated = resolve; });
+  const deletingMessage = api('L', first.room, 'DELETE', first.message);
+  await waitForBarrier(authReady, deletingMessage, 'DELETE authentication');
+  await waitForBlockedRpc(db, pid, 'chat_delete_message', deletingMessage);
   await blocker.query('commit'); await deletingUser; assert.equal((await deletingMessage).status, 404);
   const retained = await api('N', first.room); assert.equal(retained.status, 200); assert.equal(retained.data.messages[0].sender, null); assert.equal(retained.data.messages[0].deleted_at, null);
   report.tests.push({ name: 'Auth deletion before pending message deletion rejects delete and preserves body', status: 'PASS' });
