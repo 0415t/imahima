@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import { AuthApiError } from '@supabase/supabase-js';
 import { once } from 'node:events';
+import { readdirSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import { createApp } from '../server/app';
 import type { GroupDependencies, GroupOperation } from '../server/groups';
+import type { ChatOperation } from '../server/chat';
+
+it('uses a unique version for every Supabase migration', () => {
+  const versions = readdirSync('supabase/migrations').filter(name => name.endsWith('.sql'))
+    .map(name => name.split('_')[0]);
+  assert.equal(new Set(versions).size, versions.length, 'Supabase migration versions must not collide');
+});
 
 const roomId = '11111111-1111-4111-8111-111111111111';
 describe('Group API authorization and contracts', () => {
@@ -13,8 +21,9 @@ describe('Group API authorization and contracts', () => {
   let deps: GroupDependencies;
   let calls: { operation: GroupOperation; actor: string; args: Record<string, unknown> }[];
   let rateCalls: string[];
+  let chatCalls: ChatOperation[];
   beforeEach(async () => {
-    calls = []; rateCalls = [];
+    calls = []; rateCalls = []; chatCalls = [];
     deps = {
       getUserId: async () => ({ userId: 'actor', error: null }),
       isMember: async () => true,
@@ -25,7 +34,21 @@ describe('Group API authorization and contracts', () => {
         return { status: operation === 'create' ? 201 : operation === 'leave' ? 204 : 200, data: { ok: true } };
       },
     };
-    server = createServer(createApp({ getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, deps));
+    const freeUntil = new Date(Date.now() + 60 * 60_000).toISOString();
+    server = createServer(createApp({
+      getUserId: deps.getUserId,
+      toggleIsFree: async () => ({ isFree: false, error: null }),
+      setIsFree: async (_id, isFree) => ({ isFree, freeUntil, error: null }),
+      extendIsFree: async () => ({ isFree: true, freeUntil, error: null }),
+      extendIsFreeFromNotification: async () => ({ isFree: true, freeUntil, error: null }),
+    }, {
+      getDeviceTokens: async () => ({ tokens: ['test-device'], error: null }),
+      sendPushNotifications: async () => ({ sent: 1, error: null }),
+    }, deps, {
+      getUserId: token => deps.getUserId(token),
+      isMember: (actor, room) => deps.isMember(actor, room),
+      execute: async operation => { chatCalls.push(operation); return { status: operation === 'send' ? 201 : 200, data: { ok: true } }; },
+    }));
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     base = `http://127.0.0.1:${address.port}/groups`;
@@ -114,5 +137,35 @@ describe('Group API authorization and contracts', () => {
     assert.equal((await request('')).status, 200); assert.equal(calls[0].actor, 'actor');
     const response = await request(`/${roomId}/members/me`, 'DELETE');
     assert.equal(response.status, 204); assert.equal(await response.text(), '');
+  });
+
+  it('serves group, timer, notification and all four chat routes in the same app', async () => {
+    assert.equal((await request('')).status, 200);
+    const root = base.replace(/\/groups$/, '');
+    for (const [path, method, body] of [
+      ['/profiles/me/is-free', 'PUT', { is_free: true, duration_minutes: 30 }],
+      ['/profiles/me/is-free/extend', 'POST', {}],
+      ['/profiles/me/is-free/extend-from-notification', 'POST', { claim_id: '12345678-1234-4234-8234-123456789abc' }],
+      ['/notifications/test', 'POST', {}],
+    ] as const) {
+      const response = await fetch(root + path, {
+        method, headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      assert.equal(response.status, 200, path);
+      const data = await response.json();
+      if (path === '/notifications/test') assert.equal(data.sent, 1);
+      else assert.equal(data.is_free, true);
+    }
+    assert.deepEqual(calls.map(call => call.operation), ['list']);
+    const clientId = '22222222-2222-4222-8222-222222222222';
+    for (const [path, method, body, status] of [
+      [`/${roomId}/messages`, 'POST', { body: 'combined app', client_message_id: clientId }, 201],
+      [`/${roomId}/messages`, 'GET', undefined, 200],
+      [`/${roomId}/messages/${clientId}`, 'DELETE', undefined, 200],
+      [`/${roomId}/message-events`, 'GET', undefined, 200],
+    ] as const) assert.equal((await request(path, method, body)).status, status, path);
+    assert.deepEqual(chatCalls, ['send', 'history', 'delete', 'events']);
+    assert.deepEqual(calls.map(call => call.operation), ['list']);
   });
 });

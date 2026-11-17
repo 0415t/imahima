@@ -1,3 +1,4 @@
+import { disabledTimerDependencies } from '../../tests/helpers/chat-availability.ts';
 // Verification only. Does not import dotenv, Push or alter database definitions.
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
@@ -74,7 +75,7 @@ async function main() {
   }
   const identity = async token => { const { data, error } = await admin.auth.getUser(token); return { userId: data.user?.id ?? null, error }; };
   const groups = groupService(admin, identity); groups.rateSecret = randomUUID();
-  const app = createApp({ getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, groups, chatService(admin, groups));
+  const app = createApp({ ...disabledTimerDependencies, getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, undefined, groups, chatService(admin, groups));
   server = createServer((req, res) => scope.run(req.headers['x-verification-id'], () => app(req, res)));
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); const base = `http://127.0.0.1:${server.address().port}`;
   async function api(label, route, method = 'GET', body, token = sessions[label]) {

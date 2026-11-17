@@ -1,3 +1,4 @@
+import { disabledTimerDependencies } from '../../tests/helpers/chat-availability.ts';
 // Additional actual Auth-vs-chat races. Only this run's new users may be deleted.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -34,7 +35,7 @@ try {
     if (authenticated && token === tokens.L && data.user && !error) { authenticated(); authenticated = null; }
     return { userId: data.user?.id ?? null, error };
   }, groups = groupService(admin, identity); groups.rateSecret = randomUUID();
-  server = createServer(createApp({ getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, groups, chatService(admin, groups))); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, undefined, groups, chatService(admin, groups))); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const api = async (label, room, method = 'GET', id) => {
     const r = await fetch(`http://127.0.0.1:${server.address().port}/groups/${room}/messages${id ? '/' + id : ''}`, { method, headers: { Authorization: `Bearer ${tokens[label]}`, 'Content-Type': 'application/json' },
       body: method === 'POST' ? JSON.stringify({ body: 'archive race', client_message_id: randomUUID() }) : undefined, signal: AbortSignal.timeout(25000) }); return { status: r.status, data: await r.json() };

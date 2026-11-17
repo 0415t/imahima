@@ -1,3 +1,4 @@
+import { disabledTimerDependencies } from './helpers/chat-availability';
 // Default: no DB connection. CHAT_LOCAL_DB=1 runs the dedicated local stack.
 // CHAT_ISOLATED_DB=1 is a historical, separate fixture mode, never run implicitly.
 import assert from 'node:assert/strict';
@@ -30,7 +31,7 @@ it('isolated HTTP -> chat service -> real PostgreSQL RPC lifecycle', { skip: pro
     return { data: JSON.parse(sql(`begin;set local role service_role;select public.${name}(${parameters});commit;`)), error: null };
   };
   const chat = chatService({ rpc } as unknown as Parameters<typeof chatService>[0], identity);
-  const server = createServer(createApp({ getUserId: identity.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, chat));
+  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, undefined, chat));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const base = `http://127.0.0.1:${address.port}/groups/${room}`;

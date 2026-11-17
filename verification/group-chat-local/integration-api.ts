@@ -1,3 +1,4 @@
+import { disabledTimerDependencies } from '../../tests/helpers/chat-availability';
 // Test entrypoint using the real routers/services. No dotenv or Push worker imports.
 import assert from 'node:assert/strict';
 import { createApp } from '../../server/app';
@@ -27,7 +28,7 @@ async function main() {
     return { userId: data.user?.id ?? null, error };
   };
   const groups = groupService(serverSupabase, getUserId);
-  const app = createApp({ getUserId, toggleIsFree: async () => { throw new Error('Availability mutations disabled in chat verification'); } }, groups, chatService(serverSupabase, groups));
+  const app = createApp({ ...disabledTimerDependencies, getUserId, toggleIsFree: async () => { throw new Error('Availability mutations disabled in chat verification'); } }, undefined, groups, chatService(serverSupabase, groups));
   const server = app.listen(56331, '127.0.0.1', () => {
     process.send?.({ type: 'ready', project: 'imahima-chat-local', run: process.env.CHAT_INTEGRATION_RUN });
   });
