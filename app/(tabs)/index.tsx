@@ -58,6 +58,10 @@ export default function HomeScreen() {
           setErrorMessage('暇状態の取得に失敗しました。');
           setIsLoading(false);
         }
+      } finally {
+        if (isMounted && currentRequest === requestId) {
+          setNow(Date.now());
+        }
       }
     }
 

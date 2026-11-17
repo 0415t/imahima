@@ -5,7 +5,7 @@
   "scripts": {
     "start": "expo start",
     "server": "tsx server/index.ts",
-    "test": "tsx --test tests/**/*.ts",
+    "test": "tsx --test \"tests/**/*.ts\"",
     "test:login": "tsx integration/test-login.ts",
     "test:persistence": "tsx integration/test-session-persistence.ts",
     "test:profile-toggle": "tsx --test tests/test-profile-toggle.ts",
