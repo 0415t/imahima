@@ -158,4 +158,47 @@ describe('POST /notifications/test', () => {
     assert.equal(second.status, 200);
     assert.equal(sendCalls.length, 2);
   });
+
+  it('reserves the cooldown while the first token lookup is still pending', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let lookups = 0;
+    notifications.getDeviceTokens = async () => {
+      lookups += 1;
+      if (lookups === 1) {
+        entered.resolve();
+        await release.promise;
+      }
+      return { tokens: ownTokens, error: null };
+    };
+    const first = post();
+    try {
+      await entered.promise;
+      const concurrent = await post();
+      assert.equal(concurrent.status, 429);
+      assert.equal(lookups, 1);
+    } finally { release.resolve(); }
+    assert.equal((await first).status, 200);
+    assert.equal(sendCalls.length, 1);
+  });
+
+  for (const failure of ['returned-error', 'thrown-error'] as const) {
+    it(`releases the reservation after a token lookup ${failure}`, async () => {
+      notifications.getDeviceTokens = async () => {
+        if (failure === 'thrown-error') throw new Error('lookup failed');
+        return { tokens: [], error: new Error('lookup failed') };
+      };
+      assert.equal((await post()).status, 500);
+      notifications.getDeviceTokens = async () => ({ tokens: ownTokens, error: null });
+      assert.equal((await post()).status, 200);
+      assert.equal(sendCalls.length, 1);
+    });
+  }
+
+  it('releases the reservation after a thrown send error', async () => {
+    notifications.sendPushNotifications = async () => { throw new Error('send failed'); };
+    assert.equal((await post()).status, 500);
+    notifications.sendPushNotifications = async () => ({ sent: 1, error: null });
+    assert.equal((await post()).status, 200);
+  });
 });

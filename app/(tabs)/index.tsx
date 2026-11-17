@@ -20,6 +20,7 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [ownUserId, setOwnUserId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useFocusEffect(useCallback(() => {
     let isMounted = true;
@@ -27,6 +28,7 @@ export default function HomeScreen() {
 
     async function fetchUsers() {
       const currentRequest = ++requestId;
+      setNow(Date.now());
       if (!hasSupabaseConfig || !supabase) {
         setErrorMessage(
           'Supabaseの設定がありません。.envにEXPO_PUBLIC_SUPABASE_URLとEXPO_PUBLIC_SUPABASE_ANON_KEYを設定してください。'
@@ -137,7 +139,7 @@ export default function HomeScreen() {
               id: {user.id}
             </ThemedText>
             <ThemedText lightColor="#000000" darkColor="#000000">
-              暇状態: {user.is_free && (!user.free_until || Date.parse(user.free_until) > Date.now()) ? 'ON' : 'OFF'}
+              暇状態: {user.is_free && (!user.free_until || Date.parse(user.free_until) > now) ? 'ON' : 'OFF'}
             </ThemedText>
             <ThemedText lightColor="#000000" darkColor="#000000">
               終了予定: {user.is_free ? (user.free_until ? new Date(user.free_until).toLocaleString() : '無期限') : 'なし'}

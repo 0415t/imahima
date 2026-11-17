@@ -282,21 +282,7 @@ export function createApp(
         return;
       }
 
-      // 宛先は認証ユーザー自身のトークンのみ。ボディの宛先指定は一切受け付けない
-      const { tokens, error: tokensError } = await notifications.getDeviceTokens(userId);
-
-      if (tokensError) {
-        console.error('device tokens fetch failed:', tokensError);
-        response.status(500).json({ error: 'Unable to fetch device tokens' });
-        return;
-      }
-
-      if (tokens.length === 0) {
-        response.json({ sent: 0, message: 'No registered devices' });
-        return;
-      }
-
-      // 送信を試みる場合のみレート制限を消費する
+      // 非同期のトークン取得前に予約し、同時リクエストの通過を防ぐ。
       lastTestNotificationAt.set(userId, now);
       const clearRateLimit = () => {
         if (lastTestNotificationAt.get(userId) === now) {
@@ -305,6 +291,22 @@ export function createApp(
       };
 
       try {
+        // 宛先は認証ユーザー自身のトークンのみ。ボディの宛先指定は一切受け付けない
+        const { tokens, error: tokensError } = await notifications.getDeviceTokens(userId);
+
+        if (tokensError) {
+          clearRateLimit();
+          console.error('device tokens fetch failed:', tokensError);
+          response.status(500).json({ error: 'Unable to fetch device tokens' });
+          return;
+        }
+
+        if (tokens.length === 0) {
+          clearRateLimit();
+          response.json({ sent: 0, message: 'No registered devices' });
+          return;
+        }
+
         const { sent, error: sendError } = await notifications.sendPushNotifications(tokens, {
           title: 'imahima テスト通知',
           body: 'サーバーからのテスト通知です。',

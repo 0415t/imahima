@@ -36,7 +36,9 @@ insert into public.profiles (id, is_free, free_until) values
   ('22222222-2222-2222-2222-222222222222', true, now() + interval '4 minutes'),  -- 延長テスト用
   ('33333333-3333-3333-3333-333333333333', true, now() - interval '1 minute'),   -- 期限切れ: 対象外
   ('44444444-4444-4444-4444-444444444444', true, null),                          -- 無期限ON: 対象外
-  ('55555555-5555-5555-5555-555555555555', true, now() + interval '4 minutes');  -- 手動OFFテスト用
+  ('55555555-5555-5555-5555-555555555555', true, now() + interval '4 minutes')   -- 手動OFFテスト用
+on conflict (id) do update
+set is_free = excluded.is_free, free_until = excluded.free_until;
 
 -- 1. 通常の通知対象取得 + 期限切れ/無期限ONの除外
 do $$

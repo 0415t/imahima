@@ -59,16 +59,19 @@ Content-Type: application/json
 { "is_free": true, "duration_minutes": 60 }
 ```
 
-- `is_free: true` を設定すると、`free_until` が現在時刻+指定時間に設定される
-- `duration_minutes` は省略可能（デフォルト: 60）。許可値: 30, 60, 120, 180
+- 新規ONまたは期限切れ後の再ONで時間を指定すると、`free_until` が現在時刻+指定時間に設定される
+- `duration_minutes` の許可値は 30, 60, 120, 180。省略または `null` はタイマーなしの無期限ON（`free_until: null`）になる
+- 既に有効なON状態で再度ONを指定した場合、指定時間にかかわらず既存の `free_until` を維持する。無期限ONもそのまま維持する
 - `is_free: false` を設定すると、`free_until` が `null` になる
-- 有効判定は `is_free = true AND free_until > now()`。期限切れの場合は `is_free: false` が返る
+- 有効判定は `is_free = true AND (free_until IS NULL OR free_until > now())`。期限切れの場合は `is_free: false` が返る
 
 成功時のレスポンス:
 
 ```json
 { "is_free": true, "free_until": "2026-11-04T18:00:00.000Z" }
 ```
+
+無期限ONの成功時は `{ "is_free": true, "free_until": null }` が返る。
 
 ## Send a test push notification
 
@@ -96,3 +99,23 @@ Run the endpoint tests without connecting to Supabase or Expo:
 ```powershell
 npm run test:notifications
 ```
+
+## Explicit integration and live push tests
+
+`npm test` runs the tests under `tests/`. The following scripts live under
+`integration/` and run only when explicitly selected. Each command loads `.env.test`.
+
+- `npm run test:integration:extend`: requires the API on `localhost:3000`, Supabase
+  app credentials (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`),
+  `TEST_EMAIL`, `TEST_PASSWORD`, and `ALLOWED_TEST_EMAILS`. The test account must
+  initially be OFF with `free_until: null`.
+- `npm run test:integration:free-end`: requires the dedicated local Supabase on
+  port 55321 with migrations applied, `SUPABASE_URL`, and
+  `SUPABASE_SERVICE_ROLE_KEY`. It changes DB fixtures and mocks Expo Push delivery.
+- `npm run test:integration:push`: requires the API on `localhost:3000`, Supabase
+  app credentials, `TEST_EMAIL`, `TEST_PASSWORD`, and registered device tokens.
+  This command sends a real push notification to the test user's devices.
+
+The existing `npm run test:login` and `npm run test:persistence` commands also run
+scripts under `integration/`, outside normal test discovery. They continue to load
+`.env` via dotenv and require the Supabase app credentials and test account above.
