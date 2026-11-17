@@ -138,7 +138,7 @@ describe('Group API authorization and contracts', () => {
     for (const [path, method, body] of [
       ['/profiles/me/is-free', 'PUT', { is_free: true, duration_minutes: 30 }],
       ['/profiles/me/is-free/extend', 'POST', {}],
-      ['/profiles/me/is-free/extend-from-notification', 'POST', { claim_id: 'test-claim' }],
+      ['/profiles/me/is-free/extend-from-notification', 'POST', { claim_id: '12345678-1234-4234-8234-123456789abc' }],
       ['/notifications/test', 'POST', {}],
     ] as const) {
       const response = await fetch(root + path, {

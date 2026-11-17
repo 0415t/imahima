@@ -66,7 +66,11 @@ export function createFreeEndNotificationPoller(
   dependencies: FreeEndNotificationDependencies,
   options: FreeEndNotificationPollerOptions = {}
 ) {
-  const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
+  const requestedInterval = options.intervalMs;
+  // Node clamps invalid/overflowing intervals to 1 ms. Never hot-loop on bad config.
+  const intervalMs = typeof requestedInterval === 'number' && Number.isFinite(requestedInterval) &&
+    requestedInterval >= 1000 && requestedInterval <= 2_147_483_647
+    ? requestedInterval : DEFAULT_INTERVAL_MS;
   const message = options.message ?? DEFAULT_MESSAGE;
 
   let timer: ReturnType<typeof setInterval> | null = null;

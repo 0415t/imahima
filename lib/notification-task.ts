@@ -32,7 +32,7 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
             return Notifications.BackgroundNotificationTaskResult.Failed;
         }
 
-        const result = await handleFreeEndAction(data);
+        const result = await handleFreeEndAction(normalizeTaskResponse(data));
         if (!result) {
             return Notifications.BackgroundNotificationTaskResult.NoData;
         }
@@ -52,6 +52,23 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
             : Notifications.BackgroundNotificationTaskResult.Failed;
     }
 );
+
+// Android headless tasks bypass Expo's foreground response mapper.
+function normalizeTaskResponse(value: unknown): unknown {
+    if (!value || typeof value !== 'object' || !('notification' in value)) return value;
+    const notification = value.notification;
+    if (!notification || typeof notification !== 'object' || !('request' in notification)) return value;
+    const request = notification.request;
+    if (!request || typeof request !== 'object' || !('content' in request)) return value;
+    const content = request.content;
+    if (!content || typeof content !== 'object' || 'data' in content ||
+        !('dataString' in content) || typeof content.dataString !== 'string') return value;
+    try {
+        const parsed: unknown = JSON.parse(content.dataString);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return value;
+        return { ...value, notification: { ...notification, request: { ...request, content: { ...content, data: parsed } } } };
+    } catch { return value; }
+}
 
 if (Platform.OS !== 'web') {
     void Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch((error: unknown) => {

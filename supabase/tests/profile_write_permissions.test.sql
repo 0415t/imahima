@@ -37,7 +37,10 @@ begin
       'public.set_profile_is_free(uuid,boolean,integer)',
       'public.extend_profile_is_free(uuid)',
       'public.extend_profile_is_free_from_notification(uuid,uuid)',
-      'public.auto_expire_free_status()'
+      'public.auto_expire_free_status()',
+      'public.claim_free_end_notifications(integer,integer,integer,interval)',
+      'public.validate_free_end_notification(uuid,uuid)',
+      'public.complete_free_end_notification(uuid,uuid,text,text)'
     ] loop
       assert not has_function_privilege(r, f, 'EXECUTE'), 'client RPC permission remains';
       assert has_function_privilege('service_role', f, 'EXECUTE'), 'service RPC permission missing';
@@ -100,11 +103,13 @@ reset role;
 
 set local role service_role;
 do $$
-declare p record; before_until timestamptz; claim record; valid record; accepted boolean;
+declare p record; before_until timestamptz; started_at timestamptz; claim record; valid record; accepted boolean;
 begin
+  started_at := clock_timestamp();
   select * into p from public.set_profile_is_free('a6111111-1111-4111-8111-111111111111', true, 30);
-  assert p.is_free and p.free_until = now() + interval '30 minutes', 'timer ON failed';
+  assert p.is_free and p.free_until between started_at + interval '30 minutes' and clock_timestamp() + interval '30 minutes', 'timer ON failed';
   before_until := p.free_until;
+  started_at := clock_timestamp();
   select * into p from public.set_profile_is_free('a6111111-1111-4111-8111-111111111111', true, 60);
   assert p.free_until = before_until, 're-ON overwrote timer';
   select * into p from public.extend_profile_is_free('a6111111-1111-4111-8111-111111111111');

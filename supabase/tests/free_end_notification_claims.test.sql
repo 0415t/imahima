@@ -5,6 +5,16 @@
 -- 注意: encrypted_password は認証しないため空文字（pgcryptoへの依存を避ける）
 
 \set ON_ERROR_STOP on
+begin;
+set local plpgsql.check_asserts = on;
+
+create temporary table claim_test_users (id uuid primary key);
+insert into claim_test_users values
+ ('11111111-1111-1111-1111-111111111111'),
+ ('22222222-2222-2222-2222-222222222222'),
+ ('33333333-3333-3333-3333-333333333333'),
+ ('44444444-4444-4444-4444-444444444444'),
+ ('55555555-5555-5555-5555-555555555555');
 
 -- テスト用データのクリーンアップ（冪等）
 delete from public.free_end_notification_claims
@@ -46,7 +56,7 @@ declare
   v_count integer;
 begin
   perform public.claim_free_end_notifications();
-  select count(*) into v_count from public.free_end_notification_claims;
+  select count(*) into v_count from public.free_end_notification_claims where user_id in (select id from claim_test_users);
   assert v_count = 3, format('期待3件(111,222,555)、実際%s件', v_count);
   assert not exists (
     select 1 from public.free_end_notification_claims c
@@ -67,8 +77,8 @@ declare
   v_claimed integer;
   v_total integer;
 begin
-  select count(*) into v_claimed from public.claim_free_end_notifications();
-  select count(*) into v_total from public.free_end_notification_claims;
+  select count(*) into v_claimed from public.claim_free_end_notifications() where user_id in (select id from claim_test_users);
+  select count(*) into v_total from public.free_end_notification_claims where user_id in (select id from claim_test_users);
   assert v_claimed = 0, format('2回目の確保で%s件返却された（全てprocessing中のはず）', v_claimed);
   assert v_total = 3, 'UNIQUE(user_id, free_until)違反：重複行が存在する';
   raise notice 'PASS: 2. 二重確保防止';
@@ -106,7 +116,7 @@ begin
     where c.user_id = '22222222-2222-2222-2222-222222222222' and c.free_until = v_old_until;
   assert v_old_status = 'cancelled', format('延長前の古いclaimが%s', v_old_status);
   -- 新しい終了時刻が窓に入った状態を模倣
-  update public.profiles p set free_until = now() + interval '4 minutes'
+  update public.profiles p set free_until = now() + interval '3 minutes'
     where p.id = '22222222-2222-2222-2222-222222222222';
   select p.free_until into v_new_until from public.profiles p
     where p.id = '22222222-2222-2222-2222-222222222222';
@@ -193,7 +203,7 @@ declare
   v_ok boolean;
 begin
   -- 有効なクレームの再検証（positive case）
-  update public.profiles p set is_free = true, free_until = now() + interval '4 minutes'
+  update public.profiles p set is_free = true, free_until = now() + interval '3 minutes'
     where p.id = '55555555-5555-5555-5555-555555555555';
   select r.* into v_claim from public.claim_free_end_notifications() r
     where r.user_id = '55555555-5555-5555-5555-555555555555';
@@ -243,4 +253,5 @@ where id in ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-22
              '33333333-3333-3333-3333-333333333333', '44444444-4444-4444-4444-444444444444',
              '55555555-5555-5555-5555-555555555555');
 
+rollback;
 select 'ALL TESTS PASSED' as result;

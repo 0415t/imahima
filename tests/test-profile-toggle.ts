@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -389,8 +389,8 @@ describe('PUT /profiles/me/is-free', () => {
     let storedIsFree = false;
     let storedFreeUntil: string | null = null;
 
-    // DB側の FOR UPDATE による直列化を模倣するスチE�EトフルなモチE��
-    // �E�実際の同時実行制御はDB側で行われるため、ここではON中の再ONが既存状態を維持する契紁E��検証する�E�E
+    // DB側の FOR UPDATE による直列化を模倣する状態付きモック。
+    // 実際の排他制御はDBで行い、ここでは再ONが既存状態を維持する契約を検証する。
     dependencies.setIsFree = async (userId, isFree, durationMinutes) => {
       setIsFreeCalls.push({ userId, isFree, durationMinutes });
       if (isFree) {
@@ -432,7 +432,7 @@ describe('PUT /profiles/me/is-free', () => {
     const secondBody = await second.json();
     assert.equal(firstBody.is_free, true);
     assert.equal(secondBody.is_free, true);
-    // 後から届いたONリクエストでタイマ�Eが上書きされず、両方が同ぁEfree_until を返す
+    // 後から届いたONでタイマーを上書きせず、両方が同じ free_until を返す。
     assert.equal(firstBody.free_until, secondBody.free_until);
     assert.equal(setIsFreeCalls.length, 2);
   });

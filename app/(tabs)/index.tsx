@@ -25,15 +25,18 @@ export default function HomeScreen() {
   useFocusEffect(useCallback(() => {
     let isMounted = true;
     let requestId = 0;
+    let isRequestPending = false;
 
     async function fetchUsers() {
       const currentRequest = ++requestId;
+      isRequestPending = true;
       setNow(Date.now());
       if (!hasSupabaseConfig || !supabase) {
         setErrorMessage(
           'Supabaseの設定がありません。.envにEXPO_PUBLIC_SUPABASE_URLとEXPO_PUBLIC_SUPABASE_ANON_KEYを設定してください。'
         );
         setIsLoading(false);
+        isRequestPending = false;
         return;
       }
 
@@ -60,6 +63,7 @@ export default function HomeScreen() {
         }
       } finally {
         if (isMounted && currentRequest === requestId) {
+          isRequestPending = false;
           setNow(Date.now());
         }
       }
@@ -72,7 +76,7 @@ export default function HomeScreen() {
     });
     // 期限を過ぎた表示も更新する。バックグラウンド中は問い合わせない。
     const timer = setInterval(() => {
-      if (AppState.currentState === 'active') void fetchUsers();
+      if (AppState.currentState === 'active' && !isRequestPending) void fetchUsers();
     }, 30_000);
 
     return () => {

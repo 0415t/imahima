@@ -338,7 +338,8 @@ async function run() {
   const userF = await createUserWithProfile('user-f@example.com', true, new Date(Date.now() + 4 * 60 * 1000));
   await addDeviceToken(userF, 'ExponentPushToken[device-f]');
   sendCalls = [];
-  await Promise.all([poller.runOnce(), poller.runOnce()]);
+  const secondPoller = createFreeEndNotificationPoller(buildPollerDependencies());
+  await Promise.all([poller.runOnce(), secondPoller.runOnce()]);
   const claimsF = await getClaim(userF);
   assert(claimsF.length === 1, `userF claims not 1 (duplicate created): ${claimsF.length}`);
   assert(claimsF[0].status === 'sent', `userF claim not sent: ${claimsF[0].status}`);

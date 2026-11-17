@@ -10,6 +10,8 @@ function createScreen() {
   let dirty = false;
   let writes = 0;
   let refresh!: () => void;
+  let changed!: () => void;
+  let requests = 0;
   let cleanup: (() => void) | undefined;
   const states: unknown[] = [];
   const user = { id: 'self', username: 'test', is_free: true, free_until: new Date(now + 60_000).toISOString() };
@@ -36,9 +38,10 @@ function createScreen() {
       StyleSheet: { create: (styles: unknown) => styles }, View: 'view', Pressable: 'button' },
     '@/components/themed-text': { ThemedText: 'text' },
     '@/components/themed-view': { ThemedView: 'view' },
-    '@/lib/availability-events': { subscribeAvailabilityChanged: () => () => {} },
+    '@/lib/availability-events': { subscribeAvailabilityChanged: (callback: () => void) => { changed = callback; return () => {}; } },
     '@/lib/supabase': { hasSupabaseConfig: true, supabase: {
       auth: { async getSession() {
+        requests += 1;
         if (fail) throw new Error('offline');
         return { data: { session: { user: { id: 'self' } } } };
       } },
@@ -59,6 +62,8 @@ function createScreen() {
   return {
     render,
     refresh: () => refresh(),
+    changed: () => changed(),
+    get requests() { return requests; },
     advance: (milliseconds: number) => { now += milliseconds; },
     failAuth: () => { fail = true; },
     unmount: () => { cleanup?.(); },
@@ -133,7 +138,7 @@ for (const outcome of ['success', 'failure'] as const) {
       await setImmediate();
       const newer = screen.deferProfiles();
       screen.advance(1_000);
-      screen.refresh();
+      screen.changed();
       await setImmediate();
       newer.resolve({ username: 'latest-profile' });
       await setImmediate();
@@ -150,6 +155,49 @@ for (const outcome of ['success', 'failure'] as const) {
     } finally { screen.unmount(); }
   });
 }
+
+it('does not supersede a slow request on periodic ticks, but accepts explicit refreshes', async () => {
+  const screen = createScreen();
+  try {
+    const pending = screen.deferProfiles();
+    screen.render();
+    await setImmediate();
+    screen.advance(30_000);
+    screen.refresh();
+    screen.advance(30_000);
+    screen.refresh();
+    await setImmediate();
+    assert.equal(screen.requests, 1);
+    pending.resolve({ username: 'slow-profile' });
+    await setImmediate();
+    assert.match(screen.render(), /slow-profile/);
+    screen.refresh();
+    await setImmediate();
+    assert.equal(screen.requests, 2, 'periodic refresh resumes after completion');
+  } finally { screen.unmount(); }
+});
+
+it('an obsolete completion does not allow polling to supersede the latest pending request', async () => {
+  const screen = createScreen();
+  try {
+    const older = screen.deferProfiles();
+    screen.render();
+    await setImmediate();
+    const latest = screen.deferProfiles();
+    screen.changed();
+    await setImmediate();
+    older.resolve({ username: 'obsolete' });
+    await setImmediate();
+    screen.advance(30_000);
+    screen.refresh();
+    await setImmediate();
+    assert.equal(screen.requests, 2);
+    latest.resolve({ username: 'latest' });
+    await setImmediate();
+    assert.match(screen.render(), /latest/);
+    assert.doesNotMatch(screen.render(), /obsolete/);
+  } finally { screen.unmount(); }
+});
 
 for (const outcome of ['success', 'failure'] as const) {
   it(`does not update state after unmount when a pending request completes with ${outcome}`, async () => {

@@ -29,22 +29,27 @@ declare
   claim record;
   validation record;
   deadline timestamptz;
+  started_at timestamptz;
 begin
   result := public.group_mvp_execute('create', actor, '{"name":"Timer and notifications"}');
   assert (result->>'status')::integer = 201, 'group creation failed with merged grants';
   room := (result#>>'{data,group,id}')::uuid;
 
+  started_at := clock_timestamp();
   select * into state from public.set_profile_is_free(actor, true, null);
   assert state.is_free and state.free_until is null, 'unlimited ON failed';
   perform pg_temp.expect_group_availability(actor, room, true);
+  started_at := clock_timestamp();
   select * into state from public.set_profile_is_free(actor, true, 30);
   assert state.free_until is null, 're-ON replaced unlimited state';
   raise notice 'PASS: unlimited ON and preserved state visible in groups';
 
   perform public.set_profile_is_free(actor, false, null);
+  started_at := clock_timestamp();
   select * into state from public.set_profile_is_free(actor, true, 30);
   deadline := state.free_until;
-  assert deadline = now() + interval '30 minutes', 'timed ON failed';
+  assert deadline between started_at + interval '30 minutes' and clock_timestamp() + interval '30 minutes', 'timed ON failed';
+  started_at := clock_timestamp();
   select * into state from public.set_profile_is_free(actor, true, 60);
   assert state.free_until = deadline, 're-ON overwrote the existing timer';
   select * into state from public.extend_profile_is_free(actor);
@@ -80,8 +85,9 @@ begin
   perform public.auto_expire_free_status();
   assert (select not is_free and free_until is null from public.profiles where id = actor),
     'automatic expiration failed';
+  started_at := clock_timestamp();
   select * into state from public.set_profile_is_free(actor, true, 60);
-  assert state.is_free and state.free_until = now() + interval '60 minutes', 're-ON after expiry failed';
+  assert state.is_free and state.free_until between started_at + interval '60 minutes' and clock_timestamp() + interval '60 minutes', 're-ON after expiry failed';
   perform pg_temp.expect_group_availability(actor, room, true);
   raise notice 'PASS: auto-expiry and renewed timer coexist with group membership';
 

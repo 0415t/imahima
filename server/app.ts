@@ -194,13 +194,17 @@ export function createApp(
     const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
 
     if (!bearerToken) {
-      response.status(401).json({ error: '****** is required' });
+      response.status(401).json({ error: 'Bearer token is required' });
       return;
     }
 
     const claimId = request.body?.claim_id;
     if (typeof claimId !== 'string' || claimId.length === 0) {
       response.status(400).json({ error: 'claim_id (string) is required' });
+      return;
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(claimId)) {
+      response.status(400).json({ error: 'claim_id must be a UUID' });
       return;
     }
 
@@ -227,6 +231,10 @@ export function createApp(
           errorMessage = String(extendError);
         }
 
+        if (errorMessage === 'Cannot extend: notification claim is processing') {
+          response.status(409).json({ error: errorMessage, code: 'notification-processing' });
+          return;
+        }
         // 延長できない状態は全て409（厳密なメッセージ一致）
         const conflictMessages = [
           'Cannot extend: not in an active timed free state',

@@ -8,7 +8,7 @@ import { createApp } from '../server/app';
 
 const accessToken = 'valid-test-token';
 const authenticatedUserId = 'user-123';
-const claimId = 'claim-abc';
+const claimId = '12345678-1234-4234-8234-123456789abc';
 
 describe('POST /profiles/me/is-free/extend-from-notification', () => {
   let server: Server;
@@ -69,6 +69,7 @@ describe('POST /profiles/me/is-free/extend-from-notification', () => {
     });
 
     assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: 'Bearer token is required' });
     assert.deepEqual(extendCalls, []);
   });
 
@@ -96,6 +97,23 @@ describe('POST /profiles/me/is-free/extend-from-notification', () => {
 
     assert.equal(response.status, 400);
     assert.deepEqual(extendCalls, []);
+  });
+
+  it('rejects malformed UUIDs before authentication or RPC execution', async () => {
+    for (const claim_id of ['claim-abc', ' ', '12345678-1234-4234-8234-123456789abz', `${claimId} `]) {
+      const response = await post({ claim_id });
+      assert.equal(response.status, 400);
+    }
+    assert.deepEqual(getUserIdCalls, []);
+    assert.deepEqual(extendCalls, []);
+  });
+
+  it('distinguishes a processing claim from a terminal conflict', async () => {
+    dependencies.extendIsFreeFromNotification = async () => ({ isFree: null, freeUntil: null,
+      error: { message: 'Cannot extend: notification claim is processing' } });
+    const response = await post({ claim_id: claimId });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: 'Cannot extend: notification claim is processing', code: 'notification-processing' });
   });
 
   it('extends the timer by 30 minutes from a notification', async () => {
