@@ -51,3 +51,9 @@ app-example
 
 # Supabase CLI temporary files
 supabase/.temp/
+
+# Manual database backups: may contain Auth credentials and Push Tokens
+/.local-backups/
+/backups/
+*.dump
+*.backup

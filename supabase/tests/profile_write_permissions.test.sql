@@ -12,7 +12,7 @@ grant insert (id, is_free), update (is_free, free_until, id, created_at)
   on public.profiles to public, anon, authenticated;
 create policy "profile ACL test permissive update" on public.profiles
   for update to authenticated using (true) with check (true);
-\ir ../migrations/20261111000000_restrict_profile_client_writes.sql
+\ir ../migrations/20261111000001_restrict_profile_client_writes.sql
 
 -- ログインを行わないDB権限テストのため、認証確認日時は設定しない。
 -- 旧Authのconfirmed_at、新Authのemail_confirmed_at/生成列confirmed_atの差に依存しない。

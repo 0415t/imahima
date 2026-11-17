@@ -6,6 +6,7 @@ import {
   type FreeEndNotificationValidation,
 } from './jobs/free-end-notifications';
 import { createPushNotificationService } from './services/notifications';
+import { groupService } from './services/groups';
 import { serverSupabase } from './services/supabase';
 
 const pushNotifications = createPushNotificationService({
@@ -18,23 +19,24 @@ const pushNotifications = createPushNotificationService({
     return { error };
   },
 });
+const getUserId = async (accessToken: string) => {
+  const { data, error } = await serverSupabase.auth.getUser(accessToken);
+  return { userId: data.user?.id ?? null, error };
+};
 
 const app = createApp({
-  getUserId: async (accessToken) => {
-    const { data, error } = await serverSupabase.auth.getUser(accessToken);
-    return { userId: data.user?.id ?? null, error };
-  },
+  getUserId,
   toggleIsFree: async (userId) => {
     const { data, error } = await serverSupabase.rpc('toggle_profile_is_free', {
       target_profile_id: userId,
     });
     return { isFree: data, error };
   },
-    setIsFree: async (userId, isFree, durationMinutes) => {
+  setIsFree: async (userId, isFree, durationMinutes) => {
     const { data, error } = await serverSupabase.rpc('set_profile_is_free', {
       target_profile_id: userId,
       new_is_free: isFree,
-        duration_minutes: durationMinutes ?? null,
+      duration_minutes: durationMinutes ?? null,
     });
     const row = Array.isArray(data) ? data[0] : data;
     return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
@@ -64,7 +66,7 @@ const app = createApp({
   },
   sendPushNotifications: (tokens, message) =>
     pushNotifications.sendPushNotifications(tokens, message),
-});
+}, groupService(serverSupabase, getUserId));
 const port = Number(process.env.PORT ?? 3000);
 
 const server = app.listen(port, () => {
