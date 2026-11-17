@@ -76,7 +76,10 @@ export default function HomeScreen() {
     });
     // 期限を過ぎた表示も更新する。バックグラウンド中は問い合わせない。
     const timer = setInterval(() => {
-      if (AppState.currentState === 'active' && !isRequestPending) void fetchUsers();
+      if (AppState.currentState === 'active') {
+        setNow(Date.now());
+        if (!isRequestPending) void fetchUsers();
+      }
     }, 30_000);
 
     return () => {

@@ -126,6 +126,31 @@ for (const outcome of ['success', 'failure'] as const) {
   });
 }
 
+it('advances displayed expiry while a refresh remains pending without starting more requests', async () => {
+  const screen = createScreen();
+  try {
+    screen.render();
+    await setImmediate();
+    assert.match(screen.render(), /暇状態: .*ON/);
+    const pending = screen.deferProfiles();
+    screen.advance(30_000);
+    screen.refresh();
+    await setImmediate();
+    const requests = screen.requests;
+    screen.advance(30_001);
+    screen.refresh();
+    assert.match(screen.render(), /暇状態: .*OFF/);
+    screen.advance(30_000);
+    screen.refresh();
+    await setImmediate();
+    assert.equal(screen.requests, requests);
+    assert.match(screen.render(), /暇状態: .*OFF/);
+    pending.resolve();
+    await setImmediate();
+    assert.match(screen.render(), /暇状態: .*OFF/);
+  } finally { screen.unmount(); }
+});
+
 for (const outcome of ['success', 'failure'] as const) {
   it(`ignores an older request completing with ${outcome} after a newer request`, async () => {
     const screen = createScreen();
