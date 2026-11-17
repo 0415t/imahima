@@ -50,7 +50,7 @@ const redact = value => value.replace(/eyJ[A-Za-z0-9_.-]+/g, '[REDACTED JWT]').r
 let stdout = '', stderr = '';
 console.log(`${action}: dedicated project ${project}; credentials are not printed or written to logs.`);
 const child = spawn(process.execPath, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
-let interrupted = false;
+let interrupted = false, cliClosed = false;
 function failStart() {
   try { stopDedicated(root, project, network); console.error('Startup failed; verified dedicated containers stopped; volumes retained.'); }
   catch { console.error('Automatic stop failed. Manually stop ONLY the verified imahima-chat-local stack before proceeding (no volume deletion).'); }
@@ -58,12 +58,16 @@ function failStart() {
 }
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   interrupted = true;
-  child.kill(signal);
+  // execFileSync below defers signal delivery until binding returns. The CLI
+  // close handler has already run then, so it cannot perform cleanup for us.
+  if (action === 'start' && cliClosed) failStart();
+  else child.kill(signal);
 });
 child.stdout.on('data', data => { stdout += data; });
 child.stderr.on('data', data => { stderr += data; });
 child.on('error', () => { console.error('CLI launch failed; inspect private logs.'); process.exitCode = 1; });
 child.on('close', code => {
+  cliClosed = true;
   if (action === 'status' && code === 0) {
     const credentials = JSON.parse(stdout);
     // Explicit secret configuration artifact, separate from diagnostic logs.

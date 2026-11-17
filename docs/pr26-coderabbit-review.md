@@ -59,3 +59,20 @@ SQL結合試験には、今回新規作成した`imahima-chat-db-verification`�
 作業場所: `.review-pr26`。`git -C .review-pr26 diff`で追跡済みファイルの差分を確認できる。追加helper・回帰テスト・この記録を含む全差分は`verification/group-chat-local/.runtime/pr26-review.patch`に保存する。patchはGit適用形式であり、秘密情報・実行固有ID・既存ローカル記録を含めない。
 
 API、認証分類、RLS、権限、migrationファイルの変更はない。チャットのタイムアウト時JSONを既存契約に合わせる以外のサーバー動作は変更していない。
+
+## f16358aへの再レビュー: Minor 2件の追加対応
+
+2026-11-17の[再レビュー](https://github.com/0415t/imahima/pull/26#pullrequestreview-5935665167)について、次の2件をコードと回帰テストで確認した。修正前は下記のDB観測3ケースとbinding割り込みケースの合計4テストが失敗した。
+
+- [barriers.mjsのcleanup待機](https://github.com/0415t/imahima/pull/26#discussion_r4597441195): 期限・request早期完了・request失敗後に、finallyで未完了のDB観測を再awaitしていた。観測promiseを待ち直さず、遅い成功/失敗は監視したまま呼び出し元のrollback/endへ戻す。停止後にクエリが完了してもpollを再開しない。借りた接続や他のDBセッションをキャンセル/終了する処理は追加しない。既存の操作別ロック判定は維持する。
+- [CLI終了後の割り込み](https://github.com/0415t/imahima/pull/26#discussion_r4597441210): 同期loopback処理中のsignalは実行完了後に配送され、終了済みCLIへのkillだけでは停止処理に到達しなかった。CLIのclose状態を記録し、startでCLI終了後に届いたsignalではfailStartを呼ぶ。CLI実行中は従来どおりsignalを転送する。既存のproject/workdir/network全件確認付きstopを再利用し、container/volume削除は追加しない。
+
+今回の検証結果:
+
+- `node --test tests/test-chat-review.mjs`: 18成功、失敗0。追加分は未完了観測中の期限・早期応答・request失敗、遅い観測の成功/失敗、DB観測エラー、およびlauncherの正常起動・binding中の割り込み・CLI中の割り込み・binding失敗・CLI失敗・status後の割り込み。
+- launcherテストは一時ディレクトリのスクリプトを別Nodeプロセスで動かし、child_processのCLI/Docker呼び出しをすべて置換する。同期bindingからのsignal配送遅延はqueueMicrotaskとprocess.emitで再現する。実Docker/既存runtime/認証情報には接続しない。停止対象の所有不一致を拒否する既存テストも成功。
+- 認証分類・chat・groups・profile-toggle・timeoutsの関連TypeScript単体テスト: 78成功、失敗0。バックエンドstrict TypeScript、変更JSのESLint、構文チェック、差分チェック、機密情報/index検査も成功。
+- `node tests/test-chat-db-concurrency.mjs`: 新規postgres:16のネットワーク隔離・ポート公開なし・PGDATA tmpfs環境で成功。共通DB観測barrierを使うleave/send双方の競合確認も成功。fixture/migrationは今回の新規DBのみへ適用し、ID/labelを再確認して今回のコンテナだけを片付けた。既存DB・共有/本番Supabaseは変更していない。
+- DB準備の初回は初期化用socketのreadyを誤認し、次のpsql接続が失敗した。新規fixtureを片付けた後、内部TCPのreadyで本起動を同期確認して再実行し成功。失敗した準備をテスト成功として数えない。
+
+未検証: 実スタックへのOS signal注入、実PostgreSQLの65秒観測遅延、実Auth/Realtime込みの元ハーネス全体、POSIX実効mode。前節のフロントエンド型エラー、認証環境変数不足、過去の未解決事項を今回解消済みにはしない。修正は`.review-pr26`の2実装ファイル・回帰テスト・この追記に限定し、他worktree/他ブランチは変更しない。

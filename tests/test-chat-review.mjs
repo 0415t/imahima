@@ -82,6 +82,105 @@ it('RPC barrier requires the operation-specific blocking query and ends polling'
   await assert.rejects(waitForBlockedRpc(db, 42, 'chat_send_message', Promise.resolve()), /completed before barrier/);
 });
 
+for (const outcome of ['deadline', 'response', 'failure']) {
+  it(`RPC barrier returns on ${outcome} while its observation query remains pending`, async () => {
+    let resolveQuery, rejectQuery, observed, timer, queries = 0;
+    const started = new Promise(resolve => { observed = resolve; });
+    const db = { query: () => {
+      queries++; observed();
+      return new Promise((resolve, reject) => { resolveQuery = resolve; rejectQuery = reject; });
+    } };
+    let completeRequest, failRequest;
+    const request = new Promise((resolve, reject) => { completeRequest = resolve; failRequest = reject; });
+    const waiting = waitForBlockedRpc(db, 42, 'chat_send_message', request, 20);
+    await started;
+    if (outcome === 'response') completeRequest();
+    if (outcome === 'failure') failRequest(Error('request failed'));
+    try {
+      const watchdog = new Promise((_, reject) => { timer = setTimeout(() => reject(Error('cleanup watchdog exceeded')), 500); });
+      await assert.rejects(Promise.race([waiting, watchdog]), outcome === 'deadline' ? /deadline exceeded/ : outcome === 'response' ? /completed before barrier/ : /request failed/);
+    } finally {
+      clearTimeout(timer);
+      // Settle the detached observation late in both directions. Neither may
+      // restart polling, touch another session, or produce an unhandled rejection.
+      if (outcome === 'failure') rejectQuery(Error('late observation failure'));
+      else resolveQuery({ rows: [{ waiting: false }] });
+      await waiting.catch(() => {});
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(queries, 1);
+  });
+}
+
+it('RPC query errors propagate without retrying or cancelling the caller connection', async () => {
+  const error = Error('observation failed');
+  await assert.rejects(waitForBlockedRpc({ query: async () => { throw error; } }, 42, 'chat_send_message', new Promise(() => {})), e => e === error);
+});
+
+for (const mode of ['normal', 'binding-interrupt', 'cli-interrupt', 'binding-failure', 'cli-failure', 'status-interrupt']) {
+  it(`local launcher lifecycle: ${mode}`, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-review-launcher-'));
+    try {
+      const source = path.resolve(import.meta.dirname, '../verification/group-chat-local');
+      for (const name of ['local-stack.mjs', 'docker-endpoint.mjs', 'stack-safety.mjs']) fs.copyFileSync(path.join(source, name), path.join(dir, name));
+      fs.mkdirSync(path.join(dir, 'supabase'));
+      fs.copyFileSync(path.join(source, 'supabase/config.toml'), path.join(dir, 'supabase/config.toml'));
+      fs.mkdirSync(path.join(dir, 'node_modules/supabase'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'node_modules/supabase/package.json'), '{"version":"3.1.0"}');
+      // Mock every child-process entry point before ESM imports are evaluated.
+      // No CLI, Docker daemon, existing runtime, credentials or DB is accessed.
+      fs.writeFileSync(path.join(dir, 'preload.mjs'), `
+        import cp from 'node:child_process';
+        import fs from 'node:fs';
+        import { EventEmitter } from 'node:events';
+        import { syncBuiltinESMExports } from 'node:module';
+        const mode = process.env.CHAT_REVIEW_LAUNCHER_MODE;
+        const calls = [];
+        process.on('exit', () => fs.writeFileSync('calls.json', JSON.stringify(calls)));
+        cp.execFileSync = (command, args) => {
+          if (command === process.execPath) {
+            calls.push('binding');
+            if (mode === 'binding-interrupt') queueMicrotask(() => process.emit('SIGTERM'));
+            if (mode === 'binding-failure') throw Error('injected binding failure');
+            return '';
+          }
+          if (command !== 'docker') throw Error('Unexpected external command');
+          if (args[0] === 'context' && args[1] === 'show') return 'default';
+          if (args[0] === 'context') return JSON.stringify([{ Endpoints: { docker: { Host: 'unix:///fixture.sock' } } }]);
+          if (args[0] === 'network' && args[1] === 'ls') return 'imahima-chat-local-net';
+          if (args[0] === 'network') return JSON.stringify([{ Internal: false, Labels: { 'imahima.purpose': 'group-chat-local' }, Options: { 'com.docker.network.bridge.host_binding_ipv4': '127.0.0.1' } }]);
+          if (args[0] === 'ps') return 'owned-container';
+          if (args[0] === 'inspect') return JSON.stringify([{ Config: { Labels: { 'com.supabase.cli.project': 'imahima-chat-local', 'com.supabase.cli.workdir': process.cwd() } }, NetworkSettings: { Networks: { 'imahima-chat-local-net': {} } } }]);
+          if (args[0] === 'stop') { calls.push('stop:' + args.slice(1).join(',')); return ''; }
+          throw Error('Unexpected Docker operation');
+        };
+        cp.spawn = () => {
+          const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+          child.kill = signal => { calls.push('kill:' + signal); return true; };
+          queueMicrotask(() => {
+            if (mode === 'cli-interrupt') process.emit('SIGINT');
+            if (mode === 'status-interrupt') child.stdout.emit('data', '{}');
+            child.emit('close', mode === 'cli-failure' || mode === 'cli-interrupt' ? 1 : 0);
+            if (mode === 'status-interrupt') process.emit('SIGTERM');
+          });
+          return child;
+        };
+        syncBuiltinESMExports();
+      `);
+      const env = { ...process.env, CHAT_REVIEW_LAUNCHER_MODE: mode };
+      delete env.DOCKER_HOST; delete env.DOCKER_CONTEXT;
+      const result = spawnSync(process.execPath, ['--import', './preload.mjs', 'local-stack.mjs', mode === 'status-interrupt' ? 'status' : 'start'], { cwd: dir, env, encoding: 'utf8', timeout: 10000 });
+      assert.equal(result.error, undefined);
+      assert.equal(result.status, ['normal', 'status-interrupt'].includes(mode) ? 0 : 1, result.stderr);
+      const calls = JSON.parse(fs.readFileSync(path.join(dir, 'calls.json'), 'utf8'));
+      assert.equal(calls.filter(c => c === 'stop:owned-container').length, ['normal', 'status-interrupt'].includes(mode) ? 0 : 1);
+      if (mode === 'cli-interrupt') assert.ok(calls.includes('kill:SIGINT'));
+      if (mode === 'binding-interrupt') assert.ok(!calls.includes('kill:SIGTERM'));
+      if (mode === 'normal') assert.deepEqual(calls, ['binding']);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+}
+
 it('file snapshots represent absence, creation, content changes and removal', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-review-files-'));
   const file = path.join(dir, 'optional');

@@ -23,10 +23,17 @@ export async function waitForBlockedRpc(db, blockerPid, rpc, request, millisecon
         union select a.pid from pg_stat_activity a join blocked b on b.pid=any(pg_blocking_pids(a.pid))
       ) select exists(select 1 from pg_stat_activity a join blocked b using(pid)
         where a.wait_event_type='Lock' and position($2 in a.query)>0) as waiting`, [blockerPid, rpc]);
+      if (controller.signal.aborted) return;
       if (row.waiting) return;
       await poll(25, undefined, { signal: controller.signal });
     }
   })();
   try { await waitForBarrier(waiting, request, rpc, milliseconds); }
-  finally { controller.abort(); await waiting.catch(() => {}); }
+  finally {
+    controller.abort();
+    // This connection belongs to the caller. Do not cancel its other work or
+    // await an uncooperative query here: return so the caller can roll back its
+    // blocker and close its connection. Observe late errors without polling again.
+    void waiting.catch(() => {});
+  }
 }
