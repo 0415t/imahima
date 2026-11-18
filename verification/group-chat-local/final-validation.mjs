@@ -238,14 +238,24 @@ async function main() {
     const { rows: [m] } = await db.query('select sender_id,body is not null as retained from public.messages where room_id=$1 and client_message_id=$2', [r, id]); assert.equal(m.sender_id, null); assert.ok(m.retained);
     assert.equal((await send('E', r, id)).status, 401);
   });
-  await test('eleven concurrent sends enforce global quota and unique room/event order', 'real-postgrest-rpc-concurrency', async () => {
-    const r = await makeRoom('C');
-    const sends = await Promise.all(Array.from({ length: 11 }, () => send('C', r)));
+  await test('eleven concurrent sends across two rooms enforce user quota even after deletion', 'real-postgrest-rpc-concurrency', async () => {
+    const rooms = [await makeRoom('C'), await makeRoom('C')];
+    const sends = await Promise.all(Array.from({ length: 11 }, async (_, i) => {
+      const room = rooms[i % rooms.length]; return { room, ...await send('C', room) };
+    }));
     assert.equal(sends.filter(s => s.status === 201).length, 10); assert.equal(sends.filter(s => s.status === 429).length, 1);
-    const { rows: [m] } = await db.query('select count(*)::int as n,count(distinct room_seq)::int as unique_seq,max(room_seq)::int as maximum from public.messages where room_id=$1', [r]); assert.deepEqual(m, { n: 10, unique_seq: 10, maximum: 10 });
-    const target = sends.find(s => s.status === 201).data.message.id;
-    const deletes = await Promise.all([0, 1].map(() => api('C', `/groups/${r}/messages/${target}`, 'DELETE'))); assert.ok(deletes.every(d => d.status === 200));
-    assert.equal((await db.query("select count(*)::int as n from public.room_message_events where message_id=$1 and event_type='deleted'", [target])).rows[0].n, 1);
+    for (const room of rooms) {
+      const { rows: [m] } = await db.query('select count(*)::int as n,count(distinct room_seq)::int as unique_seq,max(room_seq)::int as maximum from public.messages where room_id=$1', [room]);
+      assert.ok(m.n > 0); assert.deepEqual(m, { n: m.n, unique_seq: m.n, maximum: m.n });
+      assert.equal((await send('C', room)).status, 429);
+    }
+    const target = sends.find(s => s.status === 201 && s.room === rooms[0]); assert.ok(target);
+    const id = target.data.message.id;
+    const deletes = await Promise.all([0, 1].map(() => api('C', `/groups/${target.room}/messages/${id}`, 'DELETE'))); assert.ok(deletes.every(d => d.status === 200));
+    assert.equal((await db.query("select count(*)::int as n from public.room_message_events where message_id=$1 and event_type='deleted'", [id])).rows[0].n, 1);
+    const { rows: [retained] } = await db.query('select count(*)::int as sent,count(*) filter(where deleted_at is not null)::int as deleted from public.messages where sender_id=$1 and room_id=any($2::uuid[])', [report.users.C, rooms]);
+    assert.deepEqual(retained, { sent: 10, deleted: 1 });
+    for (const room of rooms) assert.equal((await send('C', room)).status, 429);
   });
   await test('group API create, list, invite, join, members and leave remain compatible', 'real-group-api', async () => {
     const r = await api('B', '/groups', 'POST', { name: run }); assert.equal(r.status, 201); const id = r.data.group.id; report.rooms.push(id);
