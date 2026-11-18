@@ -1,0 +1,465 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "a exhaustive ACL profiles",
+      "status": "pass",
+      "details": {
+        "assertions": 121
+      }
+    },
+    {
+      "name": "a exhaustive ACL users",
+      "status": "pass",
+      "details": {
+        "assertions": 61
+      }
+    },
+    {
+      "name": "a exhaustive ACL user_device_tokens",
+      "status": "pass",
+      "details": {
+        "assertions": 109
+      }
+    },
+    {
+      "name": "a exhaustive ACL rooms",
+      "status": "pass",
+      "details": {
+        "assertions": 97
+      }
+    },
+    {
+      "name": "a exhaustive ACL room_members",
+      "status": "pass",
+      "details": {
+        "assertions": 73
+      }
+    },
+    {
+      "name": "a exhaustive ACL group_mvp_rate_limits",
+      "status": "pass",
+      "details": {
+        "assertions": 61
+      }
+    },
+    {
+      "name": "a exhaustive ACL free_end_notification_claims",
+      "status": "pass",
+      "details": {
+        "assertions": 169
+      }
+    },
+    {
+      "name": "a exhaustive ACL member_free_events",
+      "status": "pass",
+      "details": {
+        "assertions": 85
+      }
+    },
+    {
+      "name": "a exhaustive ACL member_free_notifications",
+      "status": "pass",
+      "details": {
+        "assertions": 205
+      }
+    },
+    {
+      "name": "a exhaustive ACL messages",
+      "status": "pass",
+      "details": {
+        "assertions": 133
+      }
+    },
+    {
+      "name": "a exhaustive ACL room_message_events",
+      "status": "pass",
+      "details": {
+        "assertions": 85
+      }
+    },
+    {
+      "name": "a all 33 function ACLs and PUBLIC defaults",
+      "status": "pass",
+      "details": {
+        "assertions": 132
+      }
+    },
+    {
+      "name": "a schema ACLs and secure Auth search_path",
+      "status": "pass"
+    },
+    {
+      "name": "a no application GRANT OPTION across tables columns functions schemas",
+      "status": "pass",
+      "details": {
+        "acl_entries": 104,
+        "roles": [
+          "PUBLIC",
+          "anon",
+          "authenticated",
+          "service_role"
+        ]
+      }
+    },
+    {
+      "name": "a real Auth signup 0",
+      "status": "pass"
+    },
+    {
+      "name": "a real Auth signup 1",
+      "status": "pass"
+    },
+    {
+      "name": "a real Auth signup 2",
+      "status": "pass"
+    },
+    {
+      "name": "a real Auth signup 3",
+      "status": "pass"
+    },
+    {
+      "name": "a profile display and permitted own edit",
+      "status": "pass"
+    },
+    {
+      "name": "a protected and cross-user profile writes denied",
+      "status": "pass"
+    },
+    {
+      "name": "a service-role forbidden fixture/maintenance operations",
+      "status": "pass"
+    },
+    {
+      "name": "a authenticated device RPC and own SELECT",
+      "status": "pass"
+    },
+    {
+      "name": "a own device delete succeeds and cross-user delete is filtered",
+      "status": "pass"
+    },
+    {
+      "name": "a timer set/re-ON/extend/unlimited/OFF",
+      "status": "pass"
+    },
+    {
+      "name": "a initial 30 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "a initial 60 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "a initial 120 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "a initial 180 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "a invalid duration and OFF extension preserve profile",
+      "status": "pass"
+    },
+    {
+      "name": "a concurrent ON preserves one deadline and period",
+      "status": "pass"
+    },
+    {
+      "name": "a extend refuses timer expired during actual lock wait",
+      "status": "pass"
+    },
+    {
+      "name": "a lock wait expiry uses post-lock wall clock",
+      "status": "pass"
+    },
+    {
+      "name": "a auto-expire retains unlimited ON",
+      "status": "pass"
+    },
+    {
+      "name": "a group create RETURNING star, join, members and invite",
+      "status": "pass"
+    },
+    {
+      "name": "a chat send RETURNING star and idempotent retry",
+      "status": "pass"
+    },
+    {
+      "name": "a chat history and deletion RETURNING star / REST sync",
+      "status": "pass"
+    },
+    {
+      "name": "a concurrent cross-room quota exactly ten",
+      "status": "pass"
+    },
+    {
+      "name": "a Realtime actual member delivery",
+      "status": "pass"
+    },
+    {
+      "name": "a RLS event access removed on leave and REST denied",
+      "status": "pass"
+    },
+    {
+      "name": "a group rate limit boundary",
+      "status": "pass"
+    },
+    {
+      "name": "a free-end claim ownership, retry, extension once",
+      "status": "pass"
+    },
+    {
+      "name": "a member-free dedup, denied table write and worker RPC retry",
+      "status": "pass"
+    },
+    {
+      "name": "a ordinary server workers use mocked Push and delete invalid device",
+      "status": "pass"
+    },
+    {
+      "name": "a Auth deletion archives managed room and preserves chat history",
+      "status": "pass"
+    },
+    {
+      "name": "a final exit archives room without physical deletion",
+      "status": "pass"
+    },
+    {
+      "name": "a owner can manage fixtures while runtime cannot",
+      "status": "pass"
+    },
+    {
+      "name": "b exhaustive ACL profiles",
+      "status": "pass",
+      "details": {
+        "assertions": 121
+      }
+    },
+    {
+      "name": "b exhaustive ACL users",
+      "status": "pass",
+      "details": {
+        "assertions": 61
+      }
+    },
+    {
+      "name": "b exhaustive ACL user_device_tokens",
+      "status": "pass",
+      "details": {
+        "assertions": 109
+      }
+    },
+    {
+      "name": "b exhaustive ACL rooms",
+      "status": "pass",
+      "details": {
+        "assertions": 97
+      }
+    },
+    {
+      "name": "b exhaustive ACL room_members",
+      "status": "pass",
+      "details": {
+        "assertions": 73
+      }
+    },
+    {
+      "name": "b exhaustive ACL group_mvp_rate_limits",
+      "status": "pass",
+      "details": {
+        "assertions": 61
+      }
+    },
+    {
+      "name": "b exhaustive ACL free_end_notification_claims",
+      "status": "pass",
+      "details": {
+        "assertions": 169
+      }
+    },
+    {
+      "name": "b exhaustive ACL member_free_events",
+      "status": "pass",
+      "details": {
+        "assertions": 85
+      }
+    },
+    {
+      "name": "b exhaustive ACL member_free_notifications",
+      "status": "pass",
+      "details": {
+        "assertions": 205
+      }
+    },
+    {
+      "name": "b exhaustive ACL messages",
+      "status": "pass",
+      "details": {
+        "assertions": 133
+      }
+    },
+    {
+      "name": "b exhaustive ACL room_message_events",
+      "status": "pass",
+      "details": {
+        "assertions": 85
+      }
+    },
+    {
+      "name": "b all 33 function ACLs and PUBLIC defaults",
+      "status": "pass",
+      "details": {
+        "assertions": 132
+      }
+    },
+    {
+      "name": "b schema ACLs and secure Auth search_path",
+      "status": "pass"
+    },
+    {
+      "name": "b no application GRANT OPTION across tables columns functions schemas",
+      "status": "pass",
+      "details": {
+        "acl_entries": 104,
+        "roles": [
+          "PUBLIC",
+          "anon",
+          "authenticated",
+          "service_role"
+        ]
+      }
+    },
+    {
+      "name": "b real Auth signup 0",
+      "status": "pass"
+    },
+    {
+      "name": "b real Auth signup 1",
+      "status": "pass"
+    },
+    {
+      "name": "b real Auth signup 2",
+      "status": "pass"
+    },
+    {
+      "name": "b real Auth signup 3",
+      "status": "pass"
+    },
+    {
+      "name": "b profile display and permitted own edit",
+      "status": "pass"
+    },
+    {
+      "name": "b protected and cross-user profile writes denied",
+      "status": "pass"
+    },
+    {
+      "name": "b service-role forbidden fixture/maintenance operations",
+      "status": "pass"
+    },
+    {
+      "name": "b authenticated device RPC and own SELECT",
+      "status": "pass"
+    },
+    {
+      "name": "b own device delete succeeds and cross-user delete is filtered",
+      "status": "pass"
+    },
+    {
+      "name": "b timer set/re-ON/extend/unlimited/OFF",
+      "status": "pass"
+    },
+    {
+      "name": "b initial 30 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "b initial 60 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "b initial 120 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "b initial 180 minute timer exact deadline",
+      "status": "pass"
+    },
+    {
+      "name": "b invalid duration and OFF extension preserve profile",
+      "status": "pass"
+    },
+    {
+      "name": "b concurrent ON preserves one deadline and period",
+      "status": "pass"
+    },
+    {
+      "name": "b extend refuses timer expired during actual lock wait",
+      "status": "pass"
+    },
+    {
+      "name": "b lock wait expiry uses post-lock wall clock",
+      "status": "pass"
+    },
+    {
+      "name": "b auto-expire retains unlimited ON",
+      "status": "pass"
+    },
+    {
+      "name": "b group create RETURNING star, join, members and invite",
+      "status": "pass"
+    },
+    {
+      "name": "b chat send RETURNING star and idempotent retry",
+      "status": "pass"
+    },
+    {
+      "name": "b chat history and deletion RETURNING star / REST sync",
+      "status": "pass"
+    },
+    {
+      "name": "b concurrent cross-room quota exactly ten",
+      "status": "pass"
+    },
+    {
+      "name": "b Realtime actual member delivery",
+      "status": "pass"
+    },
+    {
+      "name": "b RLS event access removed on leave and REST denied",
+      "status": "pass"
+    },
+    {
+      "name": "b group rate limit boundary",
+      "status": "pass"
+    },
+    {
+      "name": "b free-end claim ownership, retry, extension once",
+      "status": "pass"
+    },
+    {
+      "name": "b member-free dedup, denied table write and worker RPC retry",
+      "status": "pass"
+    },
+    {
+      "name": "b ordinary server workers use mocked Push and delete invalid device",
+      "status": "pass"
+    },
+    {
+      "name": "b Auth deletion archives managed room and preserves chat history",
+      "status": "pass"
+    },
+    {
+      "name": "b final exit archives room without physical deletion",
+      "status": "pass"
+    },
+    {
+      "name": "b owner can manage fixtures while runtime cannot",
+      "status": "pass"
+    }
+  ],
+  "passed": 92,
+  "failed": 0
+}

@@ -1,0 +1,109 @@
+{
+  "dedicated_engine_root": "/var/lib/imahima35-docker",
+  "new_containers": [
+    {
+      "name": "supabase_rest_imahima-issue35-final-b",
+      "running": false
+    },
+    {
+      "name": "supabase_realtime_imahima-issue35-final-b",
+      "running": false
+    },
+    {
+      "name": "supabase_auth_imahima-issue35-final-b",
+      "running": false
+    },
+    {
+      "name": "supabase_kong_imahima-issue35-final-b",
+      "running": false
+    },
+    {
+      "name": "supabase_db_imahima-issue35-final-b",
+      "running": false
+    },
+    {
+      "name": "supabase_rest_imahima-issue35-final-a",
+      "running": false
+    },
+    {
+      "name": "supabase_realtime_imahima-issue35-final-a",
+      "running": false
+    },
+    {
+      "name": "supabase_auth_imahima-issue35-final-a",
+      "running": false
+    },
+    {
+      "name": "supabase_kong_imahima-issue35-final-a",
+      "running": false
+    },
+    {
+      "name": "supabase_db_imahima-issue35-final-a",
+      "running": false
+    },
+    {
+      "name": "supabase_rest_imahima-issue35-b",
+      "running": false
+    },
+    {
+      "name": "supabase_realtime_imahima-issue35-b",
+      "running": false
+    },
+    {
+      "name": "supabase_auth_imahima-issue35-b",
+      "running": false
+    },
+    {
+      "name": "supabase_kong_imahima-issue35-b",
+      "running": false
+    },
+    {
+      "name": "supabase_db_imahima-issue35-b",
+      "running": false
+    },
+    {
+      "name": "supabase_rest_imahima-issue35-a",
+      "running": false
+    },
+    {
+      "name": "supabase_realtime_imahima-issue35-a",
+      "running": false
+    },
+    {
+      "name": "supabase_auth_imahima-issue35-a",
+      "running": false
+    },
+    {
+      "name": "supabase_kong_imahima-issue35-a",
+      "running": false
+    },
+    {
+      "name": "supabase_db_imahima-issue35-a",
+      "running": false
+    }
+  ],
+  "all_stopped": true,
+  "volumes_retained": true,
+  "existing_engine_used": false,
+  "dedicated_wsl_stopped": true,
+  "existing_wsl_stayed_stopped": true,
+  "cli_global_metadata_exception": "Early diagnostic CLI invocations updated user-level telemetry.json; final CLI home is isolated under ignored runtime.",
+  "final_projects": [
+    {
+      "project": "imahima-issue35-verified-a",
+      "containers_removed_by_cli_stop": true,
+      "database_volume_pg_version_exists": true
+    },
+    {
+      "project": "imahima-issue35-verified-b",
+      "containers_removed_by_cli_stop": true,
+      "database_volume_pg_version_exists": true
+    },
+    {
+      "project": "imahima-issue35-verified-c",
+      "containers_removed_by_cli_stop": true,
+      "database_volume_pg_version_exists": true
+    }
+  ],
+  "prior_review_projects_stopped": true
+}

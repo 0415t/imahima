@@ -1,0 +1,42 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "historical 18 files match base git and original worktree",
+      "status": "pass",
+      "details": {
+        "files": 18
+      }
+    },
+    {
+      "name": "B original nine profiles and three rooms preserved after feature tests",
+      "status": "pass"
+    },
+    {
+      "name": "B synthetic non-managed room stays open after last membership removal",
+      "status": "pass"
+    },
+    {
+      "name": "a container egress to external TCP is blocked",
+      "status": "pass"
+    },
+    {
+      "name": "b container egress to external TCP is blocked",
+      "status": "pass"
+    },
+    {
+      "name": "a REST RPC history and event cursor pagination has no gaps",
+      "status": "pass"
+    },
+    {
+      "name": "b REST RPC history and event cursor pagination has no gaps",
+      "status": "pass"
+    },
+    {
+      "name": "original worktree HEAD and tracked state unchanged",
+      "status": "pass"
+    }
+  ],
+  "passed": 8,
+  "failed": 0
+}

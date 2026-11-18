@@ -1,0 +1,24 @@
+{
+  "name": "imahima-issue35-isolated-verification",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "stacks:start": "node stacks.mjs start",
+    "stacks:status": "node stacks.mjs status",
+    "verify:migrations": "node migrate.mjs",
+    "verify:features": "node features.mjs",
+    "verify:realtime": "node realtime-lifecycle.mjs",
+    "verify:failures": "node failures.mjs",
+    "verify:cli": "node normal-management.mjs",
+    "verify:integrity": "node integrity.mjs",
+    "verify:compare": "node compare.mjs",
+    "verify:regressions": "node regressions.mjs",
+    "verify:specifications": "node specifications.mjs"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.112.3",
+    "pg": "8.16.3",
+    "supabase": "3.1.0",
+    "tsx": "4.23.12"
+  }
+}

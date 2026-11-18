@@ -1,0 +1,101 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "a unsafe profile prerequisite abort and rollback",
+      "status": "pass"
+    },
+    {
+      "name": "a mid-migration metadata mismatch restores earlier ACL resets",
+      "status": "pass"
+    },
+    {
+      "name": "a unexpected role inheritance stops migration",
+      "status": "pass"
+    },
+    {
+      "name": "a invalid room classifications roll back without schema or data drift",
+      "status": "pass",
+      "details": {
+        "cases": 5
+      }
+    },
+    {
+      "name": "a historical group migration replay fails without changes",
+      "status": "pass"
+    },
+    {
+      "name": "a PUBLIC-default EXECUTE cannot re-open runtime functions",
+      "status": "pass"
+    },
+    {
+      "name": "a failed fixture transaction preserves data",
+      "status": "pass"
+    },
+    {
+      "name": "a hardening preserves unlimited, active and expired ON values",
+      "status": "pass"
+    },
+    {
+      "name": "a exact 22-version history has no pending migration",
+      "status": "pass"
+    },
+    {
+      "name": "a failure suite leaves complete catalog untouched",
+      "status": "pass"
+    },
+    {
+      "name": "a failure suite leaves full migration history untouched",
+      "status": "pass"
+    },
+    {
+      "name": "b unsafe profile prerequisite abort and rollback",
+      "status": "pass"
+    },
+    {
+      "name": "b mid-migration metadata mismatch restores earlier ACL resets",
+      "status": "pass"
+    },
+    {
+      "name": "b unexpected role inheritance stops migration",
+      "status": "pass"
+    },
+    {
+      "name": "b invalid room classifications roll back without schema or data drift",
+      "status": "pass",
+      "details": {
+        "cases": 5
+      }
+    },
+    {
+      "name": "b historical group migration replay fails without changes",
+      "status": "pass"
+    },
+    {
+      "name": "b PUBLIC-default EXECUTE cannot re-open runtime functions",
+      "status": "pass"
+    },
+    {
+      "name": "b failed fixture transaction preserves data",
+      "status": "pass"
+    },
+    {
+      "name": "b hardening preserves unlimited, active and expired ON values",
+      "status": "pass"
+    },
+    {
+      "name": "b exact 22-version history has no pending migration",
+      "status": "pass"
+    },
+    {
+      "name": "b failure suite leaves complete catalog untouched",
+      "status": "pass"
+    },
+    {
+      "name": "b failure suite leaves full migration history untouched",
+      "status": "pass"
+    }
+  ],
+  "passed": 22,
+  "failed": 0
+}

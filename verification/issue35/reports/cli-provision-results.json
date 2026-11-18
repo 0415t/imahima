@@ -1,0 +1,99 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "applied: 20261001000000_initial_schema.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261006000000_toggle_profile_is_free.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261017000000_create_user_device_tokens.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261104000000_profile_free_until.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261105000000_set_profile_is_free_atomic.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261105000001_extend_profile_is_free.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261105000002_enable_pg_cron.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261106000000_auto_expire_free_status.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261106000001_schedule_auto_expire.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261107000000_free_end_notification_claims.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261110000000_extend_profile_is_free_from_notification.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261111000000_group_management_mvp.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261111000001_restrict_profile_client_writes.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261112000000_member_free_notifications.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261113000000_group_chat_mvp.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261116000000_group_mvp_managed_archive.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261117000000_index_group_mvp_rate_limits_window_start.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261117000001_fix_timer_lock_time_and_notification_retry.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261118000000_harden_core_runtime_privileges.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261118000001_harden_notification_runtime_privileges.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261118000002_harden_chat_runtime_privileges.sql",
+      "status": "pass"
+    },
+    {
+      "name": "applied: 20261118000003_harden_archive_runtime_privileges.sql",
+      "status": "pass"
+    },
+    {
+      "name": "c contains all 22 migration versions",
+      "status": "pass"
+    }
+  ],
+  "passed": 23,
+  "failed": 0
+}
