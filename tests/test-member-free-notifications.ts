@@ -25,6 +25,85 @@ function fixture(overrides: Partial<MemberFreeDependencies> = {}) {
 }
 
 describe('member-free notification poller', () => {
+  it('records confirmed acceptance after a shutdown abort using a fresh completion signal', { timeout: 1000 }, async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let sending!: () => void;
+    const started = new Promise<void>((resolve) => { sending = resolve; });
+    const f = fixture({ sendPushNotifications: async (_tokens, _message, _signal, accepted) => {
+      accepted?.(1); sending(); return new Promise(() => {});
+    } });
+    const original = f.dependencies.completeNotification;
+    f.dependencies.completeNotification = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return original(...args);
+    };
+    const poller = createMemberFreeNotificationPoller(f.dependencies, { requestTimeoutMs: 500, stopTimeoutMs: 20 });
+    const cycle = poller.runOnce(); await started;
+    const stopping = poller.stop();
+    t.mock.timers.tick(10); await setImmediate();
+    t.mock.timers.tick(5); await stopping;
+    assert.equal(f.completions.length, 1, 'record acceptance before stop resolves when the DB responds within the stop budget');
+    await cycle;
+    assert.equal(f.completions[0][2], 'sent'); assert.equal(f.completions[0][4], 1);
+    assert.equal(f.completions[0][5]?.aborted, false);
+  });
+
+  it('does not count cumulative reports twice or carry acceptance to another recipient', { timeout: 1000 }, async () => {
+    let sends = 0;
+    const f = fixture({
+      claimNotifications: async () => ({ claims: [claim, { ...claim, notificationId: 'n2' }], error: null }),
+      sendPushNotifications: async (_tokens, _message, _signal, accepted) => {
+        if (++sends === 1) { accepted?.(1); accepted?.(2); }
+        return new Promise(() => {});
+      },
+    });
+    await createMemberFreeNotificationPoller(f.dependencies, { requestTimeoutMs: 20 }).runOnce();
+    assert.deepEqual(f.completions.map((args) => [args[2], args[4]]), [['sent', 2], ['failed', 0]]);
+  });
+
+  it('does not count a ticket arriving after the deadline as confirmed acceptance', { timeout: 1000 }, async () => {
+    let release!: (tickets: { status: 'ok'; id: string }[]) => void;
+    const service = createPushNotificationService({ deleteDeviceToken: async () => ({ error: null }), client: {
+      chunkPushNotifications: (messages) => [messages],
+      sendPushNotificationsAsync: () => new Promise((resolve) => { release = resolve; }),
+    } });
+    const f = fixture({ sendPushNotifications: service.sendPushNotifications });
+    await createMemberFreeNotificationPoller(f.dependencies, { requestTimeoutMs: 20 }).runOnce();
+    release([{ status: 'ok', id: 'late-ticket' }]); await setImmediate();
+    assert.equal(f.completions[0][2], 'failed'); assert.equal(f.completions[0][4], 0);
+    assert.equal(f.completions.length, 1);
+  });
+
+  for (const stage of ['later chunk', 'invalid-token cleanup'] as const) {
+    it(`preserves confirmed acceptance when ${stage} stalls`, { timeout: 1000 }, async () => {
+      let sends = 0;
+      let tokens = 0;
+      let terminal = false;
+      const client: PushClient = {
+        chunkPushNotifications: (messages) => stage === 'later chunk' ? messages.map((message) => [message]) : [messages],
+        sendPushNotificationsAsync: async () => {
+          if (++sends > 1) return new Promise(() => {});
+          return stage === 'later chunk' ? [{ status: 'ok', id: 'confirmed' }]
+            : [{ status: 'ok', id: 'confirmed' }, { status: 'error', message: 'unregistered', details: { error: 'DeviceNotRegistered' } }];
+        },
+      };
+      const service = createPushNotificationService({ client, deleteDeviceToken: async () => { tokens++; return new Promise(() => {}); } });
+      const f = fixture({
+        claimNotifications: async () => ({ claims: terminal ? [] : [claim], error: null }),
+        sendPushNotifications: service.sendPushNotifications,
+      });
+      const original = f.dependencies.completeNotification;
+      f.dependencies.completeNotification = async (...args) => { terminal = args[2] === 'sent'; return original(...args); };
+      const poller = createMemberFreeNotificationPoller(f.dependencies, { requestTimeoutMs: 20 });
+      await poller.runOnce();
+      assert.equal(f.completions[0][2], 'sent'); assert.equal(f.completions[0][4], 1);
+      assert.equal(tokens, stage === 'later chunk' ? 0 : 1);
+      await poller.runOnce(); assert.equal(f.completions.length, 1);
+      assert.equal(sends, stage === 'later chunk' ? 2 : 1);
+      await poller.stop();
+    });
+  }
+
   it('keeps the default request deadline at 10 seconds', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     let signal: AbortSignal | undefined;
@@ -78,7 +157,7 @@ describe('member-free notification poller', () => {
       Object.assign(f.dependencies, { [stage]: (...args: unknown[]) => {
         calls++;
         if (calls === 1) {
-          signal = args.at(-1) as AbortSignal;
+          signal = args.find((arg) => arg instanceof AbortSignal) as AbortSignal;
           return new Promise(() => {});
         }
         return (original as (...args: unknown[]) => unknown)(...args);

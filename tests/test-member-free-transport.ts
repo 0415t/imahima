@@ -54,7 +54,7 @@ test(`worker signal closes stalled Expo ${stalled} and prevents later chunks`, {
 });
 }
 
-for (const mode of ['success', 'timeout', 'stop'] as const) {
+for (const mode of ['success', 'timeout', 'stop', 'partial-timeout', 'cleanup-timeout', 'partial-stop'] as const) {
 test(`integrated member-free worker and real Expo Agent: ${mode}`, { timeout: 5000 }, async () => {
   const server = createServer();
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -70,29 +70,39 @@ test(`integrated member-free worker and real Expo Agent: ${mode}`, { timeout: 50
   const receiving = new Promise<void>((resolve) => { arrived = resolve; });
   const closed = new Promise<void>((resolve) => { disconnected = resolve; });
   let requests = 0;
-  const completions: string[] = [];
+  const completions: { status: string; count: number }[] = [];
   server.on('request', (req, res) => {
-    requests++; req.resume(); res.on('close', disconnected); arrived();
-    if (mode === 'success') {
+    requests++; req.resume(); res.on('close', disconnected);
+    if (mode !== 'partial-stop' || requests === 2) arrived();
+    if (mode === 'cleanup-timeout') {
+      res.end(JSON.stringify({ data: [{ status: 'ok', id: 'confirmed' }, {
+        status: 'error', message: 'unregistered', details: { error: 'DeviceNotRegistered' },
+      }] }));
+    } else if (mode === 'success' || ((mode === 'partial-timeout' || mode === 'partial-stop') && requests === 1)) {
       const count = requests === 1 ? 100 : 1;
       res.end(JSON.stringify({ data: Array.from({ length: count }, () => ({ status: 'ok', id: 'offline-ticket' })) }));
     }
   });
-  const service = createPushNotificationService({ deleteDeviceToken: async () => ({ error: null }) });
+  const service = createPushNotificationService({ deleteDeviceToken: async () => {
+    if (mode === 'cleanup-timeout') return new Promise(() => {});
+    return { error: null };
+  } });
   const poller = createMemberFreeNotificationPoller({
     claimNotifications: async () => ({ claims: [{ notificationId: 'n', eventId: 'e', recipientUserId: 'r', actorName: null, attempts: 1, leaseToken: 'l' }], error: null }),
     validateNotification: async () => ({ validation: { owned: true, stillValid: true }, error: null }),
-    getDeviceTokens: async () => ({ tokens: Array.from({ length: 101 }, (_, i) => `ExpoPushToken[offline-${i}]`), error: null }),
+    getDeviceTokens: async () => ({ tokens: Array.from({ length: mode === 'cleanup-timeout' ? 2 : 101 }, (_, i) => `ExpoPushToken[offline-${i}]`), error: null }),
     sendPushNotifications: service.sendPushNotifications,
-    completeNotification: async (_id, _lease, status) => { completions.push(status); return { completed: true, error: null }; },
+    completeNotification: async (_id, _lease, status, _reason, count) => { completions.push({ status, count: count ?? 0 }); return { completed: true, error: null }; },
   }, { requestTimeoutMs: 500, stopTimeoutMs: 20 });
   try {
     const cycle = poller.runOnce();
     await receiving;
-    if (mode === 'stop') await poller.stop();
+    if (mode === 'stop' || mode === 'partial-stop') await poller.stop();
     await cycle; await closed;
-    assert.equal(requests, mode === 'success' ? 2 : 1);
-    assert.deepEqual(completions, mode === 'stop' ? [] : [mode === 'success' ? 'sent' : 'failed']);
+    assert.equal(requests, ['success', 'partial-timeout', 'partial-stop'].includes(mode) ? 2 : 1);
+    const accepted = mode === 'success' ? 101 : mode === 'cleanup-timeout' ? 1
+      : mode === 'partial-timeout' || mode === 'partial-stop' ? 100 : 0;
+    assert.deepEqual(completions, mode === 'stop' ? [] : [{ status: accepted > 0 ? 'sent' : 'failed', count: accepted }]);
   } finally {
     await poller.stop();
     globalThis.fetch = originalFetch;

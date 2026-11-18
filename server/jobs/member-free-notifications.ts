@@ -23,7 +23,8 @@ export type MemberFreeDependencies = {
     validation: { owned: boolean; stillValid: boolean } | null; error: unknown | null;
   }>;
   getDeviceTokens: (userId: string, signal?: AbortSignal) => Promise<{ tokens: string[]; error: unknown | null }>;
-  sendPushNotifications: (tokens: string[], message: PushMessage, signal?: AbortSignal) => Promise<SendPushResult>;
+  sendPushNotifications: (tokens: string[], message: PushMessage, signal?: AbortSignal,
+    onAccepted?: (confirmedCount: number) => void) => Promise<SendPushResult>;
   completeNotification: (id: string, lease: string, status: 'sent' | 'failed' | 'cancelled',
     error?: string, acceptedCount?: number, signal?: AbortSignal) => Promise<{ completed: boolean; error: unknown | null }>;
 };
@@ -47,8 +48,11 @@ export function createMemberFreeNotificationPoller(dependencies: MemberFreeDepen
 
   const complete = async (claim: MemberFreeClaim, status: 'sent' | 'failed' | 'cancelled', reason?: string, sent = 0) => {
     try {
-      if (shutdown.signal.aborted) return;
-      const result = await request((signal) => dependencies.completeNotification(claim.notificationId, claim.leaseToken, status, reason, sent, signal));
+      if (shutdown.signal.aborted && status !== 'sent') return;
+      // Confirmed acceptance must still be persisted after a send/stop abort.
+      // Give this final write its own bounded signal, not the cancelled send's.
+      const result = await withRequestTimeout((signal) => dependencies.completeNotification(claim.notificationId,
+        claim.leaseToken, status, reason, sent, signal), requestTimeoutMs, status === 'sent' ? undefined : shutdown.signal);
       if (result.error || !result.completed) console.warn('[member-free] completion not recorded', { notificationId: claim.notificationId });
     } catch {
       // lease期限切れ後にDBから再取得する。Token・認証情報を含み得る例外本文は記録しない。
@@ -71,6 +75,7 @@ export function createMemberFreeNotificationPoller(dependencies: MemberFreeDepen
   };
 
   const processClaim = async (claim: MemberFreeClaim) => {
+    let confirmedAccepted = 0;
     try {
       if (!await validate(claim)) return;
       const { tokens, error } = await request((signal) => dependencies.getDeviceTokens(claim.recipientUserId, signal));
@@ -83,7 +88,9 @@ export function createMemberFreeNotificationPoller(dependencies: MemberFreeDepen
       const result = await request((signal) => dependencies.sendPushNotifications([...new Set(tokens)], {
         title: 'imahima', body: name ? `${name}さんが暇になりました！` : 'メンバーが暇になりました！',
         data: { type: 'member_free', eventId: claim.eventId, notificationId: claim.notificationId },
-      }, signal));
+      }, signal, (count) => {
+        if (!signal.aborted) confirmedAccepted = Math.max(confirmedAccepted, count);
+      }));
       const summary = `temporary=${result.failures.temporary}, permanent=${result.failures.permanent}, unknown=${result.failures.unknown}`;
       if (result.sent > 0) {
         // A方式: 受信者内の部分成功はsent。成功済み端末への再送を避ける。
@@ -92,7 +99,8 @@ export function createMemberFreeNotificationPoller(dependencies: MemberFreeDepen
         await complete(claim, result.error instanceof PushSendError && result.error.permanentOnly ? 'cancelled' : 'failed', summary);
       }
     } catch {
-      await complete(claim, 'failed', 'Unexpected worker or transport failure; acceptance may be unknown');
+      await complete(claim, confirmedAccepted > 0 ? 'sent' : 'failed',
+        'Worker or transport interrupted; unconfirmed acceptance may be unknown', confirmedAccepted);
     }
   };
 
@@ -121,11 +129,15 @@ export function createMemberFreeNotificationPoller(dependencies: MemberFreeDepen
     if (timer) { clearInterval(timer); timer = null; }
     if (!running) return;
     let deadline: ReturnType<typeof setTimeout> | undefined;
+    let abortDeadline: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([running, new Promise<void>((resolve) => {
+        // Reserve part of the same stop budget for recording confirmed sends.
+        abortDeadline = setTimeout(() => { shutdown.abort(); }, Math.max(1, Math.floor(stopTimeoutMs / 2)));
         deadline = setTimeout(() => { shutdown.abort(); resolve(); }, stopTimeoutMs);
       })]);
     } finally {
+      clearTimeout(abortDeadline);
       clearTimeout(deadline);
     }
   };

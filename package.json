@@ -5,7 +5,7 @@
   "scripts": {
     "start": "expo start",
     "server": "tsx server/index.ts",
-    "test": "tsx --test \"tests/**/*.ts\"",
+    "test": "tsx --test \"tests/**/*.ts\" tests/test-member-free-review.mjs",
     "test:login": "tsx integration/test-login.ts",
     "test:persistence": "tsx integration/test-session-persistence.ts",
     "test:profile-toggle": "tsx --test tests/test-profile-toggle.ts",
@@ -50,7 +50,8 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-web": "~0.21.0",
-    "react-native-worklets": "0.10.1"
+    "react-native-worklets": "0.10.1",
+    "undici": "^7.30.2"
   },
   "devDependencies": {
     "@expo/ngrok": "^4.1.0",

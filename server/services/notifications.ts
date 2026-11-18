@@ -51,6 +51,7 @@ export function createPushNotificationService(options: {
     tokens: string[],
     message: PushMessage,
     signal?: AbortSignal,
+    onAccepted?: (confirmedCount: number) => void,
   ): Promise<SendPushResult> => {
     signal?.throwIfAborted();
     // The Expo SDK has no per-send AbortSignal. A dispatcher scoped to this send
@@ -59,7 +60,12 @@ export function createPushNotificationService(options: {
       connect: { timeout: 10_000 }, headersTimeout: 10_000, bodyTimeout: 10_000,
     }) : undefined;
     const client = dispatcher ? new Expo({ accessToken: options.accessToken, httpAgent: dispatcher }) : expo;
-    const abort = () => { void dispatcher?.destroy(new Error('Push request aborted')).catch(() => {}); };
+    let rejectAbort!: (reason: unknown) => void;
+    const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject; });
+    const abort = () => {
+      rejectAbort(signal?.reason ?? new Error('Push request aborted'));
+      void dispatcher?.destroy(new Error('Push request aborted')).catch(() => {});
+    };
     signal?.addEventListener('abort', abort, { once: true });
     try {
       const failures: SendPushResult['failures'] = { temporary: 0, permanent: 0, unknown: 0 };
@@ -98,6 +104,7 @@ export function createPushNotificationService(options: {
           if (remaining <= 0) throw new Error('Push send deadline exceeded');
           tickets = await Promise.race([
             client.sendPushNotificationsAsync(chunk),
+            aborted,
             new Promise<never>((_resolve, reject) => {
               timeout = setTimeout(() => reject(new Error('Push send deadline exceeded')), remaining);
             }),
@@ -110,10 +117,13 @@ export function createPushNotificationService(options: {
         } finally {
           if (timeout !== undefined) clearTimeout(timeout);
         }
+        // Do not publish tickets that arrive only after the caller's deadline.
+        signal?.throwIfAborted();
         chunk.forEach((message, index) => {
           const ticket = tickets[index];
           if (ticket?.status === 'ok') {
             sent += 1;
+            onAccepted?.(sent);
             return;
           }
           const code = ticket?.status === 'error' ? ticket.details?.error : undefined;
