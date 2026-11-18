@@ -1,0 +1,434 @@
+{
+  "at": "2026-11-11T07:36:18.950Z",
+  "identity": "imahima_member_free_test|7706764719554813981",
+  "users": {
+    "A": "af2d2bdd-382e-4bb8-8524-34eccdc138db",
+    "B": "5733b916-5882-4822-81b4-291c5c5003da"
+  },
+  "scenarios": [
+    {
+      "label": "success and concurrent lease exclusion",
+      "api": {
+        "status": 200,
+        "body": {
+          "is_free": true,
+          "free_until": "2026-11-11T08:06:22.112758+00:00"
+        }
+      },
+      "eventId": "2b266eae-8880-49b4-9c24-296173b795c8",
+      "notificationId": "b7eb5196-a3a7-49c2-930b-c30ce004d99b",
+      "initial": {
+        "id": "b7eb5196-a3a7-49c2-930b-c30ce004d99b",
+        "event_id": "2b266eae-8880-49b4-9c24-296173b795c8",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "7080b150-f31e-4da8-bf63-f892850a6083",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:36:22.112758+00:00",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:36:22.112758+00:00",
+        "updated_at": "2026-11-11T07:36:22.112758+00:00"
+      },
+      "final": {
+        "id": "b7eb5196-a3a7-49c2-930b-c30ce004d99b",
+        "event_id": "2b266eae-8880-49b4-9c24-296173b795c8",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "7080b150-f31e-4da8-bf63-f892850a6083",
+        "status": "sent",
+        "attempts": 1,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:36:22.112758+00:00",
+        "lease_token": "258d9153-948e-4a69-9e03-0421baad73f7",
+        "lease_expires_at": null,
+        "sent_at": "2026-11-11T07:36:25.902569+00:00",
+        "accepted_count": 1,
+        "last_error": "temporary=0, permanent=0, unknown=0",
+        "created_at": "2026-11-11T07:36:22.112758+00:00",
+        "updated_at": "2026-11-11T07:36:25.902569+00:00"
+      },
+      "logs": {
+        "stdout": "Free-end notification poller started\nMember-free notification poller started\nAPI server listening on http://localhost:55442\n",
+        "stderr": ""
+      },
+      "mockCalls": 1,
+      "passed": true
+    },
+    {
+      "label": "temporary failure and timed retry",
+      "api": {
+        "status": 200,
+        "body": {
+          "is_free": true,
+          "free_until": "2026-11-11T08:06:29.736744+00:00"
+        }
+      },
+      "eventId": "2fb3cad8-74fe-4982-b5dc-4eb2b1fedfdd",
+      "notificationId": "acd87122-fc19-4cbe-9515-c3675b6e0533",
+      "initial": {
+        "id": "acd87122-fc19-4cbe-9515-c3675b6e0533",
+        "event_id": "2fb3cad8-74fe-4982-b5dc-4eb2b1fedfdd",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "728e616e-2770-4c74-b894-7f9b1c71979a",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:36:29.736744+00:00",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:36:29.736744+00:00",
+        "updated_at": "2026-11-11T07:36:29.736744+00:00"
+      },
+      "failed": {
+        "id": "acd87122-fc19-4cbe-9515-c3675b6e0533",
+        "event_id": "2fb3cad8-74fe-4982-b5dc-4eb2b1fedfdd",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "728e616e-2770-4c74-b894-7f9b1c71979a",
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:36:35.924515+00:00",
+        "lease_token": "ea265675-18cb-42c3-98d9-e294f483afce",
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": "temporary=1, permanent=0, unknown=0",
+        "created_at": "2026-11-11T07:36:29.736744+00:00",
+        "updated_at": "2026-11-11T07:36:30.924515+00:00"
+      },
+      "final": {
+        "id": "acd87122-fc19-4cbe-9515-c3675b6e0533",
+        "event_id": "2fb3cad8-74fe-4982-b5dc-4eb2b1fedfdd",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "728e616e-2770-4c74-b894-7f9b1c71979a",
+        "status": "sent",
+        "attempts": 2,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:36:35.924515+00:00",
+        "lease_token": "d6f54f7f-3749-45a5-99f0-c969fbf0284b",
+        "lease_expires_at": null,
+        "sent_at": "2026-11-11T07:36:36.092981+00:00",
+        "accepted_count": 1,
+        "last_error": "temporary=0, permanent=0, unknown=0",
+        "created_at": "2026-11-11T07:36:29.736744+00:00",
+        "updated_at": "2026-11-11T07:36:36.092981+00:00"
+      },
+      "mockCalls": 2,
+      "passed": true
+    },
+    {
+      "label": "max attempts and terminal exclusion",
+      "api": {
+        "status": 200,
+        "body": {
+          "is_free": true,
+          "free_until": "2026-11-11T08:06:38.219259+00:00"
+        }
+      },
+      "eventId": "7ed8b95c-1a5d-4821-bdb7-ad5e246fa3f3",
+      "notificationId": "e38bd61b-283e-46d4-a020-d234dfb0480d",
+      "initial": {
+        "id": "e38bd61b-283e-46d4-a020-d234dfb0480d",
+        "event_id": "7ed8b95c-1a5d-4821-bdb7-ad5e246fa3f3",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "2acf1dd3-7eea-49d3-8030-0303da78525d",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:36:38.219259+00:00",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:36:38.219259+00:00",
+        "updated_at": "2026-11-11T07:36:38.219259+00:00"
+      },
+      "final": {
+        "id": "e38bd61b-283e-46d4-a020-d234dfb0480d",
+        "event_id": "7ed8b95c-1a5d-4821-bdb7-ad5e246fa3f3",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "2acf1dd3-7eea-49d3-8030-0303da78525d",
+        "status": "exhausted",
+        "attempts": 3,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:16.686554+00:00",
+        "lease_token": "46cc3da7-27f7-4ec4-bb2f-51ce5d53eebe",
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": "temporary=1, permanent=0, unknown=0",
+        "created_at": "2026-11-11T07:36:38.219259+00:00",
+        "updated_at": "2026-11-11T07:36:56.686554+00:00"
+      },
+      "mockCalls": 3,
+      "passed": true
+    },
+    {
+      "label": "permanent failure is cancelled",
+      "api": {
+        "status": 200,
+        "body": {
+          "is_free": true,
+          "free_until": "2026-11-11T08:07:00.45205+00:00"
+        }
+      },
+      "eventId": "f50a3894-8e3e-48a1-b54e-b33cf2ce7d90",
+      "notificationId": "b8f2a542-07fd-4f4e-8a07-73b43ececdc8",
+      "initial": {
+        "id": "b8f2a542-07fd-4f4e-8a07-73b43ececdc8",
+        "event_id": "f50a3894-8e3e-48a1-b54e-b33cf2ce7d90",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "bbaf773c-d760-4d82-ada9-5f5f419ba380",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:00.45205+00:00",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:37:00.45205+00:00",
+        "updated_at": "2026-11-11T07:37:00.45205+00:00"
+      },
+      "final": {
+        "id": "b8f2a542-07fd-4f4e-8a07-73b43ececdc8",
+        "event_id": "f50a3894-8e3e-48a1-b54e-b33cf2ce7d90",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "bbaf773c-d760-4d82-ada9-5f5f419ba380",
+        "status": "cancelled",
+        "attempts": 1,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:00.45205+00:00",
+        "lease_token": "6ea03c4d-3518-4f2b-a120-2a42adbe6b7f",
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": "temporary=0, permanent=1, unknown=0",
+        "created_at": "2026-11-11T07:37:00.45205+00:00",
+        "updated_at": "2026-11-11T07:37:02.251143+00:00"
+      },
+      "mockCalls": 1,
+      "passed": true
+    },
+    {
+      "label": "crash before acceptance and lease recovery",
+      "api": {
+        "status": 200,
+        "body": {
+          "is_free": true,
+          "free_until": "2026-11-11T08:07:05.683089+00:00"
+        }
+      },
+      "eventId": "3c0aed81-32d2-4ee8-8fa6-129c58d78678",
+      "notificationId": "22d69239-2845-43a7-84fd-4f01fa4d5f02",
+      "initial": {
+        "id": "22d69239-2845-43a7-84fd-4f01fa4d5f02",
+        "event_id": "3c0aed81-32d2-4ee8-8fa6-129c58d78678",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "2f28435b-6375-4bc8-99fa-7a22962b4f0a",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:05.683089+00:00",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:37:05.683089+00:00",
+        "updated_at": "2026-11-11T07:37:05.683089+00:00"
+      },
+      "processing": {
+        "id": "22d69239-2845-43a7-84fd-4f01fa4d5f02",
+        "event_id": "3c0aed81-32d2-4ee8-8fa6-129c58d78678",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "2f28435b-6375-4bc8-99fa-7a22962b4f0a",
+        "status": "processing",
+        "attempts": 1,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:05.683089+00:00",
+        "lease_token": "ed401647-a576-49b4-a55f-9d91b7448613",
+        "lease_expires_at": "2026-11-11T07:39:06.835436+00:00",
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:37:05.683089+00:00",
+        "updated_at": "2026-11-11T07:37:06.835436+00:00"
+      },
+      "final": {
+        "id": "22d69239-2845-43a7-84fd-4f01fa4d5f02",
+        "event_id": "3c0aed81-32d2-4ee8-8fa6-129c58d78678",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "2f28435b-6375-4bc8-99fa-7a22962b4f0a",
+        "status": "sent",
+        "attempts": 2,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:05.683089+00:00",
+        "lease_token": "b89bd812-ec26-4e07-9de6-21db0d8d8997",
+        "lease_expires_at": null,
+        "sent_at": "2026-11-11T07:37:09.994638+00:00",
+        "accepted_count": 1,
+        "last_error": "temporary=0, permanent=0, unknown=0",
+        "created_at": "2026-11-11T07:37:05.683089+00:00",
+        "updated_at": "2026-11-11T07:37:09.994638+00:00"
+      },
+      "staleCompletion": false,
+      "mockCalls": 2,
+      "simulatedAcceptances": 1,
+      "leaseExpiryInjected": true,
+      "passed": true
+    },
+    {
+      "label": "crash after acceptance: at-least-once limitation",
+      "api": {
+        "status": 200,
+        "body": {
+          "is_free": true,
+          "free_until": "2026-11-11T08:07:11.756068+00:00"
+        }
+      },
+      "eventId": "f778ec7d-665e-499f-8cd9-0596c6a6a020",
+      "notificationId": "02986ee8-f196-4804-8066-6d073732c9f1",
+      "initial": {
+        "id": "02986ee8-f196-4804-8066-6d073732c9f1",
+        "event_id": "f778ec7d-665e-499f-8cd9-0596c6a6a020",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "f0457d13-784d-4c7c-b1ac-bcdb062db749",
+        "status": "pending",
+        "attempts": 0,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:11.756068+00:00",
+        "lease_token": null,
+        "lease_expires_at": null,
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:37:11.756068+00:00",
+        "updated_at": "2026-11-11T07:37:11.756068+00:00"
+      },
+      "processing": {
+        "id": "02986ee8-f196-4804-8066-6d073732c9f1",
+        "event_id": "f778ec7d-665e-499f-8cd9-0596c6a6a020",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "f0457d13-784d-4c7c-b1ac-bcdb062db749",
+        "status": "processing",
+        "attempts": 1,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:11.756068+00:00",
+        "lease_token": "da11d03a-bbcc-4d71-a9c6-5bba3c9b6c1a",
+        "lease_expires_at": "2026-11-11T07:39:13.005026+00:00",
+        "sent_at": null,
+        "accepted_count": 0,
+        "last_error": null,
+        "created_at": "2026-11-11T07:37:11.756068+00:00",
+        "updated_at": "2026-11-11T07:37:13.005026+00:00"
+      },
+      "final": {
+        "id": "02986ee8-f196-4804-8066-6d073732c9f1",
+        "event_id": "f778ec7d-665e-499f-8cd9-0596c6a6a020",
+        "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+        "recipient_period_id": "f0457d13-784d-4c7c-b1ac-bcdb062db749",
+        "status": "sent",
+        "attempts": 2,
+        "max_attempts": 3,
+        "next_attempt_at": "2026-11-11T07:37:11.756068+00:00",
+        "lease_token": "759db6c9-8166-4443-833e-71146b7aba76",
+        "lease_expires_at": null,
+        "sent_at": "2026-11-11T07:37:16.278441+00:00",
+        "accepted_count": 1,
+        "last_error": "temporary=0, permanent=0, unknown=0",
+        "created_at": "2026-11-11T07:37:11.756068+00:00",
+        "updated_at": "2026-11-11T07:37:16.278441+00:00"
+      },
+      "staleCompletion": false,
+      "mockCalls": 2,
+      "simulatedAcceptances": 2,
+      "leaseExpiryInjected": true,
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "before": [
+    {
+      "id": "d5bdda00-95fc-48db-b4c8-43a70ae71c49",
+      "status": "cancelled",
+      "attempts": 1
+    },
+    {
+      "id": "aca4ec09-44d7-43f3-9a89-762ee18dcf62",
+      "status": "cancelled",
+      "attempts": 1
+    },
+    {
+      "id": "87ee9f58-adb2-4966-8fba-5dc66421598f",
+      "status": "cancelled",
+      "attempts": 2
+    }
+  ],
+  "fakeTokenRemoved": true,
+  "after": [
+    {
+      "id": "d5bdda00-95fc-48db-b4c8-43a70ae71c49",
+      "status": "cancelled",
+      "attempts": 1,
+      "accepted_count": 0
+    },
+    {
+      "id": "aca4ec09-44d7-43f3-9a89-762ee18dcf62",
+      "status": "cancelled",
+      "attempts": 1,
+      "accepted_count": 0
+    },
+    {
+      "id": "87ee9f58-adb2-4966-8fba-5dc66421598f",
+      "status": "cancelled",
+      "attempts": 2,
+      "accepted_count": 0
+    },
+    {
+      "id": "b7eb5196-a3a7-49c2-930b-c30ce004d99b",
+      "status": "sent",
+      "attempts": 1,
+      "accepted_count": 1
+    },
+    {
+      "id": "acd87122-fc19-4cbe-9515-c3675b6e0533",
+      "status": "sent",
+      "attempts": 2,
+      "accepted_count": 1
+    },
+    {
+      "id": "e38bd61b-283e-46d4-a020-d234dfb0480d",
+      "status": "exhausted",
+      "attempts": 3,
+      "accepted_count": 0
+    },
+    {
+      "id": "b8f2a542-07fd-4f4e-8a07-73b43ececdc8",
+      "status": "cancelled",
+      "attempts": 1,
+      "accepted_count": 0
+    },
+    {
+      "id": "22d69239-2845-43a7-84fd-4f01fa4d5f02",
+      "status": "sent",
+      "attempts": 2,
+      "accepted_count": 1
+    },
+    {
+      "id": "02986ee8-f196-4804-8066-6d073732c9f1",
+      "status": "sent",
+      "attempts": 2,
+      "accepted_count": 1
+    }
+  ]
+}

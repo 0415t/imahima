@@ -9,14 +9,19 @@ import { createPushNotificationService } from './services/notifications';
 import { groupService } from './services/groups';
 import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
+import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim } from './jobs/member-free-notifications';
+
+const memberFreeMaxAttempts = process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true'
+  ? parseMemberFreeMaxAttempts(process.env.MEMBER_FREE_NOTIFICATIONS_MAX_ATTEMPTS) : 3;
 
 const pushNotifications = createPushNotificationService({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
-  deleteDeviceToken: async (token) => {
-    const { error } = await serverSupabase
+  deleteDeviceToken: async (token, signal) => {
+    const query = serverSupabase
       .from('user_device_tokens')
       .delete()
       .eq('expo_push_token', token);
+    const { error } = await (signal ? query.abortSignal(signal) : query);
     return { error };
   },
 });
@@ -71,9 +76,11 @@ const app = createApp({
 }, groups, chatService(serverSupabase, groups));
 const port = Number(process.env.PORT ?? 3000);
 
-const server = app.listen(port, () => {
+const server = app.listen({ port, ...(process.env.HOST ? { host: process.env.HOST } : {}) }, () => {
   console.log(`API server listening on http://localhost:${port}`);
 });
+
+const notificationPollers: { stop: () => Promise<void> }[] = [];
 
 // 暇状態終了5分前通知ポーラー（環境変数で有効化。デフォルト無効）
 if (process.env.FREE_END_NOTIFICATIONS_ENABLED === 'true') {
@@ -125,11 +132,62 @@ if (process.env.FREE_END_NOTIFICATIONS_ENABLED === 'true') {
   });
 
   poller.start();
+  notificationPollers.push(poller);
   console.log('Free-end notification poller started');
+}
 
+if (process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true') {
+  const poller = createMemberFreeNotificationPoller({
+    claimNotifications: async (signal) => {
+      const { data, error } = await serverSupabase.rpc('claim_member_free_notifications', {
+        p_limit: 20, p_lease_seconds: 120,
+        p_max_attempts: memberFreeMaxAttempts,
+      }).abortSignal(signal!);
+      const claims: MemberFreeClaim[] = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+        notificationId: String(row.notification_id), eventId: String(row.event_id),
+        recipientUserId: String(row.recipient_user_id), actorName: typeof row.actor_name === 'string' ? row.actor_name : null,
+        attempts: Number(row.attempts), leaseToken: String(row.lease_token),
+      }));
+      return { claims, error };
+    },
+    validateNotification: async (id, lease, signal) => {
+      const { data, error } = await serverSupabase.rpc('validate_member_free_notification', {
+        p_notification: id, p_lease_token: lease,
+      }).abortSignal(signal!);
+      const row = Array.isArray(data) ? data[0] : data;
+      return { validation: row ? { owned: row.owned === true, stillValid: row.still_valid === true } : null, error };
+    },
+    getDeviceTokens: async (userId, signal) => {
+      const { data, error } = await serverSupabase.from('user_device_tokens').select('expo_push_token').eq('user_id', userId).abortSignal(signal!);
+      return { tokens: (data ?? []).map((row) => row.expo_push_token), error };
+    },
+    sendPushNotifications: pushNotifications.sendPushNotifications,
+    completeNotification: async (id, lease, status, errorMessage, acceptedCount, signal) => {
+      const { data, error } = await serverSupabase.rpc('complete_member_free_notification', {
+        p_notification: id, p_lease_token: lease, p_status: status,
+        p_error: errorMessage ?? null, p_accepted_count: acceptedCount ?? 0,
+      }).abortSignal(signal!);
+      return { completed: data === true, error };
+    },
+  }, { intervalMs: Number(process.env.MEMBER_FREE_NOTIFICATIONS_INTERVAL_MS ?? 5_000) });
+  poller.start();
+  notificationPollers.push(poller);
+  console.log('Member-free notification poller started');
+}
+
+if (notificationPollers.length) {
+  let shuttingDown = false;
   const shutdown = () => {
-    void poller.stop().finally(() => {
-      server.close(() => process.exit(0));
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Bound the entire shutdown as well, including other pollers and HTTP clients.
+    const deadline = setTimeout(() => {
+      server.closeAllConnections();
+      process.exit(0);
+    }, 10_000);
+    deadline.unref();
+    void Promise.all(notificationPollers.map((poller) => poller.stop())).finally(() => {
+      server.close(() => { clearTimeout(deadline); process.exit(0); });
     });
   };
   process.on('SIGINT', shutdown);

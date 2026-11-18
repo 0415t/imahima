@@ -1,0 +1,166 @@
+{
+  "at": "2026-11-11T05:14:53.191Z",
+  "responses": {
+    "invalid": {
+      "status": 401,
+      "body": {
+        "error": "Invalid or expired access token"
+      }
+    },
+    "BOn": {
+      "status": 200,
+      "body": {
+        "is_free": true,
+        "free_until": "2026-11-11T05:44:56.255642+00:00"
+      }
+    },
+    "AOn": {
+      "status": 200,
+      "body": {
+        "is_free": true,
+        "free_until": "2026-11-11T05:44:56.48297+00:00"
+      }
+    },
+    "reOn": {
+      "status": 200,
+      "body": {
+        "is_free": true,
+        "free_until": "2026-11-11T05:44:56.48297+00:00"
+      }
+    },
+    "manual": {
+      "status": 200,
+      "body": {
+        "sent": 0,
+        "message": "No registered devices"
+      }
+    }
+  },
+  "checks": [
+    "normal entrypoint: invalid Auth rejected without profile mutation",
+    "normal entrypoint: B then A ON produces one pending row; re-ON deduplicated; manual push sends zero with no tokens",
+    "both real workers start and use real claim RPCs; member worker validates and cancels no-device notification",
+    "normal SIGTERM shutdown handler exits 0; no external HTTP attempted"
+  ],
+  "users": {
+    "A": "af2d2bdd-382e-4bb8-8524-34eccdc138db",
+    "B": "5733b916-5882-4822-81b4-291c5c5003da"
+  },
+  "passed": true,
+  "beforeOutbox": [
+    {
+      "id": "aca4ec09-44d7-43f3-9a89-762ee18dcf62",
+      "event_id": "429b501a-2bb8-4cc1-85ec-7685681e6bfa",
+      "recipient_user_id": "0f39a8b5-ac12-4dcc-bb87-67c7cd83aa86",
+      "recipient_period_id": "7d1815a1-f546-4ad5-a8fc-3b8a4ccf99db",
+      "status": "pending",
+      "attempts": 0,
+      "max_attempts": 3,
+      "next_attempt_at": "2026-11-11T05:03:29.308062+00:00",
+      "lease_token": null,
+      "lease_expires_at": null,
+      "sent_at": null,
+      "accepted_count": 0,
+      "last_error": null,
+      "created_at": "2026-11-11T05:03:29.308062+00:00",
+      "updated_at": "2026-11-11T05:03:29.308062+00:00"
+    }
+  ],
+  "room": "859d9549-9f19-4aac-abb6-57a6dbf1aa5c",
+  "event": {
+    "id": "614048d5-7e8a-4612-87d4-e89b130eaeca",
+    "actor_user_id": "af2d2bdd-382e-4bb8-8524-34eccdc138db",
+    "actor_period_id": "aa059ecf-d3ce-42a8-a11c-6b89983fa021",
+    "actor_name": "Entrypoint A",
+    "occurred_at": "2026-11-11T05:14:56.48297+00:00"
+  },
+  "pending": {
+    "id": "d5bdda00-95fc-48db-b4c8-43a70ae71c49",
+    "event_id": "614048d5-7e8a-4612-87d4-e89b130eaeca",
+    "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+    "recipient_period_id": "074fcaee-d49e-4b25-95e5-1d361abb0695",
+    "status": "pending",
+    "attempts": 0,
+    "max_attempts": 3,
+    "next_attempt_at": "2026-11-11T05:14:56.48297+00:00",
+    "lease_token": null,
+    "lease_expires_at": null,
+    "sent_at": null,
+    "accepted_count": 0,
+    "last_error": null,
+    "created_at": "2026-11-11T05:14:56.48297+00:00",
+    "updated_at": "2026-11-11T05:14:56.48297+00:00"
+  },
+  "apiLogs": {
+    "stdout": "API server listening on http://localhost:55442\n",
+    "stderr": ""
+  },
+  "completed": {
+    "id": "d5bdda00-95fc-48db-b4c8-43a70ae71c49",
+    "event_id": "614048d5-7e8a-4612-87d4-e89b130eaeca",
+    "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+    "recipient_period_id": "074fcaee-d49e-4b25-95e5-1d361abb0695",
+    "status": "cancelled",
+    "attempts": 1,
+    "max_attempts": 3,
+    "next_attempt_at": "2026-11-11T05:14:56.48297+00:00",
+    "lease_token": "beeb7c24-cdd2-4cc1-977e-05b86f7cce96",
+    "lease_expires_at": null,
+    "sent_at": null,
+    "accepted_count": 0,
+    "last_error": "No registered devices",
+    "created_at": "2026-11-11T05:14:56.48297+00:00",
+    "updated_at": "2026-11-11T05:14:58.044152+00:00"
+  },
+  "workerLogs": {
+    "stdout": "Free-end notification poller started\nMember-free notification poller started\nAPI server listening on http://localhost:55442\n",
+    "stderr": ""
+  },
+  "audit": {
+    "blockedExternal": 0,
+    "fetches": {
+      "/rest/v1/rpc/claim_free_end_notifications 200": 1,
+      "/rest/v1/rpc/claim_member_free_notifications 200": 1,
+      "/rest/v1/rpc/validate_member_free_notification 200": 2,
+      "/rest/v1/user_device_tokens 200": 2,
+      "/rest/v1/rpc/complete_member_free_notification 200": 2
+    },
+    "guardSelfTestPassed": true
+  },
+  "afterOutbox": [
+    {
+      "id": "d5bdda00-95fc-48db-b4c8-43a70ae71c49",
+      "event_id": "614048d5-7e8a-4612-87d4-e89b130eaeca",
+      "recipient_user_id": "5733b916-5882-4822-81b4-291c5c5003da",
+      "recipient_period_id": "074fcaee-d49e-4b25-95e5-1d361abb0695",
+      "status": "cancelled",
+      "attempts": 1,
+      "max_attempts": 3,
+      "next_attempt_at": "2026-11-11T05:14:56.48297+00:00",
+      "lease_token": "beeb7c24-cdd2-4cc1-977e-05b86f7cce96",
+      "lease_expires_at": null,
+      "sent_at": null,
+      "accepted_count": 0,
+      "last_error": "No registered devices",
+      "created_at": "2026-11-11T05:14:56.48297+00:00",
+      "updated_at": "2026-11-11T05:14:58.044152+00:00"
+    },
+    {
+      "id": "aca4ec09-44d7-43f3-9a89-762ee18dcf62",
+      "event_id": "429b501a-2bb8-4cc1-85ec-7685681e6bfa",
+      "recipient_user_id": "0f39a8b5-ac12-4dcc-bb87-67c7cd83aa86",
+      "recipient_period_id": "7d1815a1-f546-4ad5-a8fc-3b8a4ccf99db",
+      "status": "cancelled",
+      "attempts": 1,
+      "max_attempts": 3,
+      "next_attempt_at": "2026-11-11T05:03:29.308062+00:00",
+      "lease_token": "bb6d46bc-7f74-424c-9a79-8750d8216a2c",
+      "lease_expires_at": null,
+      "sent_at": null,
+      "accepted_count": 0,
+      "last_error": "No registered devices",
+      "created_at": "2026-11-11T05:03:29.308062+00:00",
+      "updated_at": "2026-11-11T05:14:58.117886+00:00"
+    }
+  ]
+}
