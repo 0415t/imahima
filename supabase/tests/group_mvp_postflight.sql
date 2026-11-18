@@ -1,4 +1,6 @@
 -- READ ONLY: after an explicitly approved migration, before group traffic.
+-- Historical initial group deployment audit. After the managed-archive migration,
+-- also use group_archive_postflight.sql; creator presence is no longer classification.
 -- One result set: section TEXT, data JSONB with status / expected / actual.
 -- PASS = checked predicate passed; REVIEW = compare with the saved baseline;
 -- FAIL = stop. Missing required new objects intentionally error and stop.

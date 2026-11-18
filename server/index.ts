@@ -7,6 +7,7 @@ import {
 } from './jobs/free-end-notifications';
 import { createPushNotificationService } from './services/notifications';
 import { groupService } from './services/groups';
+import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
 
 const pushNotifications = createPushNotificationService({
@@ -24,6 +25,7 @@ const getUserId = async (accessToken: string) => {
   return { userId: data.user?.id ?? null, error };
 };
 
+const groups = groupService(serverSupabase, getUserId);
 const app = createApp({
   getUserId,
   toggleIsFree: async (userId) => {
@@ -66,7 +68,7 @@ const app = createApp({
   },
   sendPushNotifications: (tokens, message) =>
     pushNotifications.sendPushNotifications(tokens, message),
-}, groupService(serverSupabase, getUserId));
+}, groups, chatService(serverSupabase, groups));
 const port = Number(process.env.PORT ?? 3000);
 
 const server = app.listen(port, () => {

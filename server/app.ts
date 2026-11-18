@@ -1,5 +1,7 @@
 import express, { type ErrorRequestHandler } from 'express';
 import { groupRouter, type GroupDependencies } from './groups';
+import { chatRouter, isChatPath, type ChatDependencies } from './chat';
+import { requestDeadline } from './timeouts';
 
 export type AvailabilityDependencies = {
   getUserId: (accessToken: string) => Promise<{ userId: string | null; error: unknown | null }>;
@@ -31,11 +33,16 @@ const TEST_NOTIFICATION_COOLDOWN_MS = 60_000;
 export function createApp(
   dependencies: AvailabilityDependencies,
   notifications?: NotificationDependencies,
-  groups?: GroupDependencies
+  groups?: GroupDependencies,
+  chat?: ChatDependencies,
+  requestTimeoutMs?: number
 ) {
   const app = express();
 
+  app.use(requestDeadline(requestTimeoutMs));
   app.use(express.json());
+  app.use((_request, response, next) => { if (!response.headersSent && !response.destroyed) next(); });
+  if (chat) app.use('/groups', chatRouter(chat));
   if (groups) app.use('/groups', groupRouter(groups));
 
   const lastTestNotificationAt = new Map<string, number>();
@@ -341,8 +348,16 @@ export function createApp(
   });
 
   const groupParseError: ErrorRequestHandler = (error, request, response, next) => {
-    if (!/^\/groups(?:\/|$)/.test(request.path)) { next(error); return; }
+    if (response.headersSent || response.destroyed) return;
+    if (!/^\/groups(?:\/|$)/i.test(request.path)) { next(error); return; }
     const status = error?.status === 413 ? 413 : error?.status === 400 ? 400 : 503;
+    if (chat && isChatPath(request.path)) {
+      response.set('Cache-Control', 'no-store').status(status).json({
+        error: status === 413 ? 'Request too large' : status === 400 ? 'Invalid JSON body' : 'Chat service unavailable',
+        code: status === 413 ? 'PAYLOAD_TOO_LARGE' : status === 400 ? 'INVALID_INPUT' : 'CHAT_UNAVAILABLE',
+      });
+      return;
+    }
     response.set('Cache-Control', 'no-store').status(status).json({
       error: status === 413 ? 'Request too large' : status === 400 ? 'Invalid JSON body' : 'Group service unavailable',
     });

@@ -1,0 +1,24 @@
+{
+  "name": "imahima-group-chat-local-verification",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node local-stack.mjs start",
+    "stop": "node local-stack.mjs stop",
+    "status": "node local-stack.mjs status",
+    "verify": "node verify-schema.mjs",
+    "verify:schema": "node verify-schema.mjs",
+    "schema:apply": "node apply-schema.mjs --apply",
+    "test:integration": "node integration-test.mjs",
+    "audit:integration": "node integration-audit.mjs",
+    "verify:current": "node verify-schema.mjs",
+    "verify:empty:historical": "node verify-schema.mjs --expect-empty",
+    "test:final": "node --import tsx final-validation.mjs",
+    "test:archive": "node --import tsx archive-regression.mjs",
+    "test:timeouts": "node --import tsx timeout-integration.mjs"
+  },
+  "devDependencies": {
+    "pg": "8.16.3",
+    "supabase": "3.1.0"
+  }
+}

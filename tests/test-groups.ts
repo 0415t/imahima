@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { AuthApiError } from '@supabase/supabase-js';
 import { once } from 'node:events';
 import { readdirSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import { createApp } from '../server/app';
 import type { GroupDependencies, GroupOperation } from '../server/groups';
+import type { ChatOperation } from '../server/chat';
 
 it('uses a unique version for every Supabase migration', () => {
   const versions = readdirSync('supabase/migrations').filter(name => name.endsWith('.sql'))
@@ -19,8 +21,9 @@ describe('Group API authorization and contracts', () => {
   let deps: GroupDependencies;
   let calls: { operation: GroupOperation; actor: string; args: Record<string, unknown> }[];
   let rateCalls: string[];
+  let chatCalls: ChatOperation[];
   beforeEach(async () => {
-    calls = []; rateCalls = [];
+    calls = []; rateCalls = []; chatCalls = [];
     deps = {
       getUserId: async () => ({ userId: 'actor', error: null }),
       isMember: async () => true,
@@ -41,7 +44,11 @@ describe('Group API authorization and contracts', () => {
     }, {
       getDeviceTokens: async () => ({ tokens: ['test-device'], error: null }),
       sendPushNotifications: async () => ({ sent: 1, error: null }),
-    }, deps));
+    }, deps, {
+      getUserId: token => deps.getUserId(token),
+      isMember: (actor, room) => deps.isMember(actor, room),
+      execute: async operation => { chatCalls.push(operation); return { status: operation === 'send' ? 201 : 200, data: { ok: true } }; },
+    }));
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     base = `http://127.0.0.1:${address.port}/groups`;
@@ -58,7 +65,7 @@ describe('Group API authorization and contracts', () => {
     assert.equal(calls.length, 0); assert.equal(rateCalls.length, 0);
   });
   it('rejects invalid authentication before database access', async () => {
-    deps.getUserId = async () => ({ userId: null, error: new Error('invalid') });
+    deps.getUserId = async () => ({ userId: null, error: new AuthApiError('test invalid JWT', 403, 'bad_jwt') });
     assert.equal((await request('')).status, 401); assert.equal(calls.length, 0);
   });
   it('derives the creator from auth and ignores forged actor fields', async () => {
@@ -132,7 +139,7 @@ describe('Group API authorization and contracts', () => {
     assert.equal(response.status, 204); assert.equal(await response.text(), '');
   });
 
-  it('serves group, timer, notification extension and test push routes in the same app', async () => {
+  it('serves group, timer, notification and all four chat routes in the same app', async () => {
     assert.equal((await request('')).status, 200);
     const root = base.replace(/\/groups$/, '');
     for (const [path, method, body] of [
@@ -150,6 +157,15 @@ describe('Group API authorization and contracts', () => {
       if (path === '/notifications/test') assert.equal(data.sent, 1);
       else assert.equal(data.is_free, true);
     }
+    assert.deepEqual(calls.map(call => call.operation), ['list']);
+    const clientId = '22222222-2222-4222-8222-222222222222';
+    for (const [path, method, body, status] of [
+      [`/${roomId}/messages`, 'POST', { body: 'combined app', client_message_id: clientId }, 201],
+      [`/${roomId}/messages`, 'GET', undefined, 200],
+      [`/${roomId}/messages/${clientId}`, 'DELETE', undefined, 200],
+      [`/${roomId}/message-events`, 'GET', undefined, 200],
+    ] as const) assert.equal((await request(path, method, body)).status, status, path);
+    assert.deepEqual(chatCalls, ['send', 'history', 'delete', 'events']);
     assert.deepEqual(calls.map(call => call.operation), ['list']);
   });
 });
