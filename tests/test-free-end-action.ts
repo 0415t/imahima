@@ -65,8 +65,10 @@ describe('notification 30 minute extension', () => {
       { getAccessToken: async () => 'token', fetch: async () => { throw new Error('offline'); } },
       { getAccessToken: async () => 'token', fetch: async () => Response.json({ is_free: true, free_until: null }) },
     ]) {
-      const post = createExtendClient({ ...options, apiUrl: 'https://api.example.test', onChanged: () => { assert.fail('must not refresh'); } });
+      let refreshes = 0;
+      const post = createExtendClient({ ...options, apiUrl: 'https://api.example.test', onChanged: () => { refreshes += 1; } });
       assert.deepEqual(await post('/extend'), { ok: false, reason: 'server-error' });
+      assert.equal(refreshes, 0, 'must not refresh after a failed request');
     }
   });
 

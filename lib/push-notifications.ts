@@ -25,7 +25,7 @@ export async function registerNotificationCategories(): Promise<void> {
             identifier: EXTEND_30_ACTION,
             buttonTitle: '30分延長',
             options: {
-                opensAppToForeground: false,
+                opensAppToForeground: Platform.OS === 'ios',
             },
         },
     ]);

@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
 import { createPushNotificationService } from '../server/services/notifications';
+import { createMemberFreeNotificationPoller } from '../server/jobs/member-free-notifications';
 
 for (const stalled of ['headers', 'body'] as const) {
 test(`worker signal closes stalled Expo ${stalled} and prevents later chunks`, { timeout: 5000 }, async () => {
@@ -46,6 +47,54 @@ test(`worker signal closes stalled Expo ${stalled} and prevents later chunks`, {
     await closed;
     assert.equal(requests, 1);
   } finally {
+    globalThis.fetch = originalFetch;
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+}
+
+for (const mode of ['success', 'timeout', 'stop'] as const) {
+test(`integrated member-free worker and real Expo Agent: ${mode}`, { timeout: 5000 }, async () => {
+  const server = createServer();
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const local = `http://127.0.0.1:${address.port}/mock-expo`;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    assert.equal(String(input), 'https://exp.host/--/api/v2/push/send');
+    return originalFetch(local, { ...init, redirect: 'error' });
+  };
+  let arrived!: () => void, disconnected!: () => void;
+  const receiving = new Promise<void>((resolve) => { arrived = resolve; });
+  const closed = new Promise<void>((resolve) => { disconnected = resolve; });
+  let requests = 0;
+  const completions: string[] = [];
+  server.on('request', (req, res) => {
+    requests++; req.resume(); res.on('close', disconnected); arrived();
+    if (mode === 'success') {
+      const count = requests === 1 ? 100 : 1;
+      res.end(JSON.stringify({ data: Array.from({ length: count }, () => ({ status: 'ok', id: 'offline-ticket' })) }));
+    }
+  });
+  const service = createPushNotificationService({ deleteDeviceToken: async () => ({ error: null }) });
+  const poller = createMemberFreeNotificationPoller({
+    claimNotifications: async () => ({ claims: [{ notificationId: 'n', eventId: 'e', recipientUserId: 'r', actorName: null, attempts: 1, leaseToken: 'l' }], error: null }),
+    validateNotification: async () => ({ validation: { owned: true, stillValid: true }, error: null }),
+    getDeviceTokens: async () => ({ tokens: Array.from({ length: 101 }, (_, i) => `ExpoPushToken[offline-${i}]`), error: null }),
+    sendPushNotifications: service.sendPushNotifications,
+    completeNotification: async (_id, _lease, status) => { completions.push(status); return { completed: true, error: null }; },
+  }, { requestTimeoutMs: 500, stopTimeoutMs: 20 });
+  try {
+    const cycle = poller.runOnce();
+    await receiving;
+    if (mode === 'stop') await poller.stop();
+    await cycle; await closed;
+    assert.equal(requests, mode === 'success' ? 2 : 1);
+    assert.deepEqual(completions, mode === 'stop' ? [] : [mode === 'success' ? 'sent' : 'failed']);
+  } finally {
+    await poller.stop();
     globalThis.fetch = originalFetch;
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

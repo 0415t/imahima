@@ -41,30 +41,42 @@ export function createExtendClient(options: {
   getAccessToken: () => Promise<string | null>;
   fetch: typeof fetch;
   onChanged: () => void;
+  sleep?: (milliseconds: number) => Promise<void>;
 }) {
   return async (path: string, body?: Record<string, unknown>): Promise<ExtendFreeResult> => {
     if (!options.apiUrl) return { ok: false, reason: 'not-configured' };
     try {
       const token = await options.getAccessToken();
       if (!token) return { ok: false, reason: 'not-authenticated' };
-      const response = await options.fetch(`${options.apiUrl.replace(/\/$/, '')}${path}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (response.status === 401) return { ok: false, reason: 'not-authenticated' };
-      if (response.status === 409) {
-        // 別ハンドラで処理済みの場合もDBから再取得する。
+      const retryDelays = [250, 500, 1000];
+      for (let attempt = 0; ; attempt += 1) {
+        const response = await options.fetch(`${options.apiUrl.replace(/\/$/, '')}${path}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (response.status === 401) return { ok: false, reason: 'not-authenticated' };
+        if (response.status === 409) {
+          const errorBody: unknown = await response.json().catch(() => null);
+          if (path === '/profiles/me/is-free/extend-from-notification' && errorBody &&
+              typeof errorBody === 'object' && 'code' in errorBody && errorBody.code === 'notification-processing') {
+            if (attempt >= retryDelays.length) return { ok: false, reason: 'server-error' };
+            // Each request finishes its DB transaction before waiting; no row locks are held.
+            await (options.sleep ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))))(retryDelays[attempt]);
+            continue;
+          }
+          // 別ハンドラで処理済みの場合もDBから再取得する。
+          options.onChanged();
+          return { ok: false, reason: 'conflict' };
+        }
+        if (!response.ok) return { ok: false, reason: 'server-error' };
+        const json = await response.json();
+        if (json?.is_free !== true || typeof json.free_until !== 'string' || !Number.isFinite(Date.parse(json.free_until))) {
+          return { ok: false, reason: 'server-error' };
+        }
         options.onChanged();
-        return { ok: false, reason: 'conflict' };
+        return { ok: true, freeUntil: json.free_until };
       }
-      if (!response.ok) return { ok: false, reason: 'server-error' };
-      const json = await response.json();
-      if (json?.is_free !== true || typeof json.free_until !== 'string' || !Number.isFinite(Date.parse(json.free_until))) {
-        return { ok: false, reason: 'server-error' };
-      }
-      options.onChanged();
-      return { ok: true, freeUntil: json.free_until };
     } catch {
       return { ok: false, reason: 'server-error' };
     }

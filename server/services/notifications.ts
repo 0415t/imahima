@@ -85,17 +85,30 @@ export function createPushNotificationService(options: {
       // TODO: レシート(getPushNotificationReceiptsAsync)による遅延確認と、
       //       配信段階の DeviceNotRegistered に基づくトークン削除は今後の課題。
       let sent = 0;
+      // Preserve PR #24's shared budget across ALL chunks for existing callers.
+      // Member-free callers additionally abort the scoped Agent after 10 seconds.
+      const deadline = Date.now() + 30_000;
       const invalidTokens: string[] = [];
       for (const chunk of chunks) {
         signal?.throwIfAborted();
         let tickets: ExpoPushTicket[];
+        let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
-          tickets = await client.sendPushNotificationsAsync(chunk);
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) throw new Error('Push send deadline exceeded');
+          tickets = await Promise.race([
+            client.sendPushNotificationsAsync(chunk),
+            new Promise<never>((_resolve, reject) => {
+              timeout = setTimeout(() => reject(new Error('Push send deadline exceeded')), remaining);
+            }),
+          ]);
         } catch {
           // 応答が得られないチャンクは受付結果不明。先行チャンクの成功は保持する。
           console.error('[push] Expoへの送信に失敗しました（受付結果不明）');
           failures.unknown += chunk.length;
           continue;
+        } finally {
+          if (timeout !== undefined) clearTimeout(timeout);
         }
         chunk.forEach((message, index) => {
           const ticket = tickets[index];

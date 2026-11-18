@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim, type MemberFreeDependencies } from '../server/jobs/member-free-notifications';
 import { createPushNotificationService, PushSendError, type PushClient } from '../server/services/notifications';
 
@@ -24,6 +25,24 @@ function fixture(overrides: Partial<MemberFreeDependencies> = {}) {
 }
 
 describe('member-free notification poller', () => {
+  it('keeps the default request deadline at 10 seconds', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    let signal: AbortSignal | undefined;
+    const f = fixture({ claimNotifications: (incoming) => {
+      signal = incoming;
+      return new Promise(() => {});
+    } });
+    const poller = createMemberFreeNotificationPoller(f.dependencies);
+    let finished = false;
+    const cycle = poller.runOnce().then(() => { finished = true; });
+    await setImmediate();
+    t.mock.timers.tick(9999); await setImmediate();
+    assert.equal(finished, false); assert.equal(signal?.aborted, false);
+    t.mock.timers.tick(1); await cycle;
+    assert.equal(signal?.aborted, true);
+    await poller.stop();
+  });
+
   it('accepts default and boundary max attempts and rejects invalid values', () => {
     assert.equal(parseMemberFreeMaxAttempts(undefined), 3);
     for (const value of ['1', '3', '10']) assert.equal(parseMemberFreeMaxAttempts(value), Number(value));

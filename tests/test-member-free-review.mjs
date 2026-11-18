@@ -23,6 +23,7 @@ test('entrypoint rejects invalid max attempts before listening or claiming', () 
       './services/supabase': { serverSupabase: {} },
       './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
       './jobs/free-end-notifications': {},
+      './services/groups': { groupService: () => ({}) },
       './jobs/member-free-notifications': { ...require('../server/jobs/member-free-notifications.ts'), createMemberFreeNotificationPoller: () => ({ start: noop }) },
     };
     assert.throws(() => runInNewContext(code, {
@@ -40,6 +41,7 @@ function runEntrypoint({ supabase = {}, poller, server = {}, listeners = {}, ...
     './services/supabase': { serverSupabase: supabase },
     './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
     './jobs/free-end-notifications': {},
+    './services/groups': { groupService: () => ({}) },
     './jobs/member-free-notifications': {
       ...require('../server/jobs/member-free-notifications.ts'), createMemberFreeNotificationPoller: poller,
     },
@@ -61,8 +63,8 @@ test('entrypoint passes cancellation into every real member-free PostgREST reque
   const supabase = createClient(`http://127.0.0.1:${address.port}`, 'offline-key', {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  runEntrypoint({ supabase, poller: (value) => { deps = value; return { start() {} }; } });
   try {
+    runEntrypoint({ supabase, poller: (value) => { deps = value; return { start() {} }; } });
     const calls = [
       (signal) => deps.claimNotifications(signal),
       (signal) => deps.validateNotification('n', 'lease', signal),

@@ -2,10 +2,10 @@
  * 30分延長機能の統合テスト
  * 実際のExpress APIとSupabaseを使用
  *
- * 実行方法: node --env-file=.env --import tsx tests/test-extend-integration.ts
+ * 実行方法: npm run test:integration:extend（.env.test を使用）
  * 前提: Expressサーバーが localhost:3000 で起動していること
  *
- * 注意: このファイルはコミット対象外です
+ * 通常の npm test では実行しない。
  */
 
 const API_BASE = 'http://localhost:3000';
@@ -25,7 +25,7 @@ async function runExtendIntegrationTest() {
   }
 
   // テスト用アカウントであることを確認（明示的に許可されたメールアドレスのみ）
-  const allowedTestEmails = (process.env.ALLOWED_TEST_EMAILS ?? '').split(',').map((e) => e.trim());
+  const allowedTestEmails = (process.env.ALLOWED_TEST_EMAILS ?? '').split(',').map((e: string) => e.trim());
   if (!allowedTestEmails.includes(email)) {
     throw new Error(
       `テスト用アカウントではありません: ${email}\n` +

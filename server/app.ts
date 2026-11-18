@@ -1,4 +1,5 @@
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
+import { groupRouter, type GroupDependencies } from './groups';
 
 export type AvailabilityDependencies = {
   getUserId: (accessToken: string) => Promise<{ userId: string | null; error: unknown | null }>;
@@ -29,11 +30,13 @@ const TEST_NOTIFICATION_COOLDOWN_MS = 60_000;
 
 export function createApp(
   dependencies: AvailabilityDependencies,
-  notifications?: NotificationDependencies
+  notifications?: NotificationDependencies,
+  groups?: GroupDependencies
 ) {
   const app = express();
 
   app.use(express.json());
+  if (groups) app.use('/groups', groupRouter(groups));
 
   const lastTestNotificationAt = new Map<string, number>();
 
@@ -191,13 +194,17 @@ export function createApp(
     const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
 
     if (!bearerToken) {
-      response.status(401).json({ error: '****** is required' });
+      response.status(401).json({ error: 'Bearer token is required' });
       return;
     }
 
     const claimId = request.body?.claim_id;
     if (typeof claimId !== 'string' || claimId.length === 0) {
       response.status(400).json({ error: 'claim_id (string) is required' });
+      return;
+    }
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(claimId)) {
+      response.status(400).json({ error: 'claim_id must be a UUID' });
       return;
     }
 
@@ -224,6 +231,10 @@ export function createApp(
           errorMessage = String(extendError);
         }
 
+        if (errorMessage === 'Cannot extend: notification claim is processing') {
+          response.status(409).json({ error: errorMessage, code: 'notification-processing' });
+          return;
+        }
         // 延長できない状態は全て409（厳密なメッセージ一致）
         const conflictMessages = [
           'Cannot extend: not in an active timed free state',
@@ -282,21 +293,7 @@ export function createApp(
         return;
       }
 
-      // 宛先は認証ユーザー自身のトークンのみ。ボディの宛先指定は一切受け付けない
-      const { tokens, error: tokensError } = await notifications.getDeviceTokens(userId);
-
-      if (tokensError) {
-        console.error('device tokens fetch failed:', tokensError);
-        response.status(500).json({ error: 'Unable to fetch device tokens' });
-        return;
-      }
-
-      if (tokens.length === 0) {
-        response.json({ sent: 0, message: 'No registered devices' });
-        return;
-      }
-
-      // 送信を試みる場合のみレート制限を消費する
+      // 非同期のトークン取得前に予約し、同時リクエストの通過を防ぐ。
       lastTestNotificationAt.set(userId, now);
       const clearRateLimit = () => {
         if (lastTestNotificationAt.get(userId) === now) {
@@ -305,6 +302,22 @@ export function createApp(
       };
 
       try {
+        // 宛先は認証ユーザー自身のトークンのみ。ボディの宛先指定は一切受け付けない
+        const { tokens, error: tokensError } = await notifications.getDeviceTokens(userId);
+
+        if (tokensError) {
+          clearRateLimit();
+          console.error('device tokens fetch failed:', tokensError);
+          response.status(500).json({ error: 'Unable to fetch device tokens' });
+          return;
+        }
+
+        if (tokens.length === 0) {
+          clearRateLimit();
+          response.json({ sent: 0, message: 'No registered devices' });
+          return;
+        }
+
         const { sent, error: sendError } = await notifications.sendPushNotifications(tokens, {
           title: 'imahima テスト通知',
           body: 'サーバーからのテスト通知です。',
@@ -327,5 +340,13 @@ export function createApp(
     }
   });
 
+  const groupParseError: ErrorRequestHandler = (error, request, response, next) => {
+    if (!/^\/groups(?:\/|$)/.test(request.path)) { next(error); return; }
+    const status = error?.status === 413 ? 413 : error?.status === 400 ? 400 : 503;
+    response.set('Cache-Control', 'no-store').status(status).json({
+      error: status === 413 ? 'Request too large' : status === 400 ? 'Invalid JSON body' : 'Group service unavailable',
+    });
+  };
+  app.use(groupParseError);
   return app;
 }

@@ -66,7 +66,11 @@ async function runPushSendTest() {
         throw new Error(`通知API呼び出し失敗: HTTP ${response.status}`);
     }
 
-    console.log('\n🏁 --- テスト通知の送信に成功しました ---');
+    if (!body || typeof body !== 'object' || !('sent' in body) ||
+        typeof body.sent !== 'number' || !Number.isInteger(body.sent) || body.sent <= 0) {
+        throw new Error('Expo受付を確認できませんでした。実機で通知を許可し、端末トークンを登録してください。');
+    }
+    console.log(`\n🏁 --- Expo受付成功: ${body.sent}件（端末への配信完了は実機で確認してください） ---`);
 }
 
 runPushSendTest().catch((error: unknown) => {

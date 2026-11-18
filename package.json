@@ -5,16 +5,19 @@
   "scripts": {
     "start": "expo start",
     "server": "tsx server/index.ts",
-    "test": "tsx --test tests/**/*.ts",
-    "test:login": "tsx tests/test-login.ts",
-    "test:persistence": "tsx tests/test-session-persistence.ts",
+    "test": "tsx --test \"tests/**/*.ts\"",
+    "test:login": "tsx integration/test-login.ts",
+    "test:persistence": "tsx integration/test-session-persistence.ts",
     "test:profile-toggle": "tsx --test tests/test-profile-toggle.ts",
     "test:notifications": "tsx --test tests/test-notifications.ts",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test:integration:extend": "node --env-file=.env.test --import tsx integration/test-extend-integration.ts",
+    "test:integration:free-end": "node --env-file=.env.test --import tsx integration/test-free-end-notifications-integration.ts",
+    "test:integration:push": "node --env-file=.env.test --import tsx integration/test-push-send.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -31,6 +34,7 @@
     "expo-linking": "~57.0.13",
     "expo-notifications": "~57.0.25",
     "expo-router": "~57.0.30",
+    "expo-server-sdk": "^8.0.0",
     "expo-splash-screen": "~57.0.11",
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",

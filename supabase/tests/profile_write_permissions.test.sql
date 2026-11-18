@@ -12,7 +12,7 @@ grant insert (id, is_free), update (is_free, free_until, id, created_at)
   on public.profiles to public, anon, authenticated;
 create policy "profile ACL test permissive update" on public.profiles
   for update to authenticated using (true) with check (true);
-\ir ../migrations/20261111000000_restrict_profile_client_writes.sql
+\ir ../migrations/20261111000001_restrict_profile_client_writes.sql
 
 -- ログインを行わないDB権限テストのため、認証確認日時は設定しない。
 -- 旧Authのconfirmed_at、新Authのemail_confirmed_at/生成列confirmed_atの差に依存しない。
@@ -37,7 +37,10 @@ begin
       'public.set_profile_is_free(uuid,boolean,integer)',
       'public.extend_profile_is_free(uuid)',
       'public.extend_profile_is_free_from_notification(uuid,uuid)',
-      'public.auto_expire_free_status()'
+      'public.auto_expire_free_status()',
+      'public.claim_free_end_notifications(integer,integer,integer,interval)',
+      'public.validate_free_end_notification(uuid,uuid)',
+      'public.complete_free_end_notification(uuid,uuid,text,text)'
     ] loop
       assert not has_function_privilege(r, f, 'EXECUTE'), 'client RPC permission remains';
       assert has_function_privilege('service_role', f, 'EXECUTE'), 'service RPC permission missing';
@@ -100,11 +103,13 @@ reset role;
 
 set local role service_role;
 do $$
-declare p record; before_until timestamptz; claim record; valid record; accepted boolean;
+declare p record; before_until timestamptz; started_at timestamptz; claim record; valid record; accepted boolean;
 begin
+  started_at := clock_timestamp();
   select * into p from public.set_profile_is_free('a6111111-1111-4111-8111-111111111111', true, 30);
-  assert p.is_free and p.free_until = now() + interval '30 minutes', 'timer ON failed';
+  assert p.is_free and p.free_until between started_at + interval '30 minutes' and clock_timestamp() + interval '30 minutes', 'timer ON failed';
   before_until := p.free_until;
+  started_at := clock_timestamp();
   select * into p from public.set_profile_is_free('a6111111-1111-4111-8111-111111111111', true, 60);
   assert p.free_until = before_until, 're-ON overwrote timer';
   select * into p from public.extend_profile_is_free('a6111111-1111-4111-8111-111111111111');

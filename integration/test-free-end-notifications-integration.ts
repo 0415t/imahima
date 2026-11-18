@@ -3,7 +3,7 @@
  * 実ローカルSupabase（REST API経由）+ Expo Pushモックを使用
  *
  * 実行方法:
- *   node --env-file=.env.test --import tsx tests/test-free-end-notifications-integration.ts
+ *   npm run test:integration:free-end
  * 前提:
  *   - imahima専用ローカルSupabaseが起動していること
  *   - .env.test に SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が設定されていること
@@ -338,7 +338,8 @@ async function run() {
   const userF = await createUserWithProfile('user-f@example.com', true, new Date(Date.now() + 4 * 60 * 1000));
   await addDeviceToken(userF, 'ExponentPushToken[device-f]');
   sendCalls = [];
-  await Promise.all([poller.runOnce(), poller.runOnce()]);
+  const secondPoller = createFreeEndNotificationPoller(buildPollerDependencies());
+  await Promise.all([poller.runOnce(), secondPoller.runOnce()]);
   const claimsF = await getClaim(userF);
   assert(claimsF.length === 1, `userF claims not 1 (duplicate created): ${claimsF.length}`);
   assert(claimsF[0].status === 'sent', `userF claim not sent: ${claimsF[0].status}`);
