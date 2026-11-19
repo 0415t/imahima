@@ -1,0 +1,49 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "vamobsqgvylwfdiaheku",
+  "checks": [
+    {
+      "name": "b specification initial timer deadlines 30/60/120/180",
+      "status": "pass"
+    },
+    {
+      "name": "b specification expired timer clears deadline",
+      "status": "pass"
+    },
+    {
+      "name": "b specification notification eligibility and shared-group dedup",
+      "status": "pass"
+    },
+    {
+      "name": "b specification expired lease reclaim and stale completion denial",
+      "status": "pass"
+    },
+    {
+      "name": "b specification member lease reclaim stale token and exhaustion",
+      "status": "pass"
+    },
+    {
+      "name": "b specification queued notification leave expiry and new-period invalidation",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: incorrect initial deadline",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: stale expired deadline",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: recipient eligibility bypass",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: duplicate recipients across shared groups",
+      "status": "pass"
+    }
+  ],
+  "passed": 10,
+  "failed": 0,
+  "not_run": 0
+}

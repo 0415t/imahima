@@ -1,0 +1,20 @@
+{
+  "approved_for_testing": false,
+  "run": "issue35-final",
+  "label": "a",
+  "ref": "REPLACE_WITH_NEW_PROJECT_REF",
+  "api_url": "https://REPLACE_WITH_NEW_PROJECT_REF.supabase.co",
+  "nonce": "REPLACE_WITH_RANDOM_64_HEX_CHARACTERS",
+  "email_sending_disabled": false,
+  "backend_port": 51331,
+  "anon_key": "REPLACE_WITH_TEMPORARY_PROJECT_KEY",
+  "service_role_key": "REPLACE_WITH_TEMPORARY_PROJECT_KEY",
+  "database": {
+    "host": "COPY_FROM_DASHBOARD_CONNECT",
+    "port": 5432,
+    "user": "postgres",
+    "database": "postgres",
+    "password": "REPLACE_WITH_TEMPORARY_DATABASE_PASSWORD"
+  },
+  "postgres_major": null
+}

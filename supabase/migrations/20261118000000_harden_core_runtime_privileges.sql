@@ -50,6 +50,12 @@ GRANT DELETE ON public.user_device_tokens TO service_role;
 -- RETURNING * / %ROWTYPE and room row locks require these SELECT/UPDATE grants.
 GRANT SELECT ON public.rooms TO service_role;
 GRANT INSERT (room_name,room_key,mvp_created_by) ON public.rooms TO service_role;
+-- Preserve group creation between H1 and H4 when archive is already installed.
+DO $managed_insert$ BEGIN
+ IF EXISTS (SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid='public.rooms'::regclass AND attname='mvp_managed' AND attnum>0 AND NOT attisdropped) THEN
+  GRANT INSERT (mvp_managed) ON public.rooms TO service_role;
+ END IF;
+END $managed_insert$;
 GRANT UPDATE (mvp_archived_at) ON public.rooms TO service_role;
 GRANT SELECT ON public.room_members TO service_role;
 GRANT INSERT (room_id,user_id,role) ON public.room_members TO service_role;

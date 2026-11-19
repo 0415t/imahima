@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+// Split only SQL-level statements. Strings, identifiers, nested comments and dollar bodies are opaque.
+export function statements(sql){const result=[];let start=0,mask='',i=0;
+ while(i<sql.length){const c=sql[i];if(sql.startsWith('--',i)){const end=sql.indexOf('\n',i+2);i=end<0?sql.length:end;mask+=' ';continue;}
+  if(sql.startsWith('/*',i)){let depth=1;i+=2;while(i<sql.length&&depth){if(sql.startsWith('/*',i)){depth++;i+=2;}else if(sql.startsWith('*/',i)){depth--;i+=2;}else i++;}assert.equal(depth,0,'Unterminated SQL comment');mask+=' ';continue;}
+  const dollar=c==='$'?sql.slice(i).match(/^\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$/)?.[0]:null;
+  if(dollar){const end=sql.indexOf(dollar,i+dollar.length);assert.ok(end>=0,'Unterminated dollar body');i=end+dollar.length;mask+=' literal ';continue;}
+  if(c==="'"||c==='"'){const quote=c;const escaped=quote==="'"&&i>0&&/[eE]/.test(sql[i-1])&&(i<2||!/[A-Za-z_0-9]/.test(sql[i-2]));i++;let closed=false;while(i<sql.length){if(escaped&&sql.charCodeAt(i)===92){i+=2;continue;}if(sql[i]===quote){if(sql[i+1]===quote){i+=2;continue;}i++;closed=true;break;}i++;}assert.ok(closed,'Unterminated quoted SQL');mask+=' literal ';continue;}
+  if(c===';'){if(mask.trim())result.push({sql:sql.slice(start,i+1),tokens:mask.trim().replace(/\s+/g,' ').toUpperCase()});start=++i;mask='';continue;}
+  mask+=c;i++;
+ }
+ if(mask.trim())result.push({sql:sql.slice(start),tokens:mask.trim().replace(/\s+/g,' ').toUpperCase()});return result;
+}
+export function transactionBody(sql){let parts=statements(sql);assert.ok(parts.length,'Empty migration');if(/^(BEGIN|START TRANSACTION)(?: WORK| TRANSACTION)?$/.test(parts[0].tokens)){assert.match(parts.at(-1).tokens,/^(COMMIT|END)(?: WORK| TRANSACTION)?$/,'Incomplete outer transaction');parts=parts.slice(1,-1);}for(const p of parts)assert.ok(!/^(BEGIN|COMMIT|ROLLBACK|END|SAVEPOINT|RELEASE|START TRANSACTION|PREPARE TRANSACTION)\b/.test(p.tokens),'Unexpected transaction control inside migration');assert.ok(parts.length,'Empty transaction body');return parts.map(p=>p.sql).join('');}
+const active=new WeakSet();
+export async function inTransaction(c,fn,{rollbackOnly=false}={}){assert.ok(!active.has(c),'Nested transaction owner');active.add(c);let began=false;try{await c.query('BEGIN');began=true;const value=await fn();await c.query(rollbackOnly?'ROLLBACK':'COMMIT');began=false;return value;}catch(error){if(began)try{await c.query('ROLLBACK');}catch(cleanup){error.cleanupErrors=[...(error.cleanupErrors||[]),cleanup];}throw error;}finally{active.delete(c);}}
+export const rollbackOnly=(c,fn)=>inTransaction(c,fn,{rollbackOnly:true});
+export async function applyRecorded(c,{version,name,sql,classification,onCommitted=()=>{}}){const body=transactionBody(sql);const result=await inTransaction(c,async()=>{const existing=(await c.query('select name,statements from supabase_migrations.schema_migrations where version=$1',[version])).rows;if(existing.length){assert.equal(existing[0].name,name,'Migration name drift');assert.deepEqual(existing[0].statements,[sql],'Migration SQL drift');return false;}if(classification!==undefined)await c.query("select set_config('imahima.room_classification',$1,true)",[JSON.stringify(classification)]);await c.query(body);await c.query('insert into supabase_migrations.schema_migrations(version,name,statements) values($1,$2,$3)',[version,name,[sql]]);return true;});if(result)await onCommitted();return result;}
+export async function applyUnrecorded(c,{sql,classification}){const body=transactionBody(sql);return inTransaction(c,async()=>{if(classification!==undefined)await c.query("select set_config('imahima.room_classification',$1,true)",[JSON.stringify(classification)]);await c.query(body);});}
+export async function probeRejected(c,{sql,classification,expected}){const body=transactionBody(sql);return rollbackOnly(c,async()=>{if(classification!==undefined)await c.query("select set_config('imahima.room_classification',$1,true)",[JSON.stringify(classification)]);await assert.rejects(c.query(body),expected);});}

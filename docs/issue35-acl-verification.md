@@ -137,6 +137,10 @@ verification/issue35/tsconfig.json
 
 例外として、隔離指定を追加する前の診断用CLI実行が、ユーザー共通の `C:/Users/User/.supabase/telemetry.json` を更新しました。DBや認証内容の変更ではなくCLI補助メタデータですが、既存環境への変更が完全にゼロとは報告できません。変更前の内容がないため推測で復元せず、以後はSUPABASE_HOMEをignored runtimeに固定しました。最終run中に共通ファイルの追加更新がないことも確認しています。
 
-検証手順は `verification/issue35/README.md`、結果とSQL/検証コードのhashは `reports/summary.json` を参照してください。コミットせず停止しています。
+検証手順は `verification/issue35/README.md`、結果とSQL/検証コードのhashは `verification/issue35/reports/summary.json` を参照してください。コミットせず停止しています。
 
 補足：移行直後と機能テスト終了後の全カタログhashは同一ではありません。Realtimeが両環境で `realtime.messages` 用の `supabase_realtime_messages_publication` を初期化するため、publicationと対象tableが1件から2件に増えます。アプリ用 `supabase_realtime` は `public.room_message_events` を対象に維持されています。A/B間の差分は前後ともなく、異常系テスト自身の前後は全カタログ・履歴が完全一致する別チェックで確認しています。
+
+## PR #37レビュー後の最終整理
+
+この文書は初回コミット244c438時点の263チェックを記録した歴史的報告です。レビュー後のH1/H4最小修正、オフライン検証、クラウドA/B/Cの211成功・0失敗・2未実施は docs/issue35-final-review.md と docs/issue35-review-resolution.md を参照してください。共有DBへの適用・履歴補完・実room分類は完了していません。PRの検証完了とIssue #35全体の完了を区別し、自動クローズは指定しません。

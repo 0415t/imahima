@@ -1,0 +1,66 @@
+import assert from'node:assert/strict';import fs from'node:fs';import path from'node:path';import{createHash,randomUUID}from'node:crypto';
+import{scope,verifyExtensions,verifyHistory,verifyStoppedCatalog,verifyData}from'./resume-guards.mjs';
+import{captured,verifyBaseline,migrateBaseline,assertPreserved,syntheticIds,roomIds}from'../../../../b-baseline.mjs';
+import{connect,plan,repo,root,files,hardening,check,save}from'../../../../db.mjs';
+import{snapshot}from'../../../../catalog.mjs';import{digest,roleQuery,requiredCheck}from'../../../../verification-control.mjs';import{rollbackOnly}from'../../../../sql-transactions.mjs';
+const readJson=p=>JSON.parse(fs.readFileSync(p,'utf8')),sha=p=>createHash('sha256').update(fs.readFileSync(p)).digest('hex'),out=n=>path.join(plan.runtime,n),read=f=>fs.readFileSync(path.join(repo,'supabase/migrations',f),'utf8'),file=v=>{const f=files.find(n=>n.startsWith(v+'_'));assert.ok(f);return f;};
+let c,reading=false;
+try{
+ for(const[k,v]of Object.entries(scope))assert.equal(k==='ref'?plan.target.ref:k==='run'?plan.name:plan.label,v);
+ const implementation=readJson(out('resume-implementation.json'));
+ for(const[f,h]of Object.entries(implementation.supplemental_source_sha256))assert.equal(sha(out(f)),h,'Supplemental source drift');
+ for(const[f,h]of Object.entries(implementation.protected_sha256))assert.equal(sha(path.join(repo,f)),h,'Prior evidence/source drift');
+ const offline=readJson(out('resume-offline-results.json'));assert.equal(offline.exit_code,0);assert.deepEqual(offline.supplemental_source_sha256,implementation.supplemental_source_sha256);
+ assert.ok(!fs.existsSync(out('resume-once.started.json')),'One-off resume already attempted');
+ for(const f of ['b.baseline.private.json','b.coverage.json'])assert.ok(!fs.existsSync(out(f)),'Existing baseline evidence');
+ assert.ok(!fs.existsSync(path.join(plan.reportDir,'migration-results.json')));
+ const a=readJson(path.join(plan.runDir,'a.snapshot.json'));assert.equal(a.digest,digest(a.catalog));
+ assert.equal(sha(path.join(plan.runDir,'a.snapshot.json')),readJson(path.join(plan.reportDir,'../a/execution-summary.json')).snapshot_sha256);
+ for(const[f,h]of Object.entries(a.sql))assert.equal(sha(path.join(repo,'supabase/migrations',f)),h);
+ const code=Object.fromEntries(fs.readdirSync(root).filter(f=>f.endsWith('.mjs')).map(f=>[f,sha(path.join(root,f))]));
+ for(const f of fs.readdirSync(path.join(root,'fixtures')))code['fixtures/'+f]=sha(path.join(root,'fixtures',f));
+ assert.deepEqual(code,a.code,'Frozen A code/fixture set changed');
+ const stopped=readJson(out('stopped-state.private.json'));assert.equal(stopped.project_ref,scope.ref);
+ c=await connect('b');assert.equal(c.connection.stream.encrypted,true);assert.equal(c.connection.stream.authorized,true);
+ assert.equal((await c.query('select ssl from pg_stat_ssl where pid=pg_backend_pid()')).rows[0].ssl,true);
+ await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');reading=true;
+ verifyStoppedCatalog(await snapshot(c),stopped);
+ const provisioning=(await c.query('select id,status from issue35_verification.provisioning_state')).rows;assert.deepEqual(provisioning,[{id:true,status:'started'}]);
+ const schema=(await c.query(fs.readFileSync(path.join(root,'fixtures/b-schema-read.sql'),'utf8'))).rows[0].schema_metadata;
+ const privileges=(await c.query(fs.readFileSync(path.join(root,'fixtures/b-privileges-read.sql'),'utf8'))).rows[0].effective_privileges;
+ const coverage=verifyBaseline(schema,privileges);
+ const inventory=(await c.query('select e.extname name,n.nspname schema,e.extversion version from pg_extension e join pg_namespace n on n.oid=e.extnamespace order by e.extname')).rows;
+ assert.deepEqual(inventory,stopped.extensions,'Extension inventory changed since stop');
+ const extensions=inventory.filter(e=>captured.identity.extensions.some(x=>x.name===e.name));
+ const exception=verifyExtensions(extensions,captured.identity.extensions,{...scope});
+ assert.deepEqual((await c.query("select n.nspname schema,e.extversion version from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname='pg_cron'")).rows,[{schema:'pg_catalog',version:'1.6.4'}]);
+ assert.deepEqual((await c.query("select schedule,active,database,username,md5(command) command_md5 from cron.job where jobname='auto-expire-free-status'")).rows,[{schedule:'* * * * *',active:true,database:'postgres',username:'postgres',command_md5:captured.cron[0].command_md5}]);
+ const history=(await c.query('select version,name,statements from supabase_migrations.schema_migrations order by version')).rows;
+ verifyHistory(history,captured.history.map(h=>({version:h.version,name:h.name,statements:[read(file(h.version))]})));
+ const data={profiles:(await c.query('select id,username,is_free,created_at,coment,avatar_url,free_until from profiles order by id')).rows,rooms:(await c.query('select id,room_name,room_key,mvp_created_by,mvp_archived_at from rooms order by id')).rows};
+ const auth=(await c.query('select id,aud,role,email,raw_user_meta_data from auth.users order by id')).rows;
+ const counts=(await c.query('select (select count(*)::int from profiles) profiles,(select count(*)::int from auth.users) auth_users,(select count(*)::int from rooms) rooms,(select count(*)::int from room_members) members,(select count(*)::int from users) users,(select count(*)::int from user_device_tokens) tokens,(select count(*)::int from group_mvp_rate_limits) rate_limits')).rows[0];
+ verifyData(data,auth,counts,syntheticIds,roomIds);
+ await c.query('ROLLBACK');reading=false;
+ const evidence={time:new Date().toISOString(),run:plan.name,project_ref:plan.target.ref,stopped_catalog_unchanged:true,history_exact:true,synthetic_data_verified:true,tls_verified:true,exception,coverage,extensions,counts,supplemental_source_sha256:implementation.supplemental_source_sha256};
+ fs.writeFileSync(out('resume-preflight.private.json'),JSON.stringify({...evidence,history,data},null,2),{flag:'wx'});
+ fs.writeFileSync(out('b.baseline.private.json'),JSON.stringify(data),{flag:'wx'});
+ fs.writeFileSync(out('b.coverage.json'),JSON.stringify({...coverage,exception}),{flag:'wx'});
+ fs.writeFileSync(out('resume-once.started.json'),JSON.stringify(evidence,null,2),{flag:'wx'});
+ requiredCheck(await check('B resume identity TLS stop-catalog history synthetic data baseline and exact Vault exception',()=>true),'B resume conditions');
+ const afterH1=async()=>requiredCheck(await check('H1 intermediate group creation remains available',()=>rollbackOnly(c,async()=>{
+  const id=randomUUID();await c.query("insert into auth.users(id,aud,role,email,raw_user_meta_data)values($1,'authenticated','authenticated',$2,'{}')",[id,id+'@issue35.invalid']);
+  const rows=await roleQuery(c,"select public.group_mvp_execute('create',$1,$2::jsonb) result",[id,JSON.stringify({name:'Synthetic H1 intermediate'})]);assert.equal(rows[0].result.status,201);
+ })),'H1 intermediate runtime compatibility');
+ await migrateBaseline(c,{file,read,hardening,afterH1,applied:name=>check('B '+name,()=>true)});
+ requiredCheck(await check('B preserves all synthetic existing data',()=>assertPreserved(c,data)),'B data preservation');
+ assert.deepEqual((await c.query('select version from supabase_migrations.schema_migrations order by version')).rows.map(r=>r.version),files.map(f=>f.slice(0,14)));
+ await c.query("update issue35_verification.provisioning_state set status='complete' where id=true");
+ await c.query("NOTIFY pgrst, 'reload schema'");
+ fs.writeFileSync(out('resume-migration-complete.json'),JSON.stringify({...evidence,completed_at:new Date().toISOString(),history_count:22}),{flag:'wx'});
+ save('migration-results');console.log('PASS B one-off resume completed; original evidence retained');
+}catch(e){
+ if(reading&&c)try{await c.query('ROLLBACK');}catch{}
+ fs.writeFileSync(out('resume-error.private.log'),e.stack+'\n'+(e.actual?JSON.stringify({actual:e.actual,expected:e.expected},null,2):''),{flag:'wx'});
+ console.error('STOP B resume: '+(e.code||e.name)+'; private diagnostic saved');process.exitCode=1;
+}finally{if(c)await c.end();}

@@ -1,0 +1,32 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "vamobsqgvylwfdiaheku",
+  "checks": [
+    {
+      "name": "historical 18 files match base git and original worktree",
+      "status": "pass",
+      "details": {
+        "files": 18
+      }
+    },
+    {
+      "name": "B original nine profiles and three rooms preserved after feature tests",
+      "status": "pass"
+    },
+    {
+      "name": "B synthetic non-managed room stays open after last membership removal",
+      "status": "pass"
+    },
+    {
+      "name": "b REST RPC history and event cursor pagination has no gaps",
+      "status": "pass"
+    },
+    {
+      "name": "original worktree matches captured initial state",
+      "status": "pass"
+    }
+  ],
+  "passed": 5,
+  "failed": 0,
+  "not_run": 0
+}

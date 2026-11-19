@@ -1,0 +1,24 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "oabiymuopsrxzyxjkdwz",
+  "checks": [
+    {
+      "name": "historical 18 files match base git and original worktree",
+      "status": "pass",
+      "details": {
+        "files": 18
+      }
+    },
+    {
+      "name": "a REST RPC history and event cursor pagination has no gaps",
+      "status": "pass"
+    },
+    {
+      "name": "original worktree matches captured initial state",
+      "status": "pass"
+    }
+  ],
+  "passed": 3,
+  "failed": 0,
+  "not_run": 0
+}

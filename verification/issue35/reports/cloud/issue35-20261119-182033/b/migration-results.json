@@ -1,0 +1,97 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "vamobsqgvylwfdiaheku",
+  "checks": [
+    {
+      "name": "B resume identity TLS stop-catalog history synthetic data baseline and exact Vault exception",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B synthetic adoption 20261001000000_initial_schema.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B synthetic adoption 20261105000002_enable_pg_cron.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B synthetic adoption 20261111000000_group_management_mvp.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261111000001_restrict_profile_client_writes.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261118000000_harden_core_runtime_privileges.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "H1 intermediate group creation remains available",
+      "status": "pass"
+    },
+    {
+      "name": "B 20261107000000_free_end_notification_claims.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261110000000_extend_profile_is_free_from_notification.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261117000001_fix_timer_lock_time_and_notification_retry.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261117000000_index_group_mvp_rate_limits_window_start.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261112000000_member_free_notifications.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261118000001_harden_notification_runtime_privileges.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261113000000_group_chat_mvp.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261118000002_harden_chat_runtime_privileges.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261116000000_group_mvp_managed_archive.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B 20261118000003_harden_archive_runtime_privileges.sql",
+      "status": "pass",
+      "details": true
+    },
+    {
+      "name": "B preserves all synthetic existing data",
+      "status": "pass"
+    }
+  ],
+  "passed": 18,
+  "failed": 0,
+  "not_run": 0
+}

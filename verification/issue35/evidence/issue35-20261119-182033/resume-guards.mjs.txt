@@ -1,0 +1,23 @@
+import assert from'node:assert/strict';
+export const scope={run:'issue35-20261119-182033',label:'b',ref:'vamobsqgvylwfdiaheku'};
+const stable=x=>Array.isArray(x)?x.map(stable):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,stable(x[k])])):x;
+const canon=xs=>xs.map(x=>JSON.stringify(stable(x))).sort();
+export function verifyExtensions(actual,expected,target){
+ for(const[k,v]of Object.entries(scope))assert.equal(target[k],v,'Resume scope mismatch');
+ const wanted=expected.filter(x=>x.name==='supabase_vault'),observed=actual.filter(x=>x.name==='supabase_vault');
+ assert.deepEqual(wanted,[{name:'supabase_vault',schema:'vault',version:'0.3.1'}]);
+ assert.deepEqual(observed,[{name:'supabase_vault',schema:'vault',version:'0.3.2'}]);
+ // Retain raw actual/expected evidence. The exception changes only this expected tuple.
+ const accepted=expected.map(x=>x.name==='supabase_vault'?{...x,version:'0.3.2'}:x);
+ assert.deepEqual(canon(actual),canon(accepted),'Unapproved extension difference');
+ return{extension:'supabase_vault',schema:'vault',expected:'0.3.1',actual:'0.3.2',reason:'Approved B-only exception: application/migrations/Cron do not reference Vault; upstream 0.3.2 pins pg_temp last in two Vault SECURITY DEFINER functions.'};
+}
+export function verifyHistory(actual,expected){assert.equal(actual.length,7);assert.deepEqual(actual,expected,'Recorded history version/name/statements changed');}
+export function verifyStoppedCatalog(actual,record){assert.deepEqual(actual,record.catalog,'B drift since saved stop');}
+export function verifyData(data,auth,counts,ids,rooms){
+ assert.deepEqual(data.profiles.map(p=>p.id),[...ids].sort());assert.deepEqual(auth.map(p=>p.id),[...ids].sort());assert.deepEqual(data.rooms.map(r=>r.id),[...rooms].sort());
+ assert.deepEqual(counts,{profiles:9,auth_users:9,rooms:3,members:0,users:0,tokens:0,rate_limits:0});
+ for(const p of data.profiles){assert.equal(p.username,'\u540d\u7121\u3057');assert.equal(p.is_free,false);assert.equal(p.free_until,null);assert.equal(p.coment,null);assert.equal(p.avatar_url,null);assert.ok(Number.isFinite(Date.parse(p.created_at)));}
+ for(const u of auth){assert.equal(u.aud,'authenticated');assert.equal(u.role,'authenticated');assert.equal(u.email,u.id+'@issue35.invalid');assert.deepEqual(u.raw_user_meta_data,{});}
+ for(const r of data.rooms){const i=rooms.indexOf(r.id);assert.equal(r.room_name,'Synthetic preserved '+i);assert.equal(r.room_key,'synthetic'+i);assert.equal(r.mvp_created_by,null);assert.equal(r.mvp_archived_at===null?null:new Date(r.mvp_archived_at).toISOString(),i===0?'2026-01-01T00:00:00.000Z':null);}
+}

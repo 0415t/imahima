@@ -1,0 +1,61 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "vamobsqgvylwfdiaheku",
+  "checks": [
+    {
+      "name": "b H4 rejects each missing core INSERT prerequisite atomically",
+      "status": "pass"
+    },
+    {
+      "name": "b unsafe profile prerequisite abort and rollback",
+      "status": "pass"
+    },
+    {
+      "name": "b mid-migration metadata mismatch restores earlier ACL resets",
+      "status": "pass"
+    },
+    {
+      "name": "b unexpected managed-role inheritance mutation",
+      "status": "not-run",
+      "reason": "Hosted supabase_admin unavailable; verify actual role metadata and offline guard contract."
+    },
+    {
+      "name": "b invalid room classifications roll back without schema or data drift",
+      "status": "pass",
+      "details": {
+        "cases": 5
+      }
+    },
+    {
+      "name": "b historical group migration replay fails without changes",
+      "status": "pass"
+    },
+    {
+      "name": "b PUBLIC-default EXECUTE cannot re-open runtime functions",
+      "status": "pass"
+    },
+    {
+      "name": "b failed fixture transaction preserves data",
+      "status": "pass"
+    },
+    {
+      "name": "b hardening preserves unlimited, active and expired ON values",
+      "status": "pass"
+    },
+    {
+      "name": "b exact 22-version history has no pending migration",
+      "status": "pass"
+    },
+    {
+      "name": "b failure suite leaves complete catalog untouched",
+      "status": "pass"
+    },
+    {
+      "name": "b failure suite leaves full migration history untouched",
+      "status": "pass"
+    }
+  ],
+  "passed": 11,
+  "failed": 0,
+  "not_run": 1
+}
