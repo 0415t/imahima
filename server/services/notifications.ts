@@ -6,6 +6,8 @@ export type PushMessage = {
   body: string;
   data?: Record<string, unknown>;
   categoryId?: string;
+  /** Absolute provider expiry (seconds since epoch); optional for legacy callers. */
+  expiration?: number;
 };
 
 export type SendPushResult = {
@@ -54,6 +56,9 @@ export function createPushNotificationService(options: {
     onAccepted?: (confirmedCount: number) => void,
   ): Promise<SendPushResult> => {
     signal?.throwIfAborted();
+    if (message.expiration !== undefined && (!Number.isSafeInteger(message.expiration) || message.expiration <= 0)) {
+      throw new Error('Invalid push expiration');
+    }
     // The Expo SDK has no per-send AbortSignal. A dispatcher scoped to this send
     // lets the worker abort sockets, including retries, without affecting others.
     const dispatcher = !options.client && signal ? new Agent({
@@ -83,6 +88,7 @@ export function createPushNotificationService(options: {
           body: message.body,
           data: message.data ?? {},
           ...(message.categoryId ? { categoryId: message.categoryId } : {}),
+          ...(message.expiration !== undefined ? { expiration: message.expiration } : {}),
         });
       }
 
@@ -93,7 +99,7 @@ export function createPushNotificationService(options: {
       let sent = 0;
       // Preserve PR #24's shared budget across ALL chunks for existing callers.
       // Member-free callers additionally abort the scoped Agent after 10 seconds.
-      const deadline = Date.now() + 30_000;
+      const deadline = Math.min(Date.now() + 30_000, message.expiration === undefined ? Infinity : message.expiration * 1000);
       const invalidTokens: string[] = [];
       for (const chunk of chunks) {
         signal?.throwIfAborted();

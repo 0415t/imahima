@@ -10,9 +10,12 @@ import { groupService } from './services/groups';
 import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
 import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim } from './jobs/member-free-notifications';
+import { createChatMessageNotificationPoller, parseChatNotificationOptions, type ChatMessageClaim } from './jobs/chat-message-notifications';
 
 const memberFreeMaxAttempts = process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true'
   ? parseMemberFreeMaxAttempts(process.env.MEMBER_FREE_NOTIFICATIONS_MAX_ATTEMPTS) : 3;
+const chatNotificationOptions = process.env.CHAT_MESSAGE_NOTIFICATIONS_ENABLED === 'true'
+  ? parseChatNotificationOptions(process.env) : null;
 
 const pushNotifications = createPushNotificationService({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
@@ -173,6 +176,47 @@ if (process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 'true') {
   poller.start();
   notificationPollers.push(poller);
   console.log('Member-free notification poller started');
+}
+
+if (chatNotificationOptions) {
+  const poller = createChatMessageNotificationPoller({
+    claimNotifications: async (signal) => {
+      const { data, error } = await serverSupabase.rpc('claim_chat_message_notifications', {
+        p_limit: 1, p_lease_seconds: 120, p_max_attempts: chatNotificationOptions.maxAttempts,
+      }).abortSignal(signal);
+      const claims: ChatMessageClaim[] = ((data ?? []) as Record<string, unknown>[]).map(row => ({
+        notificationId: String(row.notification_id), roomId: String(row.room_id), messageId: String(row.message_id),
+        recipientUserId: String(row.recipient_user_id), leaseToken: String(row.lease_token),
+      }));
+      return { claims, error };
+    },
+    validateNotification: async (id, lease, signal) => {
+      const { data, error } = await serverSupabase.rpc('validate_chat_message_notification', {
+        p_notification: id, p_lease_token: lease,
+      }).abortSignal(signal);
+      const row = Array.isArray(data) ? data[0] : data;
+      return { validation: row ? {
+        owned: row.owned === true, stillValid: row.still_valid === true,
+        senderName: typeof row.sender_name === 'string' ? row.sender_name : 'メンバー',
+        messageBody: typeof row.message_body === 'string' ? row.message_body : null,
+        remainingMs: Number(row.remaining_ms), expiration: Number(row.expiration),
+      } : null, error };
+    },
+    getDeviceTokens: async (userId, signal) => {
+      const { data, error } = await serverSupabase.from('user_device_tokens').select('expo_push_token').eq('user_id', userId).abortSignal(signal);
+      return { tokens: (data ?? []).map(row => row.expo_push_token), error };
+    },
+    sendPushNotifications: pushNotifications.sendPushNotifications,
+    completeNotification: async (id, lease, status, reason, acceptedCount, signal) => {
+      const { data, error } = await serverSupabase.rpc('complete_chat_message_notification', {
+        p_notification: id, p_lease_token: lease, p_status: status, p_error: reason, p_accepted_count: acceptedCount,
+      }).abortSignal(signal);
+      return { completed: data === true, error };
+    },
+  }, { intervalMs: chatNotificationOptions.intervalMs });
+  poller.start();
+  notificationPollers.push(poller);
+  console.log('Chat message notification poller started');
 }
 
 if (notificationPollers.length) {
