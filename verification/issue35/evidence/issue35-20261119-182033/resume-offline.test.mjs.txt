@@ -1,0 +1,25 @@
+import test from'node:test';import assert from'node:assert/strict';import{scope,verifyExtensions,verifyHistory,verifyStoppedCatalog,verifyData}from'./resume-guards.mjs';
+import{captured,syntheticIds,roomIds}from'../../../../b-baseline.mjs';
+const ext=()=>captured.identity.extensions.map(e=>e.name==='supabase_vault'?{...e,version:'0.3.2'}:{...e});
+test('only approved exact Vault tuple passes without mutating evidence',()=>{const x=ext(),before=structuredClone(x);assert.equal(verifyExtensions(x,captured.identity.extensions,scope).actual,'0.3.2');assert.deepEqual(x,before);assert.equal(captured.identity.extensions.find(e=>e.name==='supabase_vault').version,'0.3.1');});
+for(const [name,mutate]of[
+ ['Vault 0.3.3',x=>x.find(e=>e.name==='supabase_vault').version='0.3.3'],
+ ['Vault wrong schema',x=>x.find(e=>e.name==='supabase_vault').schema='public'],
+ ['another extension version',x=>x.find(e=>e.name==='pgcrypto').version='9'],
+ ['another extension schema',x=>x.find(e=>e.name==='pg_cron').schema='extensions'],
+ ['missing extension',x=>x.pop()],
+ ['duplicate extension',x=>x.push({...x[0]})]
+])test('rejects '+name,()=>{const x=ext();mutate(x);assert.throws(()=>verifyExtensions(x,captured.identity.extensions,scope));});
+test('shared or other project/run/label refused',()=>{for(const bad of[{ref:'wkghgmjennvlcrnuthtd'},{ref:'oabiymuopsrxzyxjkdwz'},{run:'another-run'},{label:'a'}])assert.throws(()=>verifyExtensions(ext(),captured.identity.extensions,{...scope,...bad}));});
+test('history SQL/name/version drift rejected',()=>{const h=Array.from({length:7},(_,i)=>({version:String(i),name:'fixture'+i,statements:['SELECT '+i]}));verifyHistory(h,structuredClone(h));for(const k of['version','name','statements']){const x=structuredClone(h);x[0][k]=k==='statements'?['wrong']:'wrong';assert.throws(()=>verifyHistory(x,h));}assert.throws(()=>verifyHistory(h.slice(1),h));});
+test('catalog ACL/default/history drift refused',()=>{const record={catalog:{tables:[{default_expr:'false'}],grants:[false],history:['7']}};verifyStoppedCatalog(structuredClone(record.catalog),record);for(const key of Object.keys(record.catalog)){const x=structuredClone(record.catalog);x[key]=[];assert.throws(()=>verifyStoppedCatalog(x,record));}});
+function data(){return{profiles:syntheticIds.map(id=>({id,username:'\u540d\u7121\u3057',is_free:false,free_until:null,coment:null,avatar_url:null,created_at:'2026-11-19T00:00:00Z'})),rooms:roomIds.map((id,i)=>({id,room_name:'Synthetic preserved '+i,room_key:'synthetic'+i,mvp_created_by:null,mvp_archived_at:i===0?'2026-01-01T00:00:00Z':null}))};}
+const auth=()=>syntheticIds.map(id=>({id,aud:'authenticated',role:'authenticated',email:id+'@issue35.invalid',raw_user_meta_data:{}}));
+const counts={profiles:9,auth_users:9,rooms:3,members:0,users:0,tokens:0,rate_limits:0};
+test('exact generated fixtures accepted',()=>verifyData(data(),auth(),counts,syntheticIds,roomIds));
+for(const [name,mutate]of[
+ ['ON profile',d=>d.profiles[0].is_free=true],['stored deadline',d=>d.profiles[0].free_until='2026-12-01'],
+ ['ID substitution',d=>d.profiles[0].id='unexpected'],['room archive changed',d=>d.rooms[1].mvp_archived_at='2026-01-01'],
+ ['room classification evidence changed',d=>d.rooms[0].mvp_created_by=syntheticIds[0]]
+])test('fixture drift rejected: '+name,()=>{const d=data();mutate(d);assert.throws(()=>verifyData(d,auth(),counts,syntheticIds,roomIds));});
+test('unexpected Auth email or extra rows refused',()=>{const a=auth();a[0].email='other@issue35.invalid';assert.throws(()=>verifyData(data(),a,counts,syntheticIds,roomIds));assert.throws(()=>verifyData(data(),auth(),{...counts,members:1},syntheticIds,roomIds));});

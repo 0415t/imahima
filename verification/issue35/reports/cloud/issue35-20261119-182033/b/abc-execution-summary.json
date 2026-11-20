@@ -1,0 +1,129 @@
+{
+  "run": "issue35-20261119-182033",
+  "status": "A/B/C completed; shared DB untouched; project retained",
+  "stages": {
+    "a": {
+      "passed": 106,
+      "failed": 0,
+      "not_run": 1,
+      "project_ref": "oabiymuopsrxzyxjkdwz",
+      "source": "A execution-summary.json"
+    },
+    "b": {
+      "passed": 103,
+      "failed": 0,
+      "not_run": 1,
+      "project_ref": "vamobsqgvylwfdiaheku",
+      "source": "B execution-summary-final.json"
+    },
+    "c": {
+      "passed": 2,
+      "failed": 0,
+      "not_run": 0,
+      "project_ref": "vamobsqgvylwfdiaheku",
+      "source": "normal-management-results.json"
+    }
+  },
+  "totals": {
+    "passed": 211,
+    "failed": 0,
+    "not_run": 2
+  },
+  "offline_resume_tests": {
+    "passed": 17,
+    "failed": 0,
+    "separate_from_live_totals": true
+  },
+  "exceptions": {
+    "vault": {
+      "extension": "supabase_vault",
+      "schema": "vault",
+      "expected": "0.3.1",
+      "actual": "0.3.2",
+      "reason": "Approved B-only exception: application/migrations/Cron do not reference Vault; upstream 0.3.2 pins pg_temp last in two Vault SECURITY DEFINER functions."
+    },
+    "a_vault_version": "not captured",
+    "known_ab_physical_difference": [
+      {
+        "table": "profiles",
+        "a": [
+          {
+            "column": "id",
+            "attnum": 1
+          },
+          {
+            "column": "username",
+            "attnum": 2
+          },
+          {
+            "column": "is_free",
+            "attnum": 3
+          },
+          {
+            "column": "created_at",
+            "attnum": 4
+          },
+          {
+            "column": "coment",
+            "attnum": 5
+          },
+          {
+            "column": "avatar_url",
+            "attnum": 6
+          },
+          {
+            "column": "free_until",
+            "attnum": 7
+          },
+          {
+            "column": "free_period_id",
+            "attnum": 8
+          }
+        ],
+        "b": [
+          {
+            "column": "id",
+            "attnum": 1
+          },
+          {
+            "column": "username",
+            "attnum": 2
+          },
+          {
+            "column": "is_free",
+            "attnum": 3
+          },
+          {
+            "column": "created_at",
+            "attnum": 4
+          },
+          {
+            "column": "coment",
+            "attnum": 6
+          },
+          {
+            "column": "avatar_url",
+            "attnum": 7
+          },
+          {
+            "column": "free_until",
+            "attnum": 8
+          },
+          {
+            "column": "free_period_id",
+            "attnum": 9
+          }
+        ],
+        "reason": "Captured dropped-column gap; logical column order still compared"
+      }
+    ]
+  },
+  "not_run": "Managed supabase_admin role-inheritance fault injection: one record in A and one in B; successful results do not include them.",
+  "historical_interrupted_runs_retained": true,
+  "pre_c_ab_comparison_preserved": true,
+  "b_project_now_has_23_history_entries": true,
+  "application_migrations_remain_22": true,
+  "c_summary_sha256": "fc3c06d5222345f539f2d6f97a814813f5832e8819a986e4c9036b4afbf3fe12",
+  "shared_db_accessed": false,
+  "commit_push_merge": false
+}

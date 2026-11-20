@@ -1,0 +1,87 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "a replay refuses before any DB changes",
+      "status": "pass"
+    },
+    {
+      "name": "a old bootstrap-before-guard defect reproduced transactionally",
+      "status": "pass"
+    },
+    {
+      "name": "a mutation detected: table WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a mutation detected: column WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a mutation detected: function WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a mutation detected: schema WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a mutation detected: anon WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a mutation detected: service_role WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a PUBLIC grants detected and PUBLIC grant option unsupported",
+      "status": "pass"
+    },
+    {
+      "name": "a migration-path drift is detected before any hardening replay",
+      "status": "pass"
+    },
+    {
+      "name": "b replay refuses before any DB changes",
+      "status": "pass"
+    },
+    {
+      "name": "b old bootstrap-before-guard defect reproduced transactionally",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: table WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: column WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: function WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: schema WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: anon WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "b mutation detected: service_role WITH GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "b PUBLIC grants detected and PUBLIC grant option unsupported",
+      "status": "pass"
+    },
+    {
+      "name": "b migration-path drift is detected before any hardening replay",
+      "status": "pass"
+    }
+  ],
+  "passed": 20,
+  "failed": 0
+}

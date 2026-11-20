@@ -1,0 +1,39 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "a live nonmember receives no event while member receives",
+      "status": "pass"
+    },
+    {
+      "name": "a same live subscription stops delivery after leave and resumes after rejoin",
+      "status": "pass"
+    },
+    {
+      "name": "a archived synthetic room denies event delivery with membership retained",
+      "status": "pass"
+    },
+    {
+      "name": "a live delivery stops after Auth deletion",
+      "status": "pass"
+    },
+    {
+      "name": "b live nonmember receives no event while member receives",
+      "status": "pass"
+    },
+    {
+      "name": "b same live subscription stops delivery after leave and resumes after rejoin",
+      "status": "pass"
+    },
+    {
+      "name": "b archived synthetic room denies event delivery with membership retained",
+      "status": "pass"
+    },
+    {
+      "name": "b live delivery stops after Auth deletion",
+      "status": "pass"
+    }
+  ],
+  "passed": 8,
+  "failed": 0
+}

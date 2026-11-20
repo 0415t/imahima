@@ -1,0 +1,112 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "oabiymuopsrxzyxjkdwz",
+  "completed_at": "2026-11-19T10:12:42.581Z",
+  "scope": "A only; B/C not executed; project retained",
+  "reports": [
+    {
+      "name": "migration-results",
+      "passed": 23,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": []
+    },
+    {
+      "name": "feature-results",
+      "passed": 47,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": []
+    },
+    {
+      "name": "realtime-lifecycle-results",
+      "passed": 5,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": []
+    },
+    {
+      "name": "specification-results",
+      "passed": 10,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": []
+    },
+    {
+      "name": "regression-results",
+      "passed": 7,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": []
+    },
+    {
+      "name": "integrity-results",
+      "passed": 3,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": []
+    },
+    {
+      "name": "comparison-results",
+      "passed": 0,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": []
+    },
+    {
+      "name": "failure-results",
+      "passed": 11,
+      "failed": 0,
+      "not_run": 1,
+      "not_run_checks": [
+        {
+          "name": "a unexpected managed-role inheritance mutation",
+          "status": "not-run",
+          "reason": "Hosted supabase_admin unavailable; verify actual role metadata and offline guard contract."
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "passed": 106,
+    "failed": 0,
+    "not_run": 1
+  },
+  "final_client_tls_verified": true,
+  "final_postgres_ssl": true,
+  "final_catalog_matches_snapshot": true,
+  "history_versions": [
+    "20261001000000",
+    "20261006000000",
+    "20261017000000",
+    "20261104000000",
+    "20261105000000",
+    "20261105000001",
+    "20261105000002",
+    "20261106000000",
+    "20261106000001",
+    "20261107000000",
+    "20261110000000",
+    "20261111000000",
+    "20261111000001",
+    "20261112000000",
+    "20261113000000",
+    "20261116000000",
+    "20261117000000",
+    "20261117000001",
+    "20261118000000",
+    "20261118000001",
+    "20261118000002",
+    "20261118000003"
+  ],
+  "source_hashes_unchanged": true,
+  "historical_evidence_unchanged": true,
+  "snapshot_sha256": "6d978872031cbba5ff3117e36f05b19f2c2e51da1141ed4bbbe525f280ae327e",
+  "snapshot_catalog_digest": "dfbb0eb29a9a485a7e79300978c914ef81fb91f0b9aa1b8928509a38bec9da2b",
+  "limitations": [
+    "Sequential A/B comparison not yet executed",
+    "C CLI verification not yet executed",
+    "Hosted managed-role fault injection not executed; see not_run checks",
+    "No claim of upstream pooler certificate verification from pg_stat_ssl alone"
+  ]
+}

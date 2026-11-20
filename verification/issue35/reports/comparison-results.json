@@ -1,0 +1,71 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "A/B final grant_options",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final tables",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final constraints",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final indexes",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final functions",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final triggers",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final policies",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final table_privileges",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final column_privileges",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final function_privileges",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final public_grants",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final schema_privileges",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final cron",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final publication",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final published_tables",
+      "status": "pass"
+    },
+    {
+      "name": "A/B final history",
+      "status": "pass"
+    }
+  ],
+  "passed": 16,
+  "failed": 0
+}

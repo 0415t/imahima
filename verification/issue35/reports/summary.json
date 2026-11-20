@@ -1,0 +1,200 @@
+{
+  "base": "aff689da63c04e3a48e5b8f541d9a1573ad1b382",
+  "branch": "codex/issue35-acl",
+  "run": "verified",
+  "check_units": 263,
+  "failed": 0,
+  "categories": [
+    {
+      "name": "migration",
+      "passed": 48,
+      "failed": 0
+    },
+    {
+      "name": "cli-provision",
+      "passed": 23,
+      "failed": 0
+    },
+    {
+      "name": "feature",
+      "passed": 92,
+      "failed": 0
+    },
+    {
+      "name": "realtime-lifecycle",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "name": "regression",
+      "passed": 20,
+      "failed": 0
+    },
+    {
+      "name": "specification",
+      "passed": 20,
+      "failed": 0
+    },
+    {
+      "name": "normal-management",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "name": "failure",
+      "passed": 22,
+      "failed": 0
+    },
+    {
+      "name": "integrity",
+      "passed": 8,
+      "failed": 0
+    },
+    {
+      "name": "comparison",
+      "passed": 16,
+      "failed": 0
+    }
+  ],
+  "pre_failure_comparison": {
+    "sections": 16,
+    "differences": [],
+    "a_sha256": "2f36e47ea19b09ae997a5719b04e0c03db23fbe5cf96a50f2cb7a8e4bf51d504",
+    "b_sha256": "2f36e47ea19b09ae997a5719b04e0c03db23fbe5cf96a50f2cb7a8e4bf51d504"
+  },
+  "post_failure_comparison": {
+    "sections": 16,
+    "differences": [],
+    "a_sha256": "91936b22e610054924c074e19b2288c4a11af3102e3ea91536fcd737098032b0",
+    "b_sha256": "91936b22e610054924c074e19b2288c4a11af3102e3ea91536fcd737098032b0"
+  },
+  "initial_to_final_platform_change": "Realtime initializes supabase_realtime_messages_publication on realtime.messages in both A and B; whole-catalog hashes across the feature run therefore differ. The failure suite independently verifies unchanged full catalogs and history before/after its transactional mutations.",
+  "migration_sha256": {
+    "20261001000000_initial_schema.sql": "64823ad91de90f0ef07a2599b4e46dff6c39bb7fe5a0d0e13c003ead7af18f30",
+    "20261006000000_toggle_profile_is_free.sql": "b5354ef719ef76424f39ae7a7e38b5a4b9cc74014c5e54183eeffe3ed829cb8c",
+    "20261017000000_create_user_device_tokens.sql": "2051e42373a356af9e1c7e3836fe90d5c0b8996d490a6113db4761c503ab6536",
+    "20261104000000_profile_free_until.sql": "ec52d8644e0e713430049c553fe799313b0d9753764b315accdea01e606e7ac7",
+    "20261105000000_set_profile_is_free_atomic.sql": "57fd5a938c643d6055336f79b5e4bfd13bdadd7a4054e008247e55d31a655928",
+    "20261105000001_extend_profile_is_free.sql": "5d419b00e93f569364dc1ab1253000d5ac6f5ef9a5462902ce279df79c6bfd14",
+    "20261105000002_enable_pg_cron.sql": "a216ffab7a3686c0ca9ce49da967516c82e71c83d92179d3245cd94c1695df45",
+    "20261106000000_auto_expire_free_status.sql": "20520783c917ee6434fce23f72ff5ef041aff8ddfd95d5ecbf2bb0449eb6512b",
+    "20261106000001_schedule_auto_expire.sql": "9529ea5cdee0ab1a87f789853af56d2c526746c4346e310ad3d08065407eacd5",
+    "20261107000000_free_end_notification_claims.sql": "145c6c93fba126b1e0cb3183dfb72c5676906848ba2b8f2d8d7613d13960d117",
+    "20261110000000_extend_profile_is_free_from_notification.sql": "d101ca0ee836c4f220ca2fb83dc853d3c4a7ead1edb10d6f090f6b15b7b92d42",
+    "20261111000000_group_management_mvp.sql": "d8f6d8eb3b7ef807da30c743557a0b445e5b4a18e22f990a036524bf05e15be6",
+    "20261111000001_restrict_profile_client_writes.sql": "ac1c3a76496cba04fa699ee2222388e2c3c566e3d240654058185296bf08939f",
+    "20261112000000_member_free_notifications.sql": "561ffe3abe1a94c3873ba0b74816897b201aa7435a86f25db41f2fa6cd012d5a",
+    "20261113000000_group_chat_mvp.sql": "5cf098d9d87a7be1a4ac510c1b657d27fa2ad9c267882a7fcaf84c62e3f06558",
+    "20261116000000_group_mvp_managed_archive.sql": "dcdc7af9d2264cb555362655a3a82fc7e5ac91e98af208ec5885ab1ff690c796",
+    "20261117000000_index_group_mvp_rate_limits_window_start.sql": "d8420d90d6c13768015ab2518e526a97a428a75d1ae1564d9af7acf96fb0f380",
+    "20261117000001_fix_timer_lock_time_and_notification_retry.sql": "751644b80a499014f5868f3437fb1c25b0796293a42ad1715c579ef98234c1bd",
+    "20261118000000_harden_core_runtime_privileges.sql": "a1d5f501d24a7207f0f4943b621a3b40a5ec0323b23ec8149fa20a07b1d02ab3",
+    "20261118000001_harden_notification_runtime_privileges.sql": "d27ece9b52f907f81233523ebdb9025d7178c3c09e15bb14d591e3dbafd7d045",
+    "20261118000002_harden_chat_runtime_privileges.sql": "db1735c3c133c8abcb3ec5c0fd4fae0eab778ca9f32da7eab8b1228abf7164cf",
+    "20261118000003_harden_archive_runtime_privileges.sql": "4aed0060fe6286bab68b29e7560119916fe1c691874a3b97fb551fc5a8cb7c31"
+  },
+  "verification_sha256": {
+    "verification/issue35/.gitignore": "4ce397272e41ebf394bae55b452ec7666932dc3e312b6de17dd8951240faa437",
+    "verification/issue35/README.md": "e929c50a4bdde9792b75fc6ff11bfda63e4d142056b85c9c8e336014d8a538e3",
+    "verification/issue35/acl.mjs": "6ee4f06ae3a1d88933189341f4f7eced938deee0bb19b9a9570978d1187e02e2",
+    "verification/issue35/block-egress.mjs": "070e1a5d1ded0cd7b5add2ccad84105d43adf75226e30e7432bb17612e87eaa5",
+    "verification/issue35/catalog.mjs": "216b159915d5f6d4e64237258af620ce3fdca6baba0a56339808f3ac9560ba4c",
+    "verification/issue35/cli-assertions.mjs": "50fd31f408c1f5bc230e755fea7c29d10a5d9ffa0713b11e78d5d427f7ac2b84",
+    "verification/issue35/compare.mjs": "eddf2240b7c6c5f3cb6c2c7dc47c9f0081d600dca674a0e82ad30483afb65102",
+    "verification/issue35/db.mjs": "edd78aeb24369d4fcdad304a991594f7c6ae0c7e3e9127587775dbe0588de6d3",
+    "verification/issue35/failures.mjs": "9e84ffa32828ad0c63dbf2379e98cdb5aceb77c1bce780168b7496682a07f9b8",
+    "verification/issue35/features.mjs": "d0742474dc9d6ebfff6eb7ef220d2a8c6e766a51e804071e972b4d42276e6095",
+    "verification/issue35/integrity.mjs": "f23ee2502e0b83804041f4e8e58f741f753f87a90d7c2636de059f9c30d799e8",
+    "verification/issue35/migrate.mjs": "29580720e3652e3a2e089b1504d3c9f4e46c381bbd28bb05ca1a1e6c70586f6a",
+    "verification/issue35/normal-management.mjs": "e1e4698a63bb267193ed2f0e01e37121a5ffe25d84a1d3f881d6c70dd716560e",
+    "verification/issue35/package-lock.json": "df6774229e40ecc3ee4125382fe43943958130374caadaee81eb687b9502256e",
+    "verification/issue35/package.json": "62eac88112ef84609b25db3d1092bc3d6af2ebd99f8cdd0d352dae251192a426",
+    "verification/issue35/realtime-lifecycle.mjs": "21f813d48ce9f9e5197e84a573dfe668a227d5e56087e9788ba173bdf3ad0e55",
+    "verification/issue35/regressions.mjs": "a7c8bb6456402251a9732a1676f4dba640d1577f818e5014432d9b03a4b4a002",
+    "verification/issue35/safety.mjs": "d2db12bf55e2b6c450d3b973c703c0b1d59bb32d58c684795450ebb7d413cfd3",
+    "verification/issue35/specifications.mjs": "69bd2496064eabf154005734631ebbcfc6df6e2d389afe2a78a2aaea20169ad0",
+    "verification/issue35/stacks.mjs": "3583a98bd5e8798d57979139444b1c72678343e5c2f1f1f50f96ce3138ad2255",
+    "verification/issue35/tsconfig.json": "726810c4c49278add0990e02c6ac8591e6a48d310118cae35ce9a1b4e31bf8e5"
+  },
+  "commit_files": [
+    "docs/issue35-acl-verification.md",
+    "supabase/migrations/20261118000000_harden_core_runtime_privileges.sql",
+    "supabase/migrations/20261118000001_harden_notification_runtime_privileges.sql",
+    "supabase/migrations/20261118000002_harden_chat_runtime_privileges.sql",
+    "supabase/migrations/20261118000003_harden_archive_runtime_privileges.sql",
+    "verification/issue35/.gitignore",
+    "verification/issue35/README.md",
+    "verification/issue35/acl.mjs",
+    "verification/issue35/block-egress.mjs",
+    "verification/issue35/catalog.mjs",
+    "verification/issue35/cli-assertions.mjs",
+    "verification/issue35/compare.mjs",
+    "verification/issue35/db.mjs",
+    "verification/issue35/failures.mjs",
+    "verification/issue35/features.mjs",
+    "verification/issue35/integrity.mjs",
+    "verification/issue35/migrate.mjs",
+    "verification/issue35/normal-management.mjs",
+    "verification/issue35/package-lock.json",
+    "verification/issue35/package.json",
+    "verification/issue35/realtime-lifecycle.mjs",
+    "verification/issue35/regressions.mjs",
+    "verification/issue35/reports/cli-provision-results.json",
+    "verification/issue35/reports/comparison-results.json",
+    "verification/issue35/reports/environment-handoff.json",
+    "verification/issue35/reports/failure-results.json",
+    "verification/issue35/reports/feature-results.json",
+    "verification/issue35/reports/final-comparison.json",
+    "verification/issue35/reports/integrity-results.json",
+    "verification/issue35/reports/migration-results.json",
+    "verification/issue35/reports/normal-management-results.json",
+    "verification/issue35/reports/pre-failure-comparison.json",
+    "verification/issue35/reports/realtime-lifecycle-results.json",
+    "verification/issue35/reports/regression-results.json",
+    "verification/issue35/reports/specification-results.json",
+    "verification/issue35/reports/summary.json",
+    "verification/issue35/safety.mjs",
+    "verification/issue35/specifications.mjs",
+    "verification/issue35/stacks.mjs",
+    "verification/issue35/tsconfig.json"
+  ],
+  "excluded_historical_diagnostic_json": 13,
+  "diagnostic_failures_before_final_run": {
+    "count": 7,
+    "resolved": true,
+    "details": [
+      "PUBLIC error-message expectation: 2",
+      "CLI output/discovery/disabled-config/stderr assertions: 5"
+    ],
+    "retained_under_ignored_runtime": true
+  },
+  "production_migrations_changed_during_followup": false,
+  "limitations": [
+    "Synthetic B is not a full shared DB dump",
+    "Real-device Push, production load and UI automation excluded",
+    "Shared room classification/defaults/pg_cron/other clients/restore readiness remain rollout gates"
+  ],
+  "existing_environment_exception": {
+    "file": "C:/Users/User/.supabase/telemetry.json",
+    "kind": "CLI auxiliary metadata",
+    "updated_before_cli_home_isolation": true,
+    "last_write_utc": "2026-11-18T09:22:48Z",
+    "pre_change_baseline_unavailable": true,
+    "final_run_did_not_update_it": true
+  },
+  "precommit_audit": {
+    "files": 40,
+    "utf8_errors": 0,
+    "syntax_errors": 0,
+    "secret_literal_hits": 0,
+    "whitespace_errors": 0,
+    "git_diff_check_passed": true,
+    "untracked_files_individually_checked_using_repository_autocrlf": true,
+    "original_worktree_unchanged": true,
+    "historical_18_unchanged": true,
+    "all_22_migration_hashes_unchanged": true,
+    "staged_files": 0,
+    "excluded_diagnostic_json": 13,
+    "latest_main": "aff689da63c04e3a48e5b8f541d9a1573ad1b382"
+  }
+}

@@ -1,0 +1,192 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "vamobsqgvylwfdiaheku",
+  "status": "B complete; A/B application catalogs match; C not executed",
+  "completed_at": "2026-11-19T11:04:02.896Z",
+  "reports": [
+    {
+      "name": "migration-results",
+      "passed": 18,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": [],
+      "sha256": "3d65a2a5f8822d9b326f6feeb1f85dbfc414ccb6a171195c2fa2689482fadb19"
+    },
+    {
+      "name": "feature-results",
+      "passed": 47,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": [],
+      "sha256": "126390f1101fa5b14fa701f4b0d03d9365cbf0545b4d9a67af6b44b920765fd4"
+    },
+    {
+      "name": "realtime-lifecycle-results",
+      "passed": 5,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": [],
+      "sha256": "3a9fc21ede5a8f41d7c86ade20a9d61e7fe406cd106a146ac6c62c0a0ccb2747"
+    },
+    {
+      "name": "specification-results",
+      "passed": 10,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": [],
+      "sha256": "16a98e73810648c5a4d9aad2e5fe62b43d1590e7969f007c7a445a694c1d6234"
+    },
+    {
+      "name": "regression-results",
+      "passed": 7,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": [],
+      "sha256": "ce7feae2bafb422015c7bb6f1bc07f079342ea0919b151a163dda42f32c3df05"
+    },
+    {
+      "name": "integrity-results",
+      "passed": 5,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": [],
+      "sha256": "fbacdd6de657afbf05754bb5740d182ed2ae64c4d49d249175a2261d8102ec24"
+    },
+    {
+      "name": "comparison-results",
+      "passed": 0,
+      "failed": 0,
+      "not_run": 0,
+      "not_run_checks": [],
+      "sha256": "1a42b87f55760b1467dcf0bccf6050f9e44ab900d17d7a2e1f7e1931cd09ef9a"
+    },
+    {
+      "name": "failure-results",
+      "passed": 11,
+      "failed": 0,
+      "not_run": 1,
+      "not_run_checks": [
+        {
+          "name": "b unexpected managed-role inheritance mutation",
+          "status": "not-run",
+          "reason": "Hosted supabase_admin unavailable; verify actual role metadata and offline guard contract."
+        }
+      ],
+      "sha256": "58008307505788efacdaa5bb3cd6600eaabe7f47d6961af936d6c8769a750d92"
+    }
+  ],
+  "totals": {
+    "passed": 103,
+    "failed": 0,
+    "not_run": 1
+  },
+  "count_scope": "Current completed B reports only. Previous extension failure and interrupted feature run remain preserved and are not erased or included as current passes.",
+  "offline_resume_tests": {
+    "passed": 17,
+    "failed": 0
+  },
+  "migration_replayed_during_feature_retry": false,
+  "history_count": 22,
+  "history_sql_exact": true,
+  "original_fixture_data_preserved": true,
+  "application_catalog_sections": 17,
+  "ab_differences": [],
+  "known_physical_differences": [
+    {
+      "table": "profiles",
+      "a": [
+        {
+          "column": "id",
+          "attnum": 1
+        },
+        {
+          "column": "username",
+          "attnum": 2
+        },
+        {
+          "column": "is_free",
+          "attnum": 3
+        },
+        {
+          "column": "created_at",
+          "attnum": 4
+        },
+        {
+          "column": "coment",
+          "attnum": 5
+        },
+        {
+          "column": "avatar_url",
+          "attnum": 6
+        },
+        {
+          "column": "free_until",
+          "attnum": 7
+        },
+        {
+          "column": "free_period_id",
+          "attnum": 8
+        }
+      ],
+      "b": [
+        {
+          "column": "id",
+          "attnum": 1
+        },
+        {
+          "column": "username",
+          "attnum": 2
+        },
+        {
+          "column": "is_free",
+          "attnum": 3
+        },
+        {
+          "column": "created_at",
+          "attnum": 4
+        },
+        {
+          "column": "coment",
+          "attnum": 6
+        },
+        {
+          "column": "avatar_url",
+          "attnum": 7
+        },
+        {
+          "column": "free_until",
+          "attnum": 8
+        },
+        {
+          "column": "free_period_id",
+          "attnum": 9
+        }
+      ],
+      "reason": "Captured dropped-column gap; logical column order still compared"
+    }
+  ],
+  "exception": {
+    "extension": "supabase_vault",
+    "schema": "vault",
+    "expected": "0.3.1",
+    "actual": "0.3.2",
+    "reason": "Approved B-only exception: application/migrations/Cron do not reference Vault; upstream 0.3.2 pins pg_temp last in two Vault SECURITY DEFINER functions."
+  },
+  "a_vault_version": "not captured",
+  "final_catalog_matches_pre_failure_snapshot": true,
+  "tls_verified": true,
+  "postgres_ssl": true,
+  "a_snapshot_sha256": "6d978872031cbba5ff3117e36f05b19f2c2e51da1141ed4bbbe525f280ae327e",
+  "b_snapshot_sha256": "f46b02d59b95e5118e27d9729e7cc53a599f94494a3b94c4797999024ac802eb",
+  "comparison_sha256": "4c04d44b8495a5954ad1f108f1fa63e0612df71cfceb07c744880e5b531deaa0",
+  "supplemental_source_sha256": {
+    "resume-guards.mjs": "cf8a59af559e2fc05afa14143281832ea187bbf313e3d1dab6494bbd5991b375",
+    "resume-once.mjs": "7680b37afa15ce4bbf07a853817e856760c13a56f40981634f8f2c3b353c5f2c",
+    "resume-offline.test.mjs": "0f9d4b6a589ccb1372ba41a58a1eddf154badee464f18e74c6ad0ab14dceab97"
+  },
+  "supplemental_manifest_sha256": "1b9a247342f95fb6a38366a1c6f80d39b3ac53d1b14aea111e7ff721a288e213",
+  "frozen_sources_unchanged": true,
+  "prior_evidence_retained": true,
+  "c_executed": false,
+  "project_retained": true
+}

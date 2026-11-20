@@ -1,0 +1,88 @@
+{
+  "sections": {
+    "grant_options": {
+      "a_rows": 104,
+      "b_rows": 104,
+      "equal": true
+    },
+    "tables": {
+      "a_rows": 77,
+      "b_rows": 77,
+      "equal": true
+    },
+    "constraints": {
+      "a_rows": 44,
+      "b_rows": 44,
+      "equal": true
+    },
+    "indexes": {
+      "a_rows": 27,
+      "b_rows": 27,
+      "equal": true
+    },
+    "functions": {
+      "a_rows": 33,
+      "b_rows": 33,
+      "equal": true
+    },
+    "triggers": {
+      "a_rows": 7,
+      "b_rows": 7,
+      "equal": true
+    },
+    "policies": {
+      "a_rows": 7,
+      "b_rows": 7,
+      "equal": true
+    },
+    "table_privileges": {
+      "a_rows": 264,
+      "b_rows": 264,
+      "equal": true
+    },
+    "column_privileges": {
+      "a_rows": 924,
+      "b_rows": 924,
+      "equal": true
+    },
+    "function_privileges": {
+      "a_rows": 99,
+      "b_rows": 99,
+      "equal": true
+    },
+    "public_grants": {
+      "a_rows": 0,
+      "b_rows": 0,
+      "equal": true
+    },
+    "schema_privileges": {
+      "a_rows": 9,
+      "b_rows": 9,
+      "equal": true
+    },
+    "cron": {
+      "a_rows": 1,
+      "b_rows": 1,
+      "equal": true
+    },
+    "publication": {
+      "a_rows": 2,
+      "b_rows": 2,
+      "equal": true
+    },
+    "published_tables": {
+      "a_rows": 2,
+      "b_rows": 2,
+      "equal": true
+    },
+    "history": {
+      "a_rows": 22,
+      "b_rows": 22,
+      "equal": true
+    }
+  },
+  "differences": [],
+  "known_normalization": "Only the single synthetic handle_new_user comment is removed; fixture data and unrelated platform OIDs are not compared.",
+  "a_sha256": "91936b22e610054924c074e19b2288c4a11af3102e3ea91536fcd737098032b0",
+  "b_sha256": "91936b22e610054924c074e19b2288c4a11af3102e3ea91536fcd737098032b0"
+}

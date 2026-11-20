@@ -1,0 +1,37 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "oabiymuopsrxzyxjkdwz",
+  "checks": [
+    {
+      "name": "a rejects table GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a rejects column GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a rejects function GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a rejects schema GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a rejects anon GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a rejects service_role GRANT OPTION",
+      "status": "pass"
+    },
+    {
+      "name": "a PUBLIC grant is visible and PUBLIC grant option rejected",
+      "status": "pass"
+    }
+  ],
+  "passed": 7,
+  "failed": 0,
+  "not_run": 0
+}

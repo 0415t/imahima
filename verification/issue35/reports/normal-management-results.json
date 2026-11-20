@@ -1,0 +1,31 @@
+{
+  "run": "verified",
+  "checks": [
+    {
+      "name": "CLI old No migrations found false-positive reproduced and rejected",
+      "status": "pass"
+    },
+    {
+      "name": "CLI missing-file mismatched-version and disabled-migration mutants rejected",
+      "status": "pass"
+    },
+    {
+      "name": "a official CLI recognizes exactly all 22 applied migrations",
+      "status": "pass"
+    },
+    {
+      "name": "b official CLI recognizes exactly all 22 applied migrations",
+      "status": "pass"
+    },
+    {
+      "name": "C dedicated official CLI future migration applies and records history",
+      "status": "pass"
+    },
+    {
+      "name": "A/B remain at exactly 22 versions after C forward application",
+      "status": "pass"
+    }
+  ],
+  "passed": 6,
+  "failed": 0
+}

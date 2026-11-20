@@ -1,0 +1,29 @@
+{
+  "run": "issue35-20261119-182033",
+  "project_ref": "oabiymuopsrxzyxjkdwz",
+  "checks": [
+    {
+      "name": "a live nonmember receives no event while member receives",
+      "status": "pass"
+    },
+    {
+      "name": "a same live subscription stops delivery after leave and resumes after rejoin",
+      "status": "pass"
+    },
+    {
+      "name": "a archived synthetic room denies event delivery with membership retained",
+      "status": "pass"
+    },
+    {
+      "name": "a live delivery stops after Auth deletion",
+      "status": "pass"
+    },
+    {
+      "name": "a Realtime resource cleanup",
+      "status": "pass"
+    }
+  ],
+  "passed": 5,
+  "failed": 0,
+  "not_run": 0
+}

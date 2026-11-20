@@ -1,0 +1,18 @@
+{
+  "scope": {
+    "run": "issue35-20261119-182033",
+    "label": "b",
+    "ref": "vamobsqgvylwfdiaheku"
+  },
+  "purpose": "One-off continuation after approved isolated Vault 0.3.1 -> 0.3.2 exception; not a generic resume framework",
+  "reason": "No Vault references in app/migrations/Cron; upstream v0.3.2 SQL hardens search_path of two Vault SECURITY DEFINER functions. No extension or frozen verifier changes.",
+  "source": "https://github.com/supabase/vault/blob/v0.3.2/sql/supabase_vault--0.3.1--0.3.2.sql",
+  "supplemental_source_sha256": {
+    "resume-guards.mjs": "cf8a59af559e2fc05afa14143281832ea187bbf313e3d1dab6494bbd5991b375",
+    "resume-once.mjs": "7680b37afa15ce4bbf07a853817e856760c13a56f40981634f8f2c3b353c5f2c",
+    "resume-offline.test.mjs": "0f9d4b6a589ccb1372ba41a58a1eddf154badee464f18e74c6ad0ab14dceab97"
+  },
+  "frozen_a_code_unchanged": true,
+  "supplement_not_executed_in_a": true,
+  "archive_note": "Exact byte copies with .txt suffix for code review only. Not an executable entrypoint. Private settings, nonce, protected-file inventory and raw logs are excluded."
+}

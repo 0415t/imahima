@@ -1,0 +1,7383 @@
+{
+  "source_sha256": {
+    "001.csv": "cc381a543a00b992af8935d1804866547b4ad65ac7311bdeeecc8d5a818bd486",
+    "002.csv": "deadea0d63eef58231a033eb9a834f6d6165265bc274a4a5b6bc4f0834b430cf",
+    "003.csv": "5c3e71c8dfe90e33959f861a31bb83c9f4301acda4ced9c53c512271c66525ea",
+    "004.csv": "09f9b4a017ec50f2f68fb3b2f71dfdaf242484c7d90898d14b8bb9e34ecbca7e",
+    "005.csv": "32a3c73274e908702b898b1eb4ee54500541ec07d4ac02d85ea663f590e30c52"
+  },
+  "identity": {
+    "role": "postgres",
+    "database": "postgres",
+    "extensions": [
+      {
+        "name": "pg_cron",
+        "schema": "pg_catalog",
+        "version": "1.6.4"
+      },
+      {
+        "name": "pg_stat_statements",
+        "schema": "extensions",
+        "version": "1.11"
+      },
+      {
+        "name": "pgcrypto",
+        "schema": "extensions",
+        "version": "1.3"
+      },
+      {
+        "name": "plpgsql",
+        "schema": "pg_catalog",
+        "version": "1.0"
+      },
+      {
+        "name": "supabase_vault",
+        "schema": "vault",
+        "version": "0.3.1"
+      },
+      {
+        "name": "uuid-ossp",
+        "schema": "extensions",
+        "version": "1.1"
+      }
+    ],
+    "captured_at": "2026-11-19T08:44:48.512136+00:00",
+    "history_exists": true,
+    "server_version": "17.6",
+    "cron_jobs_exist": true,
+    "cron_runs_exist": true,
+    "expected_project_ref": "wkghgmjennvlcrnuthtd",
+    "observed_project_ref": null
+  },
+  "schema": {
+    "tables": [
+      {
+        "rls": true,
+        "owner": "postgres",
+        "table": "group_mvp_rate_limits",
+        "force_rls": false,
+        "replica_identity": "d"
+      },
+      {
+        "rls": true,
+        "owner": "postgres",
+        "table": "profiles",
+        "force_rls": false,
+        "replica_identity": "d"
+      },
+      {
+        "rls": true,
+        "owner": "postgres",
+        "table": "room_members",
+        "force_rls": false,
+        "replica_identity": "d"
+      },
+      {
+        "rls": true,
+        "owner": "postgres",
+        "table": "rooms",
+        "force_rls": false,
+        "replica_identity": "d"
+      },
+      {
+        "rls": true,
+        "owner": "postgres",
+        "table": "user_device_tokens",
+        "force_rls": false,
+        "replica_identity": "d"
+      },
+      {
+        "rls": true,
+        "owner": "postgres",
+        "table": "users",
+        "force_rls": false,
+        "replica_identity": "d"
+      }
+    ],
+    "columns": [
+      {
+        "type": "text",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 1,
+        "generated": ""
+      },
+      {
+        "type": "timestamp with time zone",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 2,
+        "generated": ""
+      },
+      {
+        "type": "integer",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 3,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "profiles",
+        "column": "id",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 1,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "profiles",
+        "column": "username",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 2,
+        "generated": ""
+      },
+      {
+        "type": "boolean",
+        "table": "profiles",
+        "column": "is_free",
+        "default": "false",
+        "identity": "",
+        "not_null": false,
+        "position": 3,
+        "generated": ""
+      },
+      {
+        "type": "timestamp with time zone",
+        "table": "profiles",
+        "column": "created_at",
+        "default": "timezone('utc'::text, now())",
+        "identity": "",
+        "not_null": true,
+        "position": 4,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "profiles",
+        "column": "coment",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 6,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "profiles",
+        "column": "avatar_url",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 7,
+        "generated": ""
+      },
+      {
+        "type": "timestamp with time zone",
+        "table": "profiles",
+        "column": "free_until",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 8,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "room_members",
+        "column": "room_id",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 1,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "room_members",
+        "column": "user_id",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 2,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "room_members",
+        "column": "role",
+        "default": "'member'::text",
+        "identity": "",
+        "not_null": true,
+        "position": 3,
+        "generated": ""
+      },
+      {
+        "type": "timestamp with time zone",
+        "table": "room_members",
+        "column": "joined_at",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "position": 4,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "rooms",
+        "column": "id",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "position": 1,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "rooms",
+        "column": "room_name",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 2,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "rooms",
+        "column": "room_key",
+        "default": "generate_room_key()",
+        "identity": "",
+        "not_null": false,
+        "position": 3,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 4,
+        "generated": ""
+      },
+      {
+        "type": "timestamp with time zone",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 5,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "user_device_tokens",
+        "column": "id",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "position": 1,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 2,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 3,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 4,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "position": 5,
+        "generated": ""
+      },
+      {
+        "type": "timestamp with time zone",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "position": 6,
+        "generated": ""
+      },
+      {
+        "type": "timestamp with time zone",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "position": 7,
+        "generated": ""
+      },
+      {
+        "type": "uuid",
+        "table": "users",
+        "column": "id",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "position": 1,
+        "generated": ""
+      },
+      {
+        "type": "text",
+        "table": "users",
+        "column": "username",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "position": 2,
+        "generated": ""
+      },
+      {
+        "type": "boolean",
+        "table": "users",
+        "column": "is_free",
+        "default": "false",
+        "identity": "",
+        "not_null": true,
+        "position": 3,
+        "generated": ""
+      }
+    ],
+    "indexes": [
+      {
+        "live": true,
+        "name": "group_mvp_rate_limits_pkey",
+        "ready": true,
+        "table": "group_mvp_rate_limits",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX group_mvp_rate_limits_pkey ON public.group_mvp_rate_limits USING btree (key_hash)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "profiles_pkey",
+        "ready": true,
+        "table": "profiles",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "idx_room_members_user_id_room_id",
+        "ready": true,
+        "table": "room_members",
+        "valid": true,
+        "definition": "CREATE INDEX idx_room_members_user_id_room_id ON public.room_members USING btree (user_id, room_id)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "room_members_pkey",
+        "ready": true,
+        "table": "room_members",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX room_members_pkey ON public.room_members USING btree (room_id, user_id)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "rooms_pkey",
+        "ready": true,
+        "table": "rooms",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX rooms_pkey ON public.rooms USING btree (id)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "rooms_room_key_unique",
+        "ready": true,
+        "table": "rooms",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX rooms_room_key_unique ON public.rooms USING btree (room_key)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "user_device_tokens_expo_push_token_key",
+        "ready": true,
+        "table": "user_device_tokens",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX user_device_tokens_expo_push_token_key ON public.user_device_tokens USING btree (expo_push_token)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "user_device_tokens_pkey",
+        "ready": true,
+        "table": "user_device_tokens",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX user_device_tokens_pkey ON public.user_device_tokens USING btree (id)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "user_device_tokens_user_id_idx",
+        "ready": true,
+        "table": "user_device_tokens",
+        "valid": true,
+        "definition": "CREATE INDEX user_device_tokens_user_id_idx ON public.user_device_tokens USING btree (user_id)",
+        "replica_identity": false
+      },
+      {
+        "live": true,
+        "name": "users_pkey",
+        "ready": true,
+        "table": "users",
+        "valid": true,
+        "definition": "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)",
+        "replica_identity": false
+      }
+    ],
+    "policies": [
+      {
+        "cmd": "SELECT",
+        "qual": "true",
+        "roles": [
+          "public"
+        ],
+        "tablename": "profiles",
+        "permissive": "PERMISSIVE",
+        "policyname": "Public profiles are viewable by everyone.",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "INSERT",
+        "qual": null,
+        "roles": [
+          "public"
+        ],
+        "tablename": "profiles",
+        "permissive": "PERMISSIVE",
+        "policyname": "Users can insert their own profile.",
+        "schemaname": "public",
+        "with_check": "(auth.uid() = id)"
+      },
+      {
+        "cmd": "UPDATE",
+        "qual": "(auth.uid() = id)",
+        "roles": [
+          "public"
+        ],
+        "tablename": "profiles",
+        "permissive": "PERMISSIVE",
+        "policyname": "Users can update own profile.",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "DELETE",
+        "qual": "(( SELECT auth.uid() AS uid) = user_id)",
+        "roles": [
+          "authenticated"
+        ],
+        "tablename": "user_device_tokens",
+        "permissive": "PERMISSIVE",
+        "policyname": "own tokens delete",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "SELECT",
+        "qual": "(( SELECT auth.uid() AS uid) = user_id)",
+        "roles": [
+          "authenticated"
+        ],
+        "tablename": "user_device_tokens",
+        "permissive": "PERMISSIVE",
+        "policyname": "own tokens select",
+        "schemaname": "public",
+        "with_check": null
+      },
+      {
+        "cmd": "SELECT",
+        "qual": "true",
+        "roles": [
+          "anon",
+          "authenticated"
+        ],
+        "tablename": "users",
+        "permissive": "PERMISSIVE",
+        "policyname": "Allow public read users",
+        "schemaname": "public",
+        "with_check": null
+      }
+    ],
+    "triggers": [
+      {
+        "name": "on_auth_user_created",
+        "table": "users",
+        "schema": "auth",
+        "enabled": "O",
+        "definition": "CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()"
+      }
+    ],
+    "functions": [
+      {
+        "args": "",
+        "name": "auto_expire_free_status",
+        "owner": "postgres",
+        "result": "void",
+        "schema": "public",
+        "body_md5": "83b020fc9eafdc1e8e6f5a242859d030",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 0,
+        "definition_md5": "8431f5c34e1c4789d667370a519569f1",
+        "security_definer": true,
+        "argument_defaults": null
+      },
+      {
+        "args": "uuid",
+        "name": "extend_profile_is_free",
+        "owner": "postgres",
+        "result": "TABLE(is_free boolean, free_until timestamp with time zone)",
+        "schema": "public",
+        "body_md5": "b00b1a52947cad5486bca65604983a8a",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 0,
+        "definition_md5": "9649de8a98dd37b802f336f66809d0ca",
+        "security_definer": false,
+        "argument_defaults": null
+      },
+      {
+        "args": "",
+        "name": "generate_room_key",
+        "owner": "postgres",
+        "result": "text",
+        "schema": "public",
+        "body_md5": "bd6bbe8d261baeffc9e23388cc034499",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 0,
+        "definition_md5": "e2f9dfafb5f47031097d46c9c7cfa90c",
+        "security_definer": false,
+        "argument_defaults": null
+      },
+      {
+        "args": "text, integer",
+        "name": "group_mvp_consume_rate",
+        "owner": "postgres",
+        "result": "boolean",
+        "schema": "public",
+        "body_md5": "cc339c840726f3204fb9125b4909f4a3",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 0,
+        "definition_md5": "2c8fad98b8550cd4d7c188646c796838",
+        "security_definer": false,
+        "argument_defaults": null
+      },
+      {
+        "args": "text, uuid, jsonb",
+        "name": "group_mvp_execute",
+        "owner": "postgres",
+        "result": "jsonb",
+        "schema": "public",
+        "body_md5": "3a1a3e0817b096da5b076dd5b905149a",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 1,
+        "definition_md5": "cd6e35abe952db07bd9f4e00285ec4e1",
+        "security_definer": false,
+        "argument_defaults": "'{}'::jsonb"
+      },
+      {
+        "args": "",
+        "name": "handle_new_user",
+        "owner": "postgres",
+        "result": "trigger",
+        "schema": "public",
+        "body_md5": "0940dfbf73e1e55dc5b8b7d594d52098",
+        "volatility": "v",
+        "search_path": [],
+        "default_count": 0,
+        "definition_md5": "ab6f7606c8a81f832ad4cb6b5e0d5202",
+        "security_definer": true,
+        "argument_defaults": null
+      },
+      {
+        "args": "uuid, boolean, integer",
+        "name": "set_profile_is_free",
+        "owner": "postgres",
+        "result": "TABLE(is_free boolean, free_until timestamp with time zone)",
+        "schema": "public",
+        "body_md5": "b0429080df4e7bacfdf652cec5b3c65e",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 1,
+        "definition_md5": "b5088898a556a5d981fea3e277788e2d",
+        "security_definer": false,
+        "argument_defaults": "NULL::integer"
+      },
+      {
+        "args": "uuid",
+        "name": "toggle_profile_is_free",
+        "owner": "postgres",
+        "result": "boolean",
+        "schema": "public",
+        "body_md5": "895bc2a880d3cb0f8bf6575e9b85bd55",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 0,
+        "definition_md5": "2ed5758fca6cbb94ae2d0b08127c2ada",
+        "security_definer": false,
+        "argument_defaults": null
+      },
+      {
+        "args": "text, text, text",
+        "name": "upsert_device_token",
+        "owner": "postgres",
+        "result": "void",
+        "schema": "public",
+        "body_md5": "3ed2d73a5e7419819adef08ed8ecd636",
+        "volatility": "v",
+        "search_path": [
+          "search_path=\"\""
+        ],
+        "default_count": 1,
+        "definition_md5": "2f39fe7f5f528d028f49885fdbb134da",
+        "security_definer": true,
+        "argument_defaults": "NULL::text"
+      }
+    ],
+    "constraints": [
+      {
+        "name": "group_mvp_rate_limits_attempts_check",
+        "type": "c",
+        "table": "group_mvp_rate_limits",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK ((attempts > 0))"
+      },
+      {
+        "name": "group_mvp_rate_limits_pkey",
+        "type": "p",
+        "table": "group_mvp_rate_limits",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (key_hash)"
+      },
+      {
+        "name": "profiles_id_fkey",
+        "type": "f",
+        "table": "profiles",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "profiles_pkey",
+        "type": "p",
+        "table": "profiles",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "room_members_pkey",
+        "type": "p",
+        "table": "room_members",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (room_id, user_id)"
+      },
+      {
+        "name": "room_members_role_check",
+        "type": "c",
+        "table": "room_members",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "CHECK ((role = ANY (ARRAY['owner'::text, 'member'::text])))"
+      },
+      {
+        "name": "room_members_room_id_fkey",
+        "type": "f",
+        "table": "room_members",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "room_members_user_id_fkey",
+        "type": "f",
+        "table": "room_members",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "rooms_mvp_created_by_fkey",
+        "type": "f",
+        "table": "rooms",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (mvp_created_by) REFERENCES auth.users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "rooms_pkey",
+        "type": "p",
+        "table": "rooms",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "rooms_room_key_unique",
+        "type": "u",
+        "table": "rooms",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "UNIQUE (room_key)"
+      },
+      {
+        "name": "user_device_tokens_expo_push_token_key",
+        "type": "u",
+        "table": "user_device_tokens",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "UNIQUE (expo_push_token)"
+      },
+      {
+        "name": "user_device_tokens_pkey",
+        "type": "p",
+        "table": "user_device_tokens",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "user_device_tokens_user_id_fkey",
+        "type": "f",
+        "table": "user_device_tokens",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "users_pkey",
+        "type": "p",
+        "table": "users",
+        "deferred": false,
+        "validated": true,
+        "deferrable": false,
+        "definition": "PRIMARY KEY (id)"
+      }
+    ],
+    "publications": [
+      {
+        "name": "supabase_realtime",
+        "delete": true,
+        "insert": true,
+        "update": true,
+        "truncate": true,
+        "all_tables": false
+      }
+    ],
+    "published_tables": []
+  },
+  "privileges": {
+    "roles": [
+      {
+        "role": "anon",
+        "login": false,
+        "inherit": true,
+        "superuser": false,
+        "bypass_rls": false
+      },
+      {
+        "role": "authenticated",
+        "login": false,
+        "inherit": true,
+        "superuser": false,
+        "bypass_rls": false
+      },
+      {
+        "role": "service_role",
+        "login": false,
+        "inherit": true,
+        "superuser": false,
+        "bypass_rls": true
+      }
+    ],
+    "tables": [
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      }
+    ],
+    "columns": [
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "key_hash",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "window_start",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "group_mvp_rate_limits",
+        "column": "attempts",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "username",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "coment",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "avatar_url",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "profiles",
+        "column": "free_until",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "room_id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "role",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "role",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "role",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "role",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "role",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "room_members",
+        "column": "joined_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "id",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_name",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "room_key",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_created_by",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": false,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "rooms",
+        "column": "mvp_archived_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "user_id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "expo_push_token",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "platform",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "device_name",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "created_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "user_device_tokens",
+        "column": "updated_at",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "id",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "username",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "anon",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "role": "service_role",
+        "table": "users",
+        "column": "is_free",
+        "allowed": true,
+        "privilege": "UPDATE",
+        "grant_option": false
+      }
+    ],
+    "schemas": [
+      {
+        "role": "anon",
+        "usage": true,
+        "create": false,
+        "schema": "auth",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "usage": true,
+        "create": false,
+        "schema": "auth",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "service_role",
+        "usage": true,
+        "create": false,
+        "schema": "auth",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "anon",
+        "usage": false,
+        "create": false,
+        "schema": "cron",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "usage": false,
+        "create": false,
+        "schema": "cron",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "service_role",
+        "usage": false,
+        "create": false,
+        "schema": "cron",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "anon",
+        "usage": true,
+        "create": false,
+        "schema": "extensions",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "usage": true,
+        "create": false,
+        "schema": "extensions",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "service_role",
+        "usage": true,
+        "create": false,
+        "schema": "extensions",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "anon",
+        "usage": true,
+        "create": false,
+        "schema": "public",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "authenticated",
+        "usage": true,
+        "create": false,
+        "schema": "public",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      },
+      {
+        "role": "service_role",
+        "usage": true,
+        "create": false,
+        "schema": "public",
+        "usage_grant_option": false,
+        "create_grant_option": false
+      }
+    ],
+    "functions": [
+      {
+        "args": "",
+        "name": "auto_expire_free_status",
+        "role": "anon",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "auto_expire_free_status",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "auto_expire_free_status",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "uuid",
+        "name": "extend_profile_is_free",
+        "role": "anon",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "uuid",
+        "name": "extend_profile_is_free",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "uuid",
+        "name": "extend_profile_is_free",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "generate_room_key",
+        "role": "anon",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "generate_room_key",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "generate_room_key",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "text, integer",
+        "name": "group_mvp_consume_rate",
+        "role": "anon",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "text, integer",
+        "name": "group_mvp_consume_rate",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "text, integer",
+        "name": "group_mvp_consume_rate",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "text, uuid, jsonb",
+        "name": "group_mvp_execute",
+        "role": "anon",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "text, uuid, jsonb",
+        "name": "group_mvp_execute",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "text, uuid, jsonb",
+        "name": "group_mvp_execute",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "handle_new_user",
+        "role": "anon",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "handle_new_user",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "",
+        "name": "handle_new_user",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "uuid, boolean, integer",
+        "name": "set_profile_is_free",
+        "role": "anon",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "uuid, boolean, integer",
+        "name": "set_profile_is_free",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "uuid, boolean, integer",
+        "name": "set_profile_is_free",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "uuid",
+        "name": "toggle_profile_is_free",
+        "role": "anon",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "uuid",
+        "name": "toggle_profile_is_free",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "uuid",
+        "name": "toggle_profile_is_free",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "text, text, text",
+        "name": "upsert_device_token",
+        "role": "anon",
+        "schema": "public",
+        "execute": false,
+        "grant_option": false
+      },
+      {
+        "args": "text, text, text",
+        "name": "upsert_device_token",
+        "role": "authenticated",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      },
+      {
+        "args": "text, text, text",
+        "name": "upsert_device_token",
+        "role": "service_role",
+        "schema": "public",
+        "execute": true,
+        "grant_option": false
+      }
+    ],
+    "public_acl": [
+      {
+        "kind": "function",
+        "object": "generate_room_key()",
+        "schema": "public",
+        "subobject": "",
+        "is_grantable": false,
+        "privilege_type": "EXECUTE"
+      },
+      {
+        "kind": "function",
+        "object": "handle_new_user()",
+        "schema": "public",
+        "subobject": "",
+        "is_grantable": false,
+        "privilege_type": "EXECUTE"
+      },
+      {
+        "kind": "schema",
+        "object": "public",
+        "schema": "public",
+        "subobject": "",
+        "is_grantable": false,
+        "privilege_type": "USAGE"
+      }
+    ],
+    "default_acl": [
+      {
+        "type": "S",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": true
+      },
+      {
+        "type": "S",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": true
+      },
+      {
+        "type": "S",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": true
+      },
+      {
+        "type": "f",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "cron",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": true
+      },
+      {
+        "type": "S",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": true
+      },
+      {
+        "type": "S",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": true
+      },
+      {
+        "type": "S",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": true
+      },
+      {
+        "type": "f",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "extensions",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": true
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "graphql_public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "supabase_admin",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": true
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "realtime",
+        "creator": "supabase_admin",
+        "grantee": "dashboard_user",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "public",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "S",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "USAGE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "f",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "EXECUTE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "postgres",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "anon",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "authenticated",
+        "privilege": "UPDATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "DELETE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "INSERT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "MAINTAIN",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "REFERENCES",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "SELECT",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "TRIGGER",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "TRUNCATE",
+        "grant_option": false
+      },
+      {
+        "type": "r",
+        "schema": "storage",
+        "creator": "postgres",
+        "grantee": "service_role",
+        "privilege": "UPDATE",
+        "grant_option": false
+      }
+    ],
+    "memberships": []
+  },
+  "history": [
+    {
+      "version": "20261006000000",
+      "name": "toggle_profile_is_free",
+      "statements_md5": "5235fd06d237e6da8f1bec9e38382bdc"
+    },
+    {
+      "version": "20261017000000",
+      "name": "create_user_device_tokens",
+      "statements_md5": "6ec5c44459b45e1bc2b8d5028354c77e"
+    },
+    {
+      "version": "20261104000000",
+      "name": "profile_free_until",
+      "statements_md5": "705ad8076c613394ba64ae503588e8f9"
+    },
+    {
+      "version": "20261105000000",
+      "name": "set_profile_is_free_atomic",
+      "statements_md5": "f7855c06d4ab2da898c2eceaeec6dc61"
+    },
+    {
+      "version": "20261105000001",
+      "name": "extend_profile_is_free",
+      "statements_md5": "d679bff783412902fda90d3172c26e6e"
+    },
+    {
+      "version": "20261106000000",
+      "name": "auto_expire_free_status",
+      "statements_md5": "8ce2ddfb7ae31d84f3a93e80e52f507b"
+    },
+    {
+      "version": "20261106000001",
+      "name": "schedule_auto_expire",
+      "statements_md5": "c69d9e953cd18c87b96cdfc480613ff6"
+    }
+  ],
+  "cron": [
+    {
+      "jobid": "1",
+      "job_ref": "auto-expire-free-status",
+      "schedule": "* * * * *",
+      "active": "true",
+      "database": "postgres",
+      "username": "postgres",
+      "command_md5": "133b4c279aa7be9ab59dd86c1b7d3961",
+      "expected_expiry_command": "true"
+    }
+  ],
+  "limits": [
+    "observed_project_ref is null: identity relies on user Dashboard context plus prior authenticated API ref check",
+    "function bodies not supplied; handle_new_user body hash differs from initial_schema, prior user-provided OFF semantics used as a canonical synthetic fixture",
+    "history statements are hashes only: synthetic history uses repository SQL, not fabricated original statement contents",
+    "no application row data included; fixture profile count/state and room classification are synthetic, not assertions about shared data"
+  ]
+}
