@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 const require=createRequire(import.meta.url);
 require('tsx/cjs');
 const { createChatMessageNotificationPoller } = require('../server/jobs/chat-message-notifications.ts');
+const { waitForWorkerBarrier } = require('./helpers/worker-barrier.ts');
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 assert.ok(process.env.ISSUE36_PG_BIN,'Explicit ISSUE36_PG_BIN (PostgreSQL17 bin directory) required');
@@ -275,14 +276,18 @@ try{
   if(++sendCount===1){slowEntered();await slowGate;}onAccepted(1);return acceptedResult;
  },trace));
  const slowRun=slowWorker.runOnce();
+ let barrierPassed=false;
  try{
-  await slowReady;
+  await waitForWorkerBarrier(slowReady,slowRun);barrierPassed=true;
   assert.equal(value(`SELECT status||':'||attempts||':'||(lease_token IS NULL)::text FROM public.chat_message_notifications WHERE id=${lit(pair[1])}`),'pending:0:true');
   // Simulate server-side expiry of the preceding lease instead of sleeping 120s.
   sql(`UPDATE public.chat_message_notifications SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lit(pair[0])}`);
   assert.equal(value(`SELECT status||':'||attempts||':'||(lease_expires_at IS NULL)::text FROM public.chat_message_notifications WHERE id=${lit(pair[1])}`),'pending:0:true');
   assert.deepEqual(trace,['claim']);
- }finally{unblockSlow();await slowRun;await slowWorker.stop();}
+ }finally{
+  unblockSlow();
+  try{if(!barrierPassed)await slowWorker.stop();await slowRun;}finally{await slowWorker.stop();}
+ }
  assert.deepEqual(trace,['claim','complete:'+pair[0],'claim','complete:'+pair[1],'claim']);
  assert.equal(value(`SELECT count(*) FROM public.chat_message_notifications WHERE id IN(${pairSql}) AND status='sent' AND attempts=1`),'2');
  report.tests.push({name:'real worker does not lease waiting work; claims next immediately after completion',passed:true});

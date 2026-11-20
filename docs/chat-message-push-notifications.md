@@ -141,6 +141,10 @@ which has not received the new migration through an independently approved plan.
 
 - PR #40 review fixes (2026-11-21): before fixing, a final-attempt lease sweep
   changed a row to exhausted and rejected its retained token's sent completion.
+  The original unresolved barrier exited a standalone child with status 13 and
+  skipped cleanup. The repaired barrier has normal, early-finish, rejection and
+  timeout unit coverage. A deliberately early-finishing real worker in an
+  isolated PG17 fixture now fails with status 1 and reaches worker/DB cleanup.
 - Lease revision verified on 2026-11-21: `npm test` reported 275 passed,
   3 skipped, 0 failed (278 total). The dedicated chat mock suite has 24 tests.
   The isolated PG17 runner passed 20 groups: the previous 16 DB groups, one
