@@ -127,6 +127,25 @@ immediately claims the next row, up to 20 per cycle. Empty/error responses or a
 stop request end the cycle; overlapping cycles are suppressed. Waiting work is
 not leased and consumes no attempts. DB backoff/max-attempt rules are unchanged;
 a failed completion leaves the row leased until recovery, not immediately due.
+Each RPC first locks a MATERIALIZED window of at most max(20,p_limit) due rows
+(20 for the worker's p_limit=1), ordered by next_attempt_at, created_at and id,
+using SKIP LOCKED. Eligibility is evaluated only inside that window. Invalid,
+expired and exhausted entries are made terminal; at most p_limit valid entries
+receive leases/attempts. Other valid entries keep their original state. An
+unexpired live lease is not swept unless the notification itself has expired.
+Expiry is checked even for a row whose retry time is in the future.
+
+An all-invalid/locked window can return empty even when later work exists. The
+worker ends that cycle and retries on the next poll. Finite invalid prefixes
+drain across calls without spending attempts, so later due work progresses once
+locks release. This can add polling latency behind an invalid backlog. Brief
+window locks can also make a concurrent poll return empty. Candidate selection
+and the final pre-send validation remain mandatory; physical index/filter work
+is not guaranteed constant as the table grows.
+Keeping cleanup in this bounded claim transaction avoids a separate scheduler,
+RPC and independently failing cleanup lifecycle. A separate sweeper could offer
+more independent cleanup throughput, but is not introduced here. The tradeoff
+is eventual terminal-state cleanup and extra polls behind invalid prefixes.
 Each dependency call has a 10-second budget, and
 worker stop has a 5-second budget inside the existing server's shutdown budget.
 
@@ -145,6 +164,27 @@ which has not received the new migration through an independently approved plan.
   skipped cleanup. The repaired barrier has normal, early-finish, rejection and
   timeout unit coverage. A deliberately early-finishing real worker in an
   isolated PG17 fixture now fails with status 1 and reaches worker/DB cleanup.
+  Final regression: 280 passed, 3 skipped, 0 failed (283 total); full type
+  checking, changed-test lint and diff checks passed. The isolated runner passed
+  28 groups (25 DB-focused and 3 real-worker/mock-Push component scenarios),
+  in addition to the intentionally failing early-exit/cleanup fixture. These
+  remain Lv.1/Lv.2 and partial Lv.3 evidence; HTTP/Auth/PostgREST integration,
+  Hosted/Realtime delivery and devices are not covered.
+- Bounded-claim load comparison: one fresh PG17, identical synthetic backlog,
+  old/new claim functions alternated for three runs each. Counts below are
+  measured is_valid calls per p_limit=1 claim; SQL times are EXPLAIN ANALYZE
+  execution medians, not HTTP/end-to-end or Hosted performance guarantees.
+
+  | Backlog | is_valid calls old/new | SQL time old/new (ms) | Shared buffer hits old/new (median) |
+  |---:|---:|---:|---:|
+  | 1 | 2 / 1 | 70.097 / 52.495 | 1105 / 1122 |
+  | 100 | 200 / 20 | 70.115 / 55.834 | 7838 / 1829 |
+  | 1000 | 2000 / 20 | 298.485 / 25.342 | 51883 / 1541 |
+
+  This bounds expensive eligibility joins, not all physical index/filter work.
+  The tests also drain invalid/expired prefixes, preserve unexpired leases and
+  backoff, skip locked windows, reject superseded tokens, and exercise both
+  orders of acknowledgement-versus-exhaustion races and immutable repeat acks.
 - Lease revision verified on 2026-11-21: `npm test` reported 275 passed,
   3 skipped, 0 failed (278 total). The dedicated chat mock suite has 24 tests.
   The isolated PG17 runner passed 20 groups: the previous 16 DB groups, one

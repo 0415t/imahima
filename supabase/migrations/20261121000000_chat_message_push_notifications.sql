@@ -109,26 +109,33 @@ DECLARE checked_at timestamptz:=clock_timestamp();
 BEGIN
  IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 1000 OR p_lease_seconds IS NULL OR p_lease_seconds NOT BETWEEN 10 AND 3600
  OR p_max_attempts IS NULL OR p_max_attempts NOT BETWEEN 1 AND 10 THEN RAISE EXCEPTION 'Invalid chat notification claim options'; END IF;
- WITH stale AS (
-  SELECT n.id FROM public.chat_message_notifications n WHERE n.status IN('pending','failed','processing')
-  AND (n.expires_at<=checked_at OR ((n.status<>'processing' OR n.lease_expires_at<=checked_at)
-   AND (NOT chat_push_private.is_valid(n.id,checked_at) OR n.attempts>=n.max_attempts)))
-  ORDER BY n.created_at,n.id FOR UPDATE SKIP LOCKED
- ) UPDATE public.chat_message_notifications n SET
- status=CASE WHEN n.expires_at<=checked_at THEN 'expired' WHEN NOT chat_push_private.is_valid(n.id,checked_at) THEN 'cancelled' ELSE 'exhausted' END,
- lease_expires_at=NULL,updated_at=checked_at FROM stale s WHERE n.id=s.id;
- RETURN QUERY WITH candidates AS (
-  SELECT n.id FROM public.chat_message_notifications n
-  WHERE n.expires_at>checked_at AND n.next_attempt_at<=checked_at AND n.attempts<n.max_attempts
-  AND (n.status IN('pending','failed') OR (n.status='processing' AND n.lease_expires_at<=checked_at))
-  AND chat_push_private.is_valid(n.id,checked_at)
-  ORDER BY n.created_at,n.id LIMIT p_limit FOR UPDATE SKIP LOCKED
- ), claimed AS (
-  UPDATE public.chat_message_notifications n SET status='processing',attempts=n.attempts+1,
-  max_attempts=CASE WHEN n.attempts=0 THEN p_max_attempts ELSE n.max_attempts END,
-  lease_token=gen_random_uuid(),lease_expires_at=checked_at+make_interval(secs=>p_lease_seconds),updated_at=checked_at
-  FROM candidates c WHERE n.id=c.id RETURNING n.*
- ) SELECT c.id,c.room_id,c.message_id,c.recipient_user_id,c.lease_token,c.expires_at FROM claimed c;
+ -- Lock a bounded, due window BEFORE expensive eligibility checks. Old invalid
+ -- rows become terminal and leave the window, so repeated polls make progress.
+ -- A live lease is untouched unless the notification itself has expired.
+ RETURN QUERY WITH scan AS MATERIALIZED (
+  SELECT n.id,n.next_attempt_at,n.created_at FROM public.chat_message_notifications n
+  WHERE n.status IN('pending','failed','processing')
+  AND (n.expires_at<=checked_at OR (n.next_attempt_at<=checked_at
+   AND (n.status IN('pending','failed') OR n.lease_expires_at<=checked_at)))
+  ORDER BY n.next_attempt_at,n.created_at,n.id LIMIT greatest(20,p_limit) FOR UPDATE SKIP LOCKED
+ ), evaluated AS MATERIALIZED (
+  SELECT s.*,CASE WHEN n.expires_at<=checked_at THEN 'expired'
+   WHEN NOT chat_push_private.is_valid(n.id,checked_at) THEN 'cancelled'
+   WHEN n.attempts>=n.max_attempts THEN 'exhausted' ELSE 'processing' END AS disposition
+  FROM scan s JOIN public.chat_message_notifications n ON n.id=s.id
+ ), candidates AS MATERIALIZED (
+  SELECT e.id FROM evaluated e WHERE e.disposition='processing'
+  ORDER BY e.next_attempt_at,e.created_at,e.id LIMIT p_limit
+ ), transitioned AS (
+  UPDATE public.chat_message_notifications n SET status=e.disposition,
+  attempts=n.attempts+CASE WHEN e.disposition='processing' THEN 1 ELSE 0 END,
+  max_attempts=CASE WHEN e.disposition='processing' AND n.attempts=0 THEN p_max_attempts ELSE n.max_attempts END,
+  lease_token=CASE WHEN e.disposition='processing' THEN gen_random_uuid() ELSE n.lease_token END,
+  lease_expires_at=CASE WHEN e.disposition='processing' THEN checked_at+make_interval(secs=>p_lease_seconds) ELSE NULL END,
+  updated_at=checked_at
+  FROM evaluated e WHERE n.id=e.id AND (e.disposition<>'processing' OR n.id IN(SELECT c.id FROM candidates c))
+  RETURNING n.*
+ ) SELECT t.id,t.room_id,t.message_id,t.recipient_user_id,t.lease_token,t.expires_at FROM transitioned t WHERE t.status='processing';
 END $$;
 
 CREATE FUNCTION public.validate_chat_message_notification(p_notification uuid,p_lease_token uuid)

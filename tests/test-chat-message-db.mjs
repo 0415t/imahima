@@ -48,6 +48,10 @@ function claim(f,max=3){return JSON.parse(value(service(`SELECT coalesce(json_ag
 function validation(id,token){return JSON.parse(value(service(`SELECT row_to_json(v) FROM public.validate_chat_message_notification(${lit(id)},${lit(token)}) v`)));}
 function finish(id,token,status,accepted=0){return value(service(`SELECT public.complete_chat_message_notification(${lit(id)},${lit(token)},${lit(status)},NULL,${accepted})`));}
 function retire(){sql("UPDATE public.chat_message_notifications SET status='cancelled',lease_expires_at=NULL WHERE status IN('pending','processing','failed')");}
+function queue(f,count){sql(`INSERT INTO public.messages(room_id,sender_id,room_seq,body,client_message_id,last_event_seq)
+ SELECT ${lit(f.room)},${lit(f.actor)},i,'Synthetic queue fixture',gen_random_uuid(),i FROM generate_series(1,${count})i;
+ INSERT INTO public.room_message_events(room_id,event_seq,message_id,event_type,created_at)
+ SELECT room_id,room_seq,id,'created',created_at FROM public.messages WHERE room_id=${lit(f.room)}`);}
 function parallel(text){return new Promise((resolve,reject)=>{const child=cp.spawn(exe('psql'),[...args,'-U','service_role'],{env,windowsHide:true,stdio:['pipe','pipe','pipe']});let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);child.on('error',reject);child.on('close',c=>c===0?resolve(out.trim()):reject(Error(err)));child.stdin.end(text);});}
 function heldTransaction(text) {
  const child=cp.spawn(exe('psql'),[...args,'-U','service_role'],{env,windowsHide:true,stdio:['pipe','pipe','pipe']});
@@ -61,7 +65,7 @@ function heldTransaction(text) {
 }
 try{
  cmd('initdb',['-D',data,'-U','fixture_admin','-A','trust','--no-locale','--encoding=UTF8']);started=true;
- ctl(['start','-D',data,'-l',path.join(run,'postgres.log'),'-o',`-h 127.0.0.1 -p ${port} -c ssl=off -c wal_level=logical -c max_connections=20 -c shared_buffers=32MB`,'-w','-t','15']);
+ ctl(['start','-D',data,'-l',path.join(run,'postgres.log'),'-o',`-h 127.0.0.1 -p ${port} -c ssl=off -c wal_level=logical -c max_connections=20 -c shared_buffers=32MB -c track_functions=all`,'-w','-t','15']);
  sql(`CREATE ROLE postgres LOGIN NOSUPERUSER CREATEDB CREATEROLE BYPASSRLS;
  CREATE ROLE anon NOLOGIN;CREATE ROLE authenticated NOLOGIN;CREATE ROLE service_role LOGIN BYPASSRLS;CREATE ROLE supabase_admin NOLOGIN BYPASSRLS;
  ALTER DATABASE postgres OWNER TO postgres;CREATE SCHEMA auth AUTHORIZATION supabase_admin;
@@ -221,6 +225,46 @@ try{
  finally{acknowledging.commit();await acknowledging.done;}
  assert.equal(value(`SELECT status FROM public.chat_message_notifications WHERE id=${lit(ackClaim.notification_id)}`),'sent');
  report.tests.push({name:'cleanup skips an in-flight acknowledgement without reclaiming or overwriting it',passed:true});
+ test('bounded windows drain invalid heads without leasing them or starving valid work',()=>{
+  retire();const invalid=fixture();queue(invalid,45);const valid=fixture();valid.send();
+  value(service(`SELECT * FROM public.set_profile_is_free(${lit(invalid.recipient)},false,30)`));
+  for(const remaining of [25,5]){
+   assert.deepEqual(JSON.parse(value(service("SELECT coalesce(json_agg(c),'[]') FROM public.claim_chat_message_notifications(1,120,3)c"))),[]);
+   assert.equal(value(`SELECT count(*) FROM public.chat_message_notifications WHERE room_id=${lit(invalid.room)} AND status='pending'`),String(remaining));
+  }
+  const c=claim(valid);assert.ok(c);assert.ok(validation(c.notification_id,c.lease_token).still_valid);
+  assert.equal(value(`SELECT count(*) FROM public.chat_message_notifications WHERE room_id=${lit(invalid.room)} AND status='cancelled' AND attempts=0 AND lease_token IS NULL`),'45');
+  const token=c.lease_token;assert.equal(claim(valid),undefined);
+  assert.equal(value(`SELECT lease_token FROM public.chat_message_notifications WHERE id=${lit(c.notification_id)}`),token);
+  finish(c.notification_id,token,'sent',1);
+ });
+ retire();
+ const lockedInvalid=fixture();queue(lockedInvalid,45);const unlockedValid=fixture();unlockedValid.send();
+ value(service(`SELECT * FROM public.set_profile_is_free(${lit(lockedInvalid.recipient)},false,30)`));
+ const firstWindow=heldTransaction('SELECT count(*) FROM public.claim_chat_message_notifications(1,120,3)');
+ try{
+  await firstWindow.ready;
+  assert.deepEqual(JSON.parse(await parallel(service("SELECT coalesce(json_agg(c),'[]') FROM public.claim_chat_message_notifications(1,120,3)c"))),[]);
+  assert.equal(value(`SELECT count(*) FROM public.chat_message_notifications WHERE room_id=${lit(lockedInvalid.room)} AND status='cancelled'`),'20');
+ }finally{firstWindow.commit();await firstWindow.done;}
+ const afterWindow=claim(unlockedValid);assert.ok(afterWindow);finish(afterWindow.notification_id,afterWindow.lease_token,'sent',1);
+ assert.equal(value(`SELECT count(*) FROM public.chat_message_notifications WHERE room_id=${lit(lockedInvalid.room)} AND status='cancelled' AND attempts=0`),'45');
+ report.tests.push({name:'parallel bounded sweeps skip locked heads and eventually reach valid work',passed:true});
+ test('expiry cleanup also drains rows with future backoff without authorizing a send',()=>{
+  retire();const f=fixture();queue(f,45);
+  sql(`UPDATE public.chat_message_notifications SET message_created_at=now()-interval '6 minutes',expires_at=now()-interval '1 minute',next_attempt_at=now()+interval '1 hour' WHERE room_id=${lit(f.room)}`);
+  for(let i=0;i<3;i++)assert.deepEqual(JSON.parse(value(service("SELECT coalesce(json_agg(c),'[]') FROM public.claim_chat_message_notifications(1,120,3)c"))),[]);
+  assert.equal(value(`SELECT count(*) FROM public.chat_message_notifications WHERE room_id=${lit(f.room)} AND status='expired' AND attempts=0`),'45');
+ });
+ test('single claims evaluate at most 20 recipients even with 100 or 1000 queued notifications',()=>{
+  for(const size of [100,1000]){
+   retire();const f=fixture();queue(f,size);
+   const output=value("BEGIN;SELECT count(*) FROM public.claim_chat_message_notifications(1,120,3);SELECT coalesce(sum(calls),0) FROM pg_stat_xact_user_functions WHERE funcid='chat_push_private.is_valid(uuid,timestamptz)'::regprocedure;ROLLBACK").split(/\r?\n/);
+   assert.equal(output[0],'1');assert.ok(Number(output[1])>0&&Number(output[1])<=20,output.join(':'));
+   assert.equal(value(`SELECT count(*) FROM public.chat_message_notifications WHERE room_id=${lit(f.room)} AND attempts<>0`),'0');
+  }
+  retire();
+ });
  const atomic=fixture();
  const held=heldTransaction(`SELECT public.chat_send_message(${lit(atomic.actor)},${lit(atomic.room)},'Synthetic body',${lit(atomic.client)})`);
  try{
@@ -297,8 +341,10 @@ try{
  let releaseWorkers,bothSending;const bothReady=new Promise(resolve=>{bothSending=resolve;});const sendGate=new Promise(resolve=>{releaseWorkers=resolve;});
  const workers=[0,1].map(()=>createChatMessageNotificationPoller(workerDeps(async(_tokens,message,_signal,onAccepted)=>{
   sentIds.push(message.data.notificationId);if(sentIds.length===2)bothSending();await sendGate;onAccepted(1);return acceptedResult;
- },[],true)));
- const runs=workers.map(worker=>worker.runOnce());
+ },[],true),{intervalMs:1000}));
+ // SKIP LOCKED may temporarily return empty while the other transaction owns
+ // the bounded window. Let the real poll timer retry in a NEW cycle.
+ const runs=workers.map(worker=>{worker.start();return worker.runOnce();});
  let barrierTimeout;
  try{
   await Promise.race([bothReady,new Promise((_,reject)=>{barrierTimeout=setTimeout(()=>reject(Error('Concurrent worker barrier timeout')),10000);})]);
