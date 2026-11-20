@@ -1,8 +1,8 @@
 // Offline regressions: execute the production entrypoint / test harness in isolated VMs.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { EventEmitter } from 'node:events';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
@@ -23,7 +23,9 @@ test('entrypoint rejects invalid max attempts before listening or claiming', () 
       './services/supabase': { serverSupabase: {} },
       './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
       './jobs/free-end-notifications': {},
+      './jobs/chat-message-notifications': require('../server/jobs/chat-message-notifications.ts'),
       './services/groups': { groupService: () => ({}) },
+      './services/chat': { chatService: () => ({}) },
       './jobs/member-free-notifications': { ...require('../server/jobs/member-free-notifications.ts'), createMemberFreeNotificationPoller: () => ({ start: noop }) },
     };
     assert.throws(() => runInNewContext(code, {
@@ -41,7 +43,9 @@ function runEntrypoint({ supabase = {}, poller, server = {}, listeners = {}, ...
     './services/supabase': { serverSupabase: supabase },
     './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
     './jobs/free-end-notifications': {},
+    './jobs/chat-message-notifications': require('../server/jobs/chat-message-notifications.ts'),
     './services/groups': { groupService: () => ({}) },
+    './services/chat': { chatService: () => ({}) },
     './jobs/member-free-notifications': {
       ...require('../server/jobs/member-free-notifications.ts'), createMemberFreeNotificationPoller: poller,
     },
@@ -151,6 +155,41 @@ test('guard checks effective URL plus options for request/get, without dispatchi
 });
 
 const integration = source('tests/test-member-free-push-integration.mjs');
+
+function runChatEntrypoint(env, supabase = {}) {
+  const noop = () => {}; let listened = false, deps, options, started = 0;
+  const modules = {
+    'dotenv/config': {}, './app': { createApp: () => ({ listen: () => { listened = true; return {}; } }) },
+    './services/supabase': { serverSupabase: supabase },
+    './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
+    './services/groups': { groupService: () => ({}) }, './services/chat': { chatService: () => ({}) },
+    './jobs/free-end-notifications': {}, './jobs/member-free-notifications': {},
+    './jobs/chat-message-notifications': { ...require('../server/jobs/chat-message-notifications.ts'),
+      createChatMessageNotificationPoller: (d, o) => { deps = d; options = o; return { start: () => started++, stop: async () => {} }; } },
+  };
+  runInNewContext(ts.transpileModule(source('server/index.ts'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
+    { exports: {}, require: name => { assert.ok(name in modules, name); return modules[name]; }, process: { env, on: noop }, console: { log: noop } });
+  return { deps, options, started, listened };
+}
+
+test('chat worker is disabled by default and validates config before listen', () => {
+  assert.equal(runChatEntrypoint({}).started, 0);
+  for (const value of ['', '0', '11', '1.5']) assert.throws(() => runChatEntrypoint({ CHAT_MESSAGE_NOTIFICATIONS_ENABLED: 'true', CHAT_MESSAGE_NOTIFICATIONS_MAX_ATTEMPTS: value }), /CHAT_MESSAGE_NOTIFICATIONS_MAX_ATTEMPTS/);
+});
+
+test('chat entrypoint wires all RPCs and token lookup with cancellation and acceptance', async () => {
+  const calls = []; const signal = new AbortController().signal;
+  const query = (name, args) => ({ abortSignal: async s => { assert.equal(s, signal); calls.push({ name, args }); return { data: [], error: null }; } });
+  const supabase = { rpc: query, from: table => ({ select: columns => ({ eq: (key, id) => query(table, { columns, key, id }) }) }) };
+  const f = runChatEntrypoint({ CHAT_MESSAGE_NOTIFICATIONS_ENABLED: 'true', CHAT_MESSAGE_NOTIFICATIONS_MAX_ATTEMPTS: '4' }, supabase);
+  assert.equal(f.started, 1); assert.equal(f.options.intervalMs, 5000);
+  await f.deps.claimNotifications(signal); await f.deps.validateNotification('id', 'lease', signal);
+  await f.deps.getDeviceTokens('recipient', signal); await f.deps.completeNotification('id', 'lease', 'sent', 'safe', 2, signal);
+  assert.deepEqual(calls.map(c => c.name), ['claim_chat_message_notifications', 'validate_chat_message_notification', 'user_device_tokens', 'complete_chat_message_notification']);
+  assert.equal(calls[0].args.p_max_attempts, 4); assert.equal(calls[3].args.p_accepted_count, 2);
+  assert.equal(calls[0].args.p_limit, 1); assert.equal(calls[0].args.p_lease_seconds, 120);
+});
+
 test('crash stop and graceful fallback both force SIGKILL', async () => {
   const code = integration.slice(integration.indexOf('  async function stop('), integration.indexOf('  const sessions'));
   for (const graceful of [false, true]) {

@@ -34,17 +34,19 @@ for (const enabled of [false, true]) {
       './services/notifications': { createPushNotificationService: () => push },
       './app': { createApp: (...received: Parameters<typeof createApp>) => {
         args = received;
-        return { listen: (port: number) => {
-          assert.equal(port, 3000);
+        return { listen: (options: { port: number }) => {
+          assert.equal(options.port, 3000);
           return { close: (done: () => void) => { closes++; done(); } };
         } };
       } },
       './jobs/free-end-notifications': { createFreeEndNotificationPoller: () => ({
         start: () => { starts++; }, stop: async () => { stops++; },
       }) },
+      './jobs/member-free-notifications': {},
+      './jobs/chat-message-notifications': {},
     }, { process: { env: { FREE_END_NOTIFICATIONS_ENABLED: enabled ? 'true' : undefined },
       on: (signal: string, callback: () => void) => handlers.set(signal, callback), exit: () => {} },
-    console: { log: () => {} } });
+    console: { log: () => {} }, setTimeout, clearTimeout });
     assert.equal(args[2], groups); assert.equal(args[3], chat);
     const identity = await args[0].getUserId('mock');
     assert.equal(identity.userId, 'actor'); assert.equal(identity.error, null);
