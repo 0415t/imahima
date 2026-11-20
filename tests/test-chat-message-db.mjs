@@ -46,6 +46,7 @@ function notification(f){return value(`SELECT id FROM public.chat_message_notifi
 function claim(f,max=3){return JSON.parse(value(service(`SELECT coalesce(json_agg(c),'[]') FROM public.claim_chat_message_notifications(1000,120,${max}) c`))).find(c=>c.notification_id===notification(f));}
 function validation(id,token){return JSON.parse(value(service(`SELECT row_to_json(v) FROM public.validate_chat_message_notification(${lit(id)},${lit(token)}) v`)));}
 function finish(id,token,status,accepted=0){return value(service(`SELECT public.complete_chat_message_notification(${lit(id)},${lit(token)},${lit(status)},NULL,${accepted})`));}
+function retire(){sql("UPDATE public.chat_message_notifications SET status='cancelled',lease_expires_at=NULL WHERE status IN('pending','processing','failed')");}
 function parallel(text){return new Promise((resolve,reject)=>{const child=cp.spawn(exe('psql'),[...args,'-U','service_role'],{env,windowsHide:true,stdio:['pipe','pipe','pipe']});let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);child.on('error',reject);child.on('close',c=>c===0?resolve(out.trim()):reject(Error(err)));child.stdin.end(text);});}
 function heldTransaction(text) {
  const child=cp.spawn(exe('psql'),[...args,'-U','service_role'],{env,windowsHide:true,stdio:['pipe','pipe','pipe']});
@@ -168,6 +169,57 @@ try{
   assert.equal(value("SELECT has_schema_privilege('service_role','chat_push_private','USAGE')"),'f');
   assert.equal(value("SELECT count(*) FROM pg_publication_tables WHERE tablename='chat_message_notifications'"),'0');
  });
+ test('last-attempt acceptance survives exhaustion; identical ack is immutable and idempotent',()=>{
+  retire();const f=fixture();f.send();const c=claim(f,1);
+  sql(`UPDATE public.chat_message_notifications SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lit(c.notification_id)}`);
+  assert.equal(claim(f,1),undefined);
+  assert.equal(value(`SELECT status FROM public.chat_message_notifications WHERE id=${lit(c.notification_id)}`),'exhausted');
+  assert.equal(finish(c.notification_id,randomUUID(),'sent',1),'f');
+  assert.notEqual(sql(service(`SELECT public.complete_chat_message_notification(${lit(c.notification_id)},${lit(c.lease_token)},'sent',NULL,0)`),true).status,0);
+  assert.equal(finish(c.notification_id,c.lease_token,'sent',1),'t');
+  const snapshot=value(`SELECT json_build_array(status,accepted_count,sent_at,updated_at) FROM public.chat_message_notifications WHERE id=${lit(c.notification_id)}`);
+  assert.equal(finish(c.notification_id,c.lease_token,'sent',1),'t');
+  assert.equal(finish(c.notification_id,c.lease_token,'sent',2),'f');
+  assert.equal(finish(c.notification_id,c.lease_token,'failed'),'f');
+  assert.equal(snapshot,value(`SELECT json_build_array(status,accepted_count,sent_at,updated_at) FROM public.chat_message_notifications WHERE id=${lit(c.notification_id)}`));
+  assert.equal(claim(f,1),undefined);
+ });
+ test('only the retained current token may acknowledge cancelled, expired or exhausted rows',()=>{
+  for(const state of ['cancelled','expired','exhausted']){
+   retire();const f=fixture();f.send();const old=claim(f,2);
+   sql(`UPDATE public.chat_message_notifications SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lit(old.notification_id)}`);
+   const current=claim(f,2);assert.notEqual(current.lease_token,old.lease_token);
+   if(state==='cancelled')rpc('chat_delete_message',`${lit(f.actor)},${lit(f.room)},${lit(current.message_id)}`);
+   else{
+    sql(state==='expired'
+     ?`UPDATE public.chat_message_notifications SET message_created_at=now()-interval '6 minutes',expires_at=now()-interval '1 minute' WHERE id=${lit(current.notification_id)}`
+     :`UPDATE public.chat_message_notifications SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lit(current.notification_id)}`);
+    claim(f,2);
+   }
+   assert.equal(value(`SELECT status FROM public.chat_message_notifications WHERE id=${lit(current.notification_id)}`),state);
+   assert.equal(validation(current.notification_id,current.lease_token).owned,false);
+   assert.equal(finish(current.notification_id,old.lease_token,'sent',1),'f');
+   assert.equal(finish(current.notification_id,current.lease_token,'sent',1),'t');
+   assert.equal(claim(f,2),undefined);
+  }
+ });
+ retire();
+ const sweepRace=fixture();sweepRace.send();const sweepClaim=claim(sweepRace,1);
+ sql(`UPDATE public.chat_message_notifications SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lit(sweepClaim.notification_id)}`);
+ const sweeping=heldTransaction('SELECT count(*) FROM public.claim_chat_message_notifications(1,120,1)');
+ let lateAck;
+ try{await sweeping.ready;lateAck=parallel(service(`SELECT public.complete_chat_message_notification(${lit(sweepClaim.notification_id)},${lit(sweepClaim.lease_token)},'sent',NULL,1)`));}
+ finally{sweeping.commit();await sweeping.done;}
+ assert.equal(await lateAck,'t');
+ assert.equal(value(`SELECT status FROM public.chat_message_notifications WHERE id=${lit(sweepClaim.notification_id)}`),'sent');
+ report.tests.push({name:'concurrent exhaustion sweep and same-token late acknowledgement preserve acceptance',passed:true});
+ const ackRace=fixture();ackRace.send();const ackClaim=claim(ackRace,1);
+ sql(`UPDATE public.chat_message_notifications SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lit(ackClaim.notification_id)}`);
+ const acknowledging=heldTransaction(`SELECT public.complete_chat_message_notification(${lit(ackClaim.notification_id)},${lit(ackClaim.lease_token)},'sent',NULL,1)`);
+ try{await acknowledging.ready;assert.deepEqual(JSON.parse(await parallel(service("SELECT coalesce(json_agg(c),'[]') FROM public.claim_chat_message_notifications(1,120,1)c"))),[]);}
+ finally{acknowledging.commit();await acknowledging.done;}
+ assert.equal(value(`SELECT status FROM public.chat_message_notifications WHERE id=${lit(ackClaim.notification_id)}`),'sent');
+ report.tests.push({name:'cleanup skips an in-flight acknowledgement without reclaiming or overwriting it',passed:true});
  const atomic=fixture();
  const held=heldTransaction(`SELECT public.chat_send_message(${lit(atomic.actor)},${lit(atomic.room)},'Synthetic body',${lit(atomic.client)})`);
  try{

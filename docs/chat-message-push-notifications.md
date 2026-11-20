@@ -63,9 +63,22 @@ One confirmed Expo acceptance completes the WHOLE recipient, including partial
 device success. Accepted counts survive send/cleanup timeout and stop abort. A
 fresh bounded signal records confirmed acceptance even after the send signal is
 aborted. Completion with the same token can record an already-confirmed send
-after cancellation/expiry; this does NOT authorize another send. A superseded
-token cannot complete. Unknown/temporary results with zero confirmed acceptance
+after cancellation/expiry/exhaustion; this does NOT authorize another send.
+Only the current retained token can do this: an older token from before a lease
+reclaim is rejected. Repeating the same sent acknowledgement/count succeeds
+without changing its original count or timestamps; different counts or other
+terminal-state updates are rejected. This is a server-trusted historical
+acceptance record, not proof from a client or permission to send again.
+Unknown/temporary results with zero confirmed acceptance
 are retried within the original deadline; permanent-only failures are cancelled.
+
+| Current state | Completion | Rule |
+|---|---|---|
+| processing | sent | Current token and positive confirmed acceptance; expiry does not erase historical acceptance |
+| cancelled / expired / exhausted | sent | Same retained current token and positive confirmed acceptance; never grants send eligibility |
+| sent | sent | Same token and identical count returns true without updating the row |
+| sent / cancelled / expired / exhausted | failed or cancelled | Rejected; terminal state cannot restart retries |
+| any | any | Superseded or unrelated token is rejected |
 
 Exactly-once external delivery is not guaranteed. A provider acceptance followed
 by a lost response, crash or failed DB completion can cause duplicate delivery.
@@ -126,6 +139,8 @@ which has not received the new migration through an independently approved plan.
 
 ## Verification
 
+- PR #40 review fixes (2026-11-21): before fixing, a final-attempt lease sweep
+  changed a row to exhausted and rejected its retained token's sent completion.
 - Lease revision verified on 2026-11-21: `npm test` reported 275 passed,
   3 skipped, 0 failed (278 total). The dedicated chat mock suite has 24 tests.
   The isolated PG17 runner passed 20 groups: the previous 16 DB groups, one

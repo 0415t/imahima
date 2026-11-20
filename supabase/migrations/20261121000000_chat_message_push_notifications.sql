@@ -152,7 +152,8 @@ BEGIN
  IF p_notification IS NULL OR p_lease_token IS NULL OR p_status IS NULL OR p_status NOT IN('sent','failed','cancelled')
  OR p_accepted_count IS NULL OR p_accepted_count<0 OR (p_status='sent')<>(p_accepted_count>0) THEN RAISE EXCEPTION 'Invalid chat notification completion'; END IF;
  -- Keep confirmed acceptance even if deletion/expiry occurred after sending.
- -- Cancellation/expiry retain the token; a different lease can NEVER complete it.
+ -- Cancellation/expiry/exhaustion retain the token; a superseded lease can
+ -- NEVER complete it. This records historical acceptance, not send permission.
  UPDATE public.chat_message_notifications n SET
  status=CASE WHEN p_status='sent' THEN 'sent' WHEN n.expires_at<=checked_at THEN 'expired'
  WHEN p_status='cancelled' OR NOT chat_push_private.is_valid(n.id,checked_at) THEN 'cancelled'
@@ -161,8 +162,13 @@ BEGIN
  last_error=left(p_error,1000),lease_expires_at=NULL,updated_at=checked_at,
  next_attempt_at=CASE WHEN p_status='failed' THEN least(n.expires_at,checked_at+make_interval(secs=>least(300,5*power(2,n.attempts-1))::integer)) ELSE n.next_attempt_at END
  WHERE n.id=p_notification AND n.lease_token=p_lease_token
- AND (n.status='processing' OR (p_status='sent' AND n.status IN('cancelled','expired')));
- GET DIAGNOSTICS changed=ROW_COUNT; RETURN changed=1;
+ AND (n.status='processing' OR (p_status='sent' AND n.status IN('cancelled','expired','exhausted')));
+ GET DIAGNOSTICS changed=ROW_COUNT;
+ IF changed=1 THEN RETURN true; END IF;
+ -- An identical sent acknowledgement is idempotent and never changes the
+ -- original accepted count or timestamp; other terminal updates are refused.
+ RETURN p_status='sent' AND EXISTS(SELECT 1 FROM public.chat_message_notifications n
+  WHERE n.id=p_notification AND n.lease_token=p_lease_token AND n.status='sent' AND n.accepted_count=p_accepted_count);
 END $$;
 
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA chat_push_private FROM PUBLIC,anon,authenticated,service_role;
