@@ -1,4 +1,4 @@
-﻿// Dedicated disposable postgres:16 container only; apply README fixture/migration first.
+// Dedicated disposable postgres:16 container only; apply README fixture/migration first.
 // --fault=no-wait|early-release|timeout|node-timeout|observation-timeout|sql-error|session-exit:
 // negative checks, must fail (and must not print PASS).
 import assert from 'node:assert/strict';

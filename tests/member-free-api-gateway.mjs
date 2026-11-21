@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 // Dedicated local verification gateway. No external upstreams or request logging.
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';

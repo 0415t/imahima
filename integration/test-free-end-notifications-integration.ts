@@ -214,8 +214,8 @@ async function run() {
   const userA = await createUserWithProfile(EMAIL_A, true, in4min);
   const userB = await createUserWithProfile(EMAIL_B, true, in4min);
   const userC = await createUserWithProfile(EMAIL_C, true, in4min);
-  const userD = await createUserWithProfile(EMAIL_D, true, expired);
-  const userE = await createUserWithProfile(EMAIL_E, true, null);
+  await createUserWithProfile(EMAIL_D, true, expired);
+  await createUserWithProfile(EMAIL_E, true, null);
   await addDeviceToken(userA, 'ExponentPushToken[device-a]');
   await addDeviceToken(userB, 'ExponentPushToken[device-b]');
   await addDeviceToken(userC, 'ExponentPushToken[device-c]');

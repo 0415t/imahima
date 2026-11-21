@@ -1,8 +1,8 @@
-import{enterFailureSuite,closeAll,assertProfileStates}from'./verification-control.mjs';
+import{closeAll,assertProfileStates,digest,verifySavedCatalog}from'./verification-control.mjs';
 import{transactionBody,rollbackOnly}from'./sql-transactions.mjs';
 import{randomUUID}from'node:crypto';
-import{snapshot}from'./catalog.mjs';import{digest,verifySavedCatalog}from'./verification-control.mjs';
-import assert from'node:assert/strict';import fs from'node:fs';import path from'node:path';import{execFileSync}from'node:child_process';import{connect,repo,hardening,runtime,project,root,labels,plan,notRun,check,save}from'./db.mjs';
+import{snapshot}from'./catalog.mjs';
+import assert from'node:assert/strict';import fs from'node:fs';import path from'node:path';import{connect,repo,hardening,labels,plan,notRun,check,save}from'./db.mjs';
 async function acl(c){return(await c.query("select a.attname,r.rolname,v.p,has_column_privilege(r.oid,a.attrelid,a.attnum,v.p) allowed from pg_attribute a cross join pg_roles r cross join(values('SELECT'),('INSERT'),('UPDATE'),('REFERENCES'))v(p) where a.attrelid='public.profiles'::regclass and a.attnum>0 and not a.attisdropped and r.rolname in('anon','authenticated','service_role') order by a.attnum,r.rolname,v.p")).rows;}
 const full=fs.readFileSync(path.join(repo,'supabase/migrations',hardening[0]),'utf8');const inner=transactionBody(full);
 const record=JSON.parse(fs.readFileSync(path.join(plan.runDir,plan.label+'.snapshot.json'),'utf8'));

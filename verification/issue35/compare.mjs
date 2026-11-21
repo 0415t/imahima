@@ -1,7 +1,7 @@
 import{compareApplicationCatalogs}from'./b-baseline.mjs';
-import{closeAll,verifySuccessfulReport}from'./verification-control.mjs';
+import{closeAll,verifySuccessfulReport,digest}from'./verification-control.mjs';
 import assert from'node:assert/strict';import fs from'node:fs';import path from'node:path';import{createHash}from'node:crypto';
-import{connect,plan,repo,files,check,save}from'./db.mjs';import{snapshot}from'./catalog.mjs';import{digest}from'./verification-control.mjs';
+import{connect,plan,repo,files,check,save}from'./db.mjs';import{snapshot}from'./catalog.mjs';
 let c,primary;
 try{
  for(const name of ['migration-results','feature-results','realtime-lifecycle-results','specification-results','regression-results','integrity-results']){

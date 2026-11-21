@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import{createHash}from'node:crypto';
 import fs from 'node:fs';import {gunzipSync}from'node:zlib';
 import{fromEnvironment}from'./configuration.mjs';
