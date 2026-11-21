@@ -5,7 +5,7 @@
   "scripts": {
     "start": "expo start",
     "server": "tsx server/index.ts",
-    "test": "tsx --test \"tests/**/*.ts\" tests/test-member-free-review.mjs",
+    "test": "node scripts/test-offline.mjs",
     "test:login": "tsx integration/test-login.ts",
     "test:persistence": "tsx integration/test-session-persistence.ts",
     "test:profile-toggle": "tsx --test tests/test-profile-toggle.ts",
@@ -14,7 +14,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint",
+    "lint": "node scripts/lint.mjs",
+    "typecheck": "tsc --noEmit",
     "test:integration:extend": "node --env-file=.env.test --import tsx integration/test-extend-integration.ts",
     "test:integration:free-end": "node --env-file=.env.test --import tsx integration/test-free-end-notifications-integration.ts",
     "test:integration:push": "node --env-file=.env.test --import tsx integration/test-push-send.ts"
@@ -63,5 +64,10 @@
     "tsx": "^4.23.12",
     "typescript": "~6.0.3"
   },
+  "engines": {
+    "node": "24.15.0",
+    "npm": "11.12.1"
+  },
+  "packageManager": "npm@11.12.1",
   "private": true
 }

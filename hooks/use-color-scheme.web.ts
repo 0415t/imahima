@@ -8,7 +8,14 @@ export function useColorScheme() {
   const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
-    setHasHydrated(true);
+    let mounted = true;
+    // Keep the light fallback for both server rendering and the first client render.
+    queueMicrotask(() => {
+      if (mounted) setHasHydrated(true);
+    });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const colorScheme = useRNColorScheme();

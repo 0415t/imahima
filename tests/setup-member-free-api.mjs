@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { randomBytes, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { writeFileSync, existsSync } from 'node:fs';

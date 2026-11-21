@@ -1,5 +1,8 @@
+import { Buffer } from 'node:buffer';
+import vm from 'node:vm';
+import { verifySavedCatalog, digest, verifySuccessfulReport } from './verification-control.mjs';
 import test from'node:test';import assert from'node:assert/strict';import fs from'node:fs';import path from'node:path';import{execFileSync}from'node:child_process';
-import{validateTarget,pgConfiguration,verifyDatabase,verifyApi,root,repo,sharedRef,assertNode}from'./configuration.mjs';
+import{validateTarget,pgConfiguration,verifyDatabase,verifyApi,root,sharedRef,assertNode}from'./configuration.mjs';
 import{restrictedFetch,cliDatabase}from'./boundaries.mjs';
 import{cloudCli}from'./cloud-cli.mjs';
 const fixture=()=>({approved_for_testing:true,postgres_major:17,run:'offline-test',label:'a',ref:'abcdefghijklmnopqrst',api_url:'https://abcdefghijklmnopqrst.supabase.co',nonce:'a'.repeat(64),email_sending_disabled:true,backend_port:51331,anon_key:'sb_publishable_fixture_only_0000',service_role_key:'sb_secret_fixture_only_000000',database:{host:'db.abcdefghijklmnopqrst.supabase.co',port:5432,user:'postgres',database:'postgres',password:'fixture-only-password'}});
@@ -27,7 +30,6 @@ test('CLI rejects reset and linked workdirs before process execution',()=>{let c
 test('C must stop before application when CLI listing fails',()=>{const s=fs.readFileSync(path.join(root,'normal-management.mjs'),'utf8');assert.ok(s.indexOf("assert.equal(listingOk,true")<s.indexOf("fs.writeFileSync(path.join(dir,'supabase/migrations/2099"));});
 
 
-import{verifySavedCatalog,digest}from'./verification-control.mjs';
 test('actual cloud failure gate rejects stale catalog, modified evidence and wrong ref',()=>{
  const current={acl:[{allowed:false}]},record={ref:'abcdefghijklmnopqrst',catalog:current,digest:digest(current)};
  verifySavedCatalog(record,current,record.ref);
@@ -46,7 +48,6 @@ test('native CLI preserves stderr and isolates credentials/home without shell',(
 });
 test('placeholder nonce cannot become an approved target',()=>{const t=fixture();t.nonce='REPLACE_WITH_RANDOM_64_HEX_CHARACTERS';assert.throws(()=>validateTarget(t));});
 
-import{verifySuccessfulReport}from'./verification-control.mjs';
 test('empty failed wrong-project and incomplete reports cannot authorize snapshot',()=>{
  const good={run:'offline',project_ref:'abcdefghijklmnopqrst',failed:0,passed:1,checks:[{status:'pass'}]};
  verifySuccessfulReport(good,good.run,good.project_ref);
@@ -59,7 +60,6 @@ test('invalid target diagnostics never echo secrets or credentialed URLs',()=>{
  assert.throws(()=>validateTarget(t),e=>!String(e).includes(secret)&&!JSON.stringify(e).includes(secret));
 });
 
-import vm from'node:vm';
 test('removing shared-ref denial is detected independently of other validators',()=>{
  const t=fixture();t.ref=sharedRef;t.api_url='https://'+sharedRef+'.supabase.co';t.database.host='db.'+sharedRef+'.supabase.co';
  const text=fs.readFileSync(path.join(root,'configuration.mjs'),'utf8'),start=text.indexOf('export function validateTarget'),end=text.indexOf('export function fromEnvironment');

@@ -134,7 +134,7 @@ test('normal entrypoint and real DB push worker with mocked Expo transport', { t
     const concurrent = await makePending('success and concurrent lease exclusion');
     const first = await start('hold', true);
     await wait(() => count(first, concurrent.notificationId) === 1, 'first mocked send');
-    const leased = await state(concurrent.notificationId, 'processing');
+    await state(concurrent.notificationId, 'processing');
     const second = await start('success', true, 55443);
     await pause(1300);
     assert.equal(count(second, concurrent.notificationId), 0);

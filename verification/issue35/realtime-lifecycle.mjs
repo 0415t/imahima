@@ -1,6 +1,6 @@
 import{cleanupResources}from'./verification-control.mjs';
 import{liveExclusion}from'./delivery-evidence.mjs';
-import assert from'node:assert/strict';import fs from'node:fs';import path from'node:path';import{randomUUID}from'node:crypto';import{createRequire}from'node:module';import{connect,labels,settings,repo,runtime,check,save}from'./db.mjs';
+import assert from'node:assert/strict';import fs from'node:fs';import path from'node:path';import{randomUUID}from'node:crypto';import{createRequire}from'node:module';import{connect,labels,settings,runtime,check,save}from'./db.mjs';
 const{createClient}=createRequire(import.meta.url)('@supabase/supabase-js');const sleep=ms=>new Promise(r=>setTimeout(r,ms));async function wait(fn){for(let i=0;i<100;i++){if(await fn())return;await sleep(200);}throw Error('Realtime barrier timeout');}
 for(const label of labels){const cfg=settings(label),c=await connect(label),clients=[];try{
  const req=async(route,key,body)=>{const r=await fetch(cfg.API_URL+route,{method:'POST',headers:{apikey:key,Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(20000)});return{status:r.status,data:await r.json()};};const rpc=(fn,args)=>req('/rest/v1/rpc/'+fn,cfg.SERVICE_ROLE_KEY,args);const users=[];for(let i=0;i<3;i++){const r=await req('/auth/v1/signup',cfg.ANON_KEY,{email:randomUUID()+'@example.test',password:'Synthetic35!Lifecycle'});assert.equal(r.status,200);users.push({id:r.data.user.id,token:r.data.access_token});}const[owner,member,outsider]=users;

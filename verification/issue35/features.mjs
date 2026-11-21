@@ -4,7 +4,7 @@ import{startBackend}from'./backend-lifecycle.mjs';
 import{verifyLockExpiry}from'./lock-expiry.mjs';
 import{assertNoGrantOptions}from'./acl.mjs';
 import {pathToFileURL} from 'node:url';
-import assert from 'node:assert/strict';import fs from'node:fs';import path from'node:path';import{spawn}from'node:child_process';import{randomUUID,createHash}from'node:crypto';import{once}from'node:events';import{createRequire}from'node:module';
+import assert from 'node:assert/strict';import fs from'node:fs';import path from'node:path';import{spawn}from'node:child_process';import{randomUUID,createHash}from'node:crypto';import{createRequire}from'node:module';
 import{connect,settings,repo,root,runtime,original,labels,asRole,plan,check,report,save}from'./db.mjs';
 const require=createRequire(import.meta.url);const{createClient}=require('@supabase/supabase-js');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));

@@ -1,11 +1,13 @@
+import { Buffer } from 'node:buffer';
+import { liveExclusion, currentPushEvidence } from './delivery-evidence.mjs';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';import vm from 'node:vm';
 import {execFileSync} from 'node:child_process';import {EventEmitter} from 'node:events';
-import {statements,transactionBody,inTransaction,rollbackOnly,applyRecorded,probeRejected} from './sql-transactions.mjs';
+import {statements,transactionBody,rollbackOnly,applyRecorded,probeRejected} from './sql-transactions.mjs';
 import {runComparison,comparisonPaths,normalization} from './comparison-runner.mjs';
-import {enterFailureSuite,verifyFailureGate,connectAndValidate,closeAll,exactIds,assertProfileStates,expectedMutation,roleQuery,assertTimerDeadline,requiredCheck} from './verification-control.mjs';
+import {enterFailureSuite,verifyFailureGate,connectAndValidate,closeAll,exactIds,assertProfileStates,expectedMutation,roleQuery,assertTimerDeadline,requiredCheck,cleanupResources} from './verification-control.mjs';
 import {assertListing,assertEnabled} from './cli-assertions.mjs';
 import {assertNoGrantOptions} from './acl.mjs';import {snapshot,differences} from './catalog.mjs';
 import {startBackend} from './backend-lifecycle.mjs';
@@ -80,7 +82,6 @@ test('No.4: spawn error closes log; ready backend returns an idempotent stop han
 test('No.1: approved H1 conditionally preserves the archive column grant',()=>{const file=sqlFiles.find(f=>f.includes('harden_core')),before=oldSql(file),after=sql(file);assert.ok(!before.includes('$managed_insert$'));assert.match(after,/IF EXISTS[\s\S]*attname='mvp_managed'[\s\S]*GRANT INSERT \(mvp_managed\)/);for(const exists of[false,true]){const grants=new Set(['room_name','room_key','mvp_created_by']);if(exists&&after.includes('$managed_insert$'))grants.add('mvp_managed');assert.equal(grants.has('mvp_managed'),exists);}for(const f of sqlFiles.filter(f=>f.includes('harden_notification')||f.includes('harden_chat')))assert.ok(!sql(f).includes('ON public.rooms'));});
 test('No.42: H4 checks every required core column before its grant',()=>{const file=sqlFiles.find(f=>f.includes('harden_archive')),before=oldSql(file),after=sql(file);for(const column of['room_name','room_key','mvp_created_by']){assert.ok(!before.includes("'"+column+"'"));assert.ok(after.includes("has_column_privilege('service_role','public.rooms','"+column+"','INSERT')"));}assert.ok(after.indexOf('Core room INSERT column privileges required')<after.indexOf('GRANT INSERT (mvp_managed)'));});
 
-import {liveExclusion,currentPushEvidence} from './delivery-evidence.mjs';
 test('No.22/24: a dead subscription cannot pass the actual exclusion helper',async()=>{
  let sent=0;
  // Previous negative-only assertion accepts a completely dead subscription.
@@ -109,7 +110,6 @@ test('No.33/45/46: live harness retains all four replays, trigger and OFF prereq
  assert.match(features,/is_free,false/);assert.match(features,/free_until,null/);
 });
 
-import {cleanupResources} from './verification-control.mjs';
 test('No.4/36: channel cleanup failure cannot skip backend stop or DB close',async()=>{
  const ran=[];await assert.rejects(cleanupResources([async()=>{ran.push('channel');throw Error('channel');},async()=>{ran.push('backend');throw Error('backend');},async()=>ran.push('db')]),e=>e instanceof AggregateError&&e.errors.length===2);assert.deepEqual(ran,['channel','backend','db']);
 });
