@@ -44,17 +44,49 @@ function save(report) {
   renameSync(temporary, reportPath);
 }
 
+const sqlErrors = {
+  '42601': 'SQL syntax error',
+  '42P01': 'Undefined table',
+  '42501': 'Insufficient privilege',
+  '55P03': 'Lock unavailable or lock timeout',
+  '57014': 'Query cancelled or statement timeout',
+  P0001: 'SQL exception',
+  P0004: 'PL/pgSQL assertion failed',
+};
+
+function diagnostics(stderr) {
+  // Verbose psql/Docker output can contain SQL values, connection strings or
+  // credentials. Preserve only validated identifiers and fixed descriptions.
+  const sql = stderr.match(/^(?:psql:<stdin>:(\d{1,9}):\s*|psql:\s*)?(?:ERROR|FATAL):\s+([0-9A-Z]{5}):?(?:\s|$)/mu);
+  if (sql) {
+    const [, line, state] = sql;
+    const message = sqlErrors[state] ?? (state.startsWith('08') ? 'SQL connection failure' : 'PostgreSQL error');
+    return { sqlstate: state, stderr: `${message} (SQLSTATE ${state})${line ? ` at input line ${line}` : ''}` };
+  }
+  const categories = [
+    [/permission denied|access is denied/iu, 'Docker or PostgreSQL permission denied'],
+    [/cannot connect to the docker daemon|failed to connect to the docker api|error during connect/iu, 'Docker engine connection failed'],
+    [/no such image|manifest unknown|pull access denied/iu, 'PostgreSQL image unavailable'],
+    [/no such container|container .* is not running/iu, 'Test container unavailable'],
+    [/connection to server .* failed|could not connect to server|connection refused/iu, 'PostgreSQL socket connection failed'],
+  ];
+  const category = categories.find(([pattern]) => pattern.test(stderr));
+  return { sqlstate: null, stderr: category?.[1] ?? (stderr ? 'Unclassified diagnostic omitted' : '') };
+}
+
 function command(args, input, timeout = 10_000) {
   const start = Date.now();
   const child = spawnSync('docker', args, {
     env, input, encoding: 'utf8', timeout, killSignal: 'SIGKILL',
     windowsHide: true, maxBuffer: 1024 * 1024,
   });
+  const { sqlstate, stderr } = diagnostics((child.stderr ?? '').slice(0, 4096));
   return {
     ok: child.status === 0 && !child.signal && !child.error,
     exitCode: child.status, signal: child.signal,
     timedOut: child.error?.code === 'ETIMEDOUT',
-    error: child.error?.code ?? child.stderr?.match(/\bERROR:\s+([0-9A-Z]{5})\b/u)?.[1] ?? null,
+    error: child.error?.code ?? sqlstate,
+    stderr,
     durationMs: Date.now() - start, stdout: child.stdout ?? '',
   };
 }
@@ -126,7 +158,7 @@ function psql(docker, id, args, input, timeout) {
   return docker(['exec', '-i', '--env', 'PGCONNECT_TIMEOUT=3', '--env',
     'PGOPTIONS=-c statement_timeout=30000 -c lock_timeout=5000 -c plpgsql.check_asserts=on',
     id, 'psql', '-X', '-w', '-A', '-t', '-h', '/var/run/postgresql', '-U', 'postgres',
-    '-d', 'imahima_ci', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=sqlstate', ...args], input, timeout);
+    '-d', 'imahima_ci', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose', ...args], input, timeout);
 }
 
 function runSql(report, entry, docker, id, token, blocks) {
@@ -215,20 +247,25 @@ if (recovery) {
     checked(docker(['start', id]), 'Container startup failed');
     const deadline = Date.now() + 30_000;
     let ready = false;
+    let readiness;
     while (!ready && Date.now() < deadline) {
       // The entrypoint also starts a temporary postmaster, so wait for the final PID 1.
-      if (docker(['exec', id, 'sh', '-c', 'test "$(cat /proc/1/comm)" = postgres']).ok) {
-        const status = psql(docker, id, ['-c',
+      readiness = docker(['exec', id, 'sh', '-c', 'test "$(cat /proc/1/comm)" = postgres']);
+      if (readiness.ok) {
+        readiness = psql(docker, id, ['-c',
           "select current_database(), current_setting('server_version_num'), current_setting('wal_level'), current_setting('plpgsql.check_asserts')"],
         undefined, 5_000);
-        if (status.ok) {
-          if (status.stdout.trim() !== 'imahima_ci|160016|logical|on') throw new Error('SQL environment mismatch');
+        if (readiness.ok) {
+          if (readiness.stdout.trim() !== 'imahima_ci|160016|logical|on') throw new Error('SQL environment mismatch');
           ready = true;
         }
       }
       if (!ready) await delay(500);
     }
-    if (!ready) throw new Error('Database readiness timeout');
+    if (!ready) {
+      if (readiness) checked(readiness, 'Database readiness timeout');
+      throw new Error('Database readiness timeout');
+    }
     for (const entry of report.setup) runSql(report, entry, docker, id, runId);
     for (const entry of report.tests) runSql(report, entry, docker, id, runId, required[entry.file.split('/').at(-1)]);
     report.status = 'passed';

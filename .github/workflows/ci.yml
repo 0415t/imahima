@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      DB_TEST_REPORT: ${{ runner.temp }}/backend-db/report.json
+      DB_TEST_REPORT: .runtime/backend-db/report.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
