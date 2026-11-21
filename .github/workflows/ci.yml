@@ -55,3 +55,28 @@ jobs:
           name: backend-offline
           path: ${{ runner.temp }}/offline/report.json
           if-no-files-found: error
+
+  backend-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_TEST_REPORT: .runtime/backend-db/report.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Run isolated PostgreSQL tests
+        timeout-minutes: 8
+        run: npm run test:db
+      - name: Ensure test container is removed
+        if: always()
+        timeout-minutes: 1
+        run: node scripts/test-db.mjs --cleanup
+      - name: Save DB test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-db
+          path: ${{ env.DB_TEST_REPORT }}
+          if-no-files-found: error

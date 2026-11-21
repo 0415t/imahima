@@ -8,7 +8,7 @@ Lv.1 は単体、Lv.2 はDB結合、Lv.3 は機能結合、Lv.4 はバックエ�
 | --- | --- | --- |
 | Static | Node 24.15.0／npm 11.12.1。ルートで `npm ci`、`npm run typecheck`、`npm run lint`。lint用に `npm ci --prefix verification/group-chat-local` と `npm ci --prefix verification/issue35` も実行 | `backend-static` |
 | Offline | `npm test`。ルートの依存のみ。ループバック、注入したAuth・DB応答、模擬Expoを利用 | `backend-offline` |
-| DB | 隔離PostgreSQL、必要なfixture・extension。SQLは `psql -X -v ON_ERROR_STOP=1 --dbname=<専用DB> -f <file>`。Nodeスクリプトは各行の前提を確認して起動 | 手動。代表セットを将来必須、並行系は任意候補 |
+| DB | `npm run test:db`。ローカルLinux Dockerと固定版PostgreSQL 16で代表SQL 3本を実行。残りのSQL／Nodeスクリプトは各行の専用環境で起動 | `backend-db`。並行系は任意候補 |
 | Integration | 専用Supabaseまたは承認済みの検証先。実Auth／PostgREST／Realtime、必要に応じて模擬Expo。既存環境を再利用する入口ではデータ・証跡の前提を確認 | 手動。自己完結したセットを任意CI候補とする |
 | Device | 専用アカウントと端末。受信・表示・タップ後の挙動を実機で判定 | 手動 |
 
@@ -45,6 +45,10 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 手動Offlineの `node --import tsx --test tests/test-chat-review.mjs` は、一時クローンへのGit操作と一時ファイル作成を伴うため今回の必須セットから外す。Issue #35 のOfflineは `npm --prefix verification/issue35 run test:offline`。22本時点の履歴を前提とする検査は、現行23本の合格証跡として使用しない。
 
 ## DB・Integration・Device
+
+`backend-db` は毎回作成したコンテナに対し、グループfixture、グループmigration、チャットfixture、チャットmigrationの順に適用する。その後 `group_mvp.test.sql`、`group_availability.test.sql`、`group_chat_mvp.test.sql` を直列に実行する。コンテナはネットワークなし・公開ポートなし・データtmpfsで、SQLはコンテナ内のUnixソケットへ送る。全migration、実Auth・Realtime、通知ワーカーはそれぞれの専用環境で扱う。
+
+新規 `supabase/tests/**/*.test.sql` は [DBランナー](../../scripts/test-db.mjs) の必須一覧または理由付きの延期一覧に登録する。必須テストが追加・変更された場合は、検証ブロック数と完了条件も確認する。ローカル実行では `.runtime/backend-db/` に実行ごとのJSONを保存し、`DB_TEST_REPORT` で保存先を指定できる。Docker接続先は既定のローカルソケット・Windows名前付きパイプに限定し、Docker環境変数による接続先の上書きやローカルDBの接続情報は使用しない。
 
 次の実行結果は今回すべて **未実行**。NodeのTSランナーは、特記がなければルートで `node --import tsx --test <file>` を使用。専用環境の作成手順は [サーバーREADME](../../server/README.md)、[ローカルチャット検証](../../verification/group-chat-local/README.md)、[Issue #35検証](../../verification/issue35/README.md) を参照。
 
