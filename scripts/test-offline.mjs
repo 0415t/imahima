@@ -72,6 +72,10 @@ function readTap(stdout, file) {
       diagnostic = diagnosticStart[1];
       continue;
     }
+    if (/^ *# 'only' and 'runOnly' require the --test-only command-line option\.$/u.test(line)) {
+      directives.push('ONLY');
+      continue;
+    }
     const count = line.match(/^# (tests|suites|pass|fail|cancelled|skipped|todo) (\d+)$/u);
     if (count) {
       valid &&= levels.length === 1 && levels[0].plan !== null && !duration && summary[count[1]] == null;
@@ -124,6 +128,9 @@ const env = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
   /^(PATH|SYSTEMROOT|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|PATHEXT|HOME|USERPROFILE|LOCALAPPDATA)$/i.test(name)));
 env.TSX_DISABLE_CACHE = '1';
 env.EXPO_NO_DOTENV = '1';
+// Node 24.15's child context disables implicit .only filtering. Keep one
+// process per file so the hard timeout can kill the process running the test.
+env.NODE_TEST_CONTEXT = 'child';
 
 const report = {
   sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
@@ -156,7 +163,7 @@ for (const entry of report.errors.length === 0 ? report.files : []) {
   const child = spawnSync(process.execPath, [
     '--import', 'tsx', '--test', '--test-isolation=none', '--test-reporter=tap',
     '--test-timeout=30000', file,
-  ], { env, encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
+  ], { env, encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024, windowsHide: true });
   const stdout = child.stdout ?? '';
   const stderr = child.stderr ?? '';
   process.stdout.write(stdout);
