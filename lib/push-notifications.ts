@@ -2,8 +2,9 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { EXTEND_30_ACTION, FREE_END_CATEGORY } from './notification-task';
-import { supabase } from './supabase';
+import { EXTEND_30_ACTION, FREE_END_CATEGORY } from './free-end-action';
+import type { LogoutSession } from './logout-flow';
+import { createSessionDataClient } from './supabase';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -63,36 +64,45 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
         return null;
     }
 
+    return getCurrentDeviceToken();
+}
+
+// Resolve a legacy registration without prompting at logout.
+export async function getCurrentDeviceToken(): Promise<string | null> {
+    if (Platform.OS === 'web' || !Device.isDevice) return null;
     const projectId =
         Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
 
     if (!projectId) {
-        console.log('[push] projectId が見つかりません');
-        return null;
+        throw new Error('Expo project ID is missing');
     }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-    console.log('[push] token:', token);
 
     return token;
 }
 
-export async function saveDeviceToken(token: string): Promise<{ error: Error | null }> {
-    if (!supabase) {
-        return { error: new Error('Supabase が設定されていません') };
-    }
-
-    const { error } = await supabase.rpc('upsert_device_token', {
+export async function registerDeviceToken(session: LogoutSession, token: string) {
+    const { error, status } = await createSessionDataClient(session.access_token).rpc('upsert_device_token', {
         p_token: token,
         p_platform: Platform.OS,
         p_device_name: Device.deviceName,
-    });
+    }).retry(false);
 
-    if (error) {
-        console.log('[push] 保存に失敗しました:', error.message);
-        return { error };
+    if (!error) return { rejected: null };
+    // A structured PostgREST/SQL rejection confirms that no registration committed.
+    if (status >= 400 && status < 500 && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code)) {
+        return { rejected: new Error(error.message) };
     }
+    throw new Error('Push registration outcome is unknown');
+}
 
-    console.log('[push] 保存に成功しました');
-    return { error: null };
+export async function removeDeviceToken(session: LogoutSession, token: string): Promise<void> {
+    const { error } = await createSessionDataClient(session.access_token)
+        .from('user_device_tokens')
+        .delete()
+        .eq('user_id', session.user.id)
+        .eq('expo_push_token', token)
+        .retry(false);
+    if (error) throw new Error(error.message);
 }

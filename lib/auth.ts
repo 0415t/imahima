@@ -1,4 +1,5 @@
 import type { AuthError, Session, User } from '@supabase/supabase-js';
+import { logoutFlow } from './logout';
 import { supabase } from './supabase';
 
 function requireSupabase() {
@@ -23,10 +24,10 @@ export type GetSessionResult = { session: Session | null; error: AuthError | Err
  */
 export async function signUpUser(email: string, password: string): Promise<SignUpResult> {
     try {
-        const { data, error } = await requireSupabase().auth.signUp({
+        const { data, error } = await logoutFlow.authenticate(() => requireSupabase().auth.signUp({
             email,
             password,
-        });
+        }));
 
         if (error) {
             return { user: null, error };
@@ -46,7 +47,8 @@ export async function signUpUser(email: string, password: string): Promise<SignU
  */
 export async function signInUser(email: string, password: string): Promise<SignInResult> {
     try {
-        const { data, error } = await requireSupabase().auth.signInWithPassword({ email, password });
+        const { data, error } = await logoutFlow.authenticate(() =>
+            requireSupabase().auth.signInWithPassword({ email, password }));
 
         if (error) {
             return { session: null, error };
@@ -62,13 +64,8 @@ export async function signInUser(email: string, password: string): Promise<SignI
  * 現在のユーザーをサインアウトする。
  * @returns 失敗時は error、成功時は null
  */
-export async function signOutUser(): Promise<SignOutResult> {
-    try {
-        const { error } = await requireSupabase().auth.signOut();
-        return { error };
-    } catch (error) {
-        return { error: error instanceof Error ? error : new Error(String(error)) };
-    }
+export function signOutUser(): Promise<SignOutResult> {
+    return logoutFlow.signOut();
 }
 
 /**
@@ -77,7 +74,12 @@ export async function signOutUser(): Promise<SignOutResult> {
  */
 export async function getCurrentSession(): Promise<GetSessionResult> {
     try {
+        const revision = logoutFlow.revision();
+        if (!await logoutFlow.canUseSession()) return { session: null, error: null };
         const { data, error } = await requireSupabase().auth.getSession();
+        if (!await logoutFlow.canUseSession() || revision !== logoutFlow.revision()) {
+            return { session: null, error: null };
+        }
 
         if (error) {
             return { session: null, error };

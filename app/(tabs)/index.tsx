@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { hasSupabaseConfig, supabase } from '@/lib/supabase';
 import { subscribeAvailabilityChanged } from '@/lib/availability-events';
+import { logoutFlow } from '@/lib/logout';
 
 type User = {
   id: string;
@@ -29,6 +30,8 @@ export default function HomeScreen() {
 
     async function fetchUsers() {
       const currentRequest = ++requestId;
+      const revision = logoutFlow.revision();
+      const isCurrent = () => isMounted && currentRequest === requestId && revision === logoutFlow.revision();
       isRequestPending = true;
       setNow(Date.now());
       if (!hasSupabaseConfig || !supabase) {
@@ -42,13 +45,14 @@ export default function HomeScreen() {
 
       try {
         const { data: auth, error: authError } = await supabase.auth.getSession();
+        if (!isCurrent() || !await logoutFlow.canUseSession() || !isCurrent()) return;
         if (authError || !auth.session) throw new Error('ログイン状態を確認できませんでした。');
         const id = auth.session.user.id;
         const [list, own] = await Promise.all([
           supabase.from('profiles').select('id, username, is_free, free_until').limit(50),
           supabase.from('profiles').select('id, username, is_free, free_until').eq('id', id).maybeSingle(),
         ]);
-        if (!isMounted || currentRequest !== requestId) return;
+        if (!isCurrent()) return;
         if (list.error || own.error) throw list.error ?? own.error;
         // 一覧の上限にかかわらず、自分の更新後の状態を先頭に表示する。
         const others = ((list.data ?? []) as User[]).filter((user) => user.id !== id);
@@ -57,12 +61,12 @@ export default function HomeScreen() {
         setErrorMessage(null);
         setIsLoading(false);
       } catch {
-        if (isMounted && currentRequest === requestId) {
+        if (isCurrent()) {
           setErrorMessage('暇状態の取得に失敗しました。');
           setIsLoading(false);
         }
       } finally {
-        if (isMounted && currentRequest === requestId) {
+        if (isCurrent()) {
           isRequestPending = false;
           setNow(Date.now());
         }

@@ -1,31 +1,41 @@
 import { supabase } from './supabase';
 import { notifyAvailabilityChanged } from './availability-events';
 import { createExtendClient, type ExtendFreeResult } from './free-end-action';
+import { logoutFlow } from './logout';
 export type { ExtendFreeResult } from './free-end-action';
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 
-const postExtend = createExtendClient({
-    apiUrl: supabase ? apiUrl : undefined,
-    getAccessToken: async () => {
-        if (!supabase) return null;
-        const { data, error } = await supabase.auth.getSession();
-        if (error || !data.session) return null;
-        if (data.session.expires_at && data.session.expires_at <= Date.now() / 1000 + 30) {
-            const refreshed = await supabase.auth.refreshSession();
-            return refreshed.error ? null : refreshed.data.session?.access_token ?? null;
-        }
-        return data.session.access_token;
-    },
-    fetch: (...args) => fetch(...args),
-    onChanged: notifyAvailabilityChanged,
-});
+function postExtend(notification?: { receivedAt?: number }) {
+    const revision = logoutFlow.revision();
+    const canUse = () => notification
+        ? logoutFlow.canUseNotification(notification.receivedAt)
+        : logoutFlow.canUseSession();
+    return createExtendClient({
+        apiUrl: supabase ? apiUrl : undefined,
+        getAccessToken: async () => {
+            if (!supabase || !await canUse()) return null;
+            const { data, error } = await supabase.auth.getSession();
+            if (error || !data.session || !await canUse()
+                || revision !== logoutFlow.revision()) return null;
+            return data.session.access_token;
+        },
+        canUseToken: async (token) => {
+            if (!supabase || !await logoutFlow.canUseSession()) return false;
+            const { data, error } = await supabase.auth.getSession();
+            return !error && data.session?.access_token === token && await canUse()
+                && revision === logoutFlow.revision();
+        },
+        fetch: (...args) => fetch(...args),
+        onChanged: notifyAvailabilityChanged,
+    });
+}
 
 /**
  * 暇状態を30分延長する（アプリ内ボタン用）。
  */
 export async function extendFree(): Promise<ExtendFreeResult> {
-    return postExtend('/profiles/me/is-free/extend');
+    return postExtend()('/profiles/me/is-free/extend');
 }
 
 /**
@@ -33,6 +43,6 @@ export async function extendFree(): Promise<ExtendFreeResult> {
  * claimIdをDB側で照合し、通知時の終了予定と現在の終了予定が一致する場合のみ延長される
  * （同じ通知からの二重延長はDB側で防止される）。
  */
-export async function extendFreeFromNotification(notificationId: string): Promise<ExtendFreeResult> {
-    return postExtend('/profiles/me/is-free/extend-from-notification', { claim_id: notificationId });
+export async function extendFreeFromNotification(notificationId: string, receivedAt?: number): Promise<ExtendFreeResult> {
+    return postExtend({ receivedAt })('/profiles/me/is-free/extend-from-notification', { claim_id: notificationId });
 }

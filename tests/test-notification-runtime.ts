@@ -16,7 +16,7 @@ for (const platform of ['ios', 'android', 'web']) {
         },
       },
       'react-native': { Platform: { OS: platform } },
-      './notification-task': { EXTEND_30_ACTION: 'extend_30', FREE_END_CATEGORY: 'free_end' },
+      './free-end-action': { EXTEND_30_ACTION: 'extend_30', FREE_END_CATEGORY: 'free_end' },
       './supabase': {},
     });
     await module.registerNotificationCategories();
@@ -53,8 +53,9 @@ for (const timing of ['simultaneous', 'after-completion']) {
       client('/profiles/me/is-free/extend-from-notification', { claim_id: id }));
     const effects: (() => void | (() => void))[] = [];
     let stateIndex = 0;
-    const state = [{ user: { id: 'self' } }, false, null];
+    const state = [{ user: { id: 'self' } }, false, null, { userId: 'self', revision: 0 }];
     const react = { useState: () => [state[stateIndex++], () => {}],
+      useSyncExternalStore: () => false,
       useEffect(effect: typeof effects[number]) { effects.push(effect); }, createElement() { return null; } };
     const root = loadSource<{ default(): void }>('app/_layout.tsx', {
       '@/lib/push-notifications': {}, '@supabase/supabase-js': {},
@@ -70,10 +71,11 @@ for (const timing of ['simultaneous', 'after-completion']) {
       'react-native-reanimated': {}, '@/components/themed-text': {}, '@/components/themed-view': {},
       '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
       '@/lib/notification-task': { handleFreeEndAction }, '@/lib/supabase': {},
+      '@/lib/logout': { logoutFlow: { revision: () => 0 } },
     }, { React: react });
     root.default();
     // Exercise the actual root effect that installs the listener and reads the launch response.
-    const cleanup = effects[2]();
+    const cleanup = effects[3]();
     try {
       if (timing === 'after-completion') await setImmediate();
       listener(response);
@@ -110,7 +112,11 @@ for (const result of [
       actionIdentifier: 'extend_30',
       notification: { request: { content: { data: { type: 'free_end', notificationId: 'claim-1' } } } },
     } });
-    assert.equal(outcome, result.ok ? 'new' : result.reason === 'conflict' ? 'none' : 'failed');
+    assert.equal(outcome, result.ok ? 'new' : result.reason === 'server-error' ? 'failed' : 'none');
+    if (!result.ok && result.reason === 'not-authenticated') {
+      assert.deepEqual(bodies, []);
+      return;
+    }
     assert.equal(bodies.length, 1);
     assert.equal(bodies[0], result.ok ? '暇状態を30分延長しました。' : result.reason === 'conflict'
       ? 'アプリを開いて現在の暇状態を確認してください。'

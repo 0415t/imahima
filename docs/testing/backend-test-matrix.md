@@ -46,7 +46,7 @@ Lv.1 は単体、Lv.2 はDB結合、Lv.3 は機能結合、Lv.4 はバックエ�
 | --- | --- | --- |
 | Static | Node 24.15.0／npm 11.12.1。ルートで `npm ci`、`npm run typecheck`、`npm run lint`。lint用に `npm ci --prefix verification/group-chat-local` と `npm ci --prefix verification/issue35` も実行 | `backend-static` |
 | Offline | `npm test`。ルートの依存のみ。ループバック、注入したAuth・DB応答、模擬Expoを利用 | `backend-offline` |
-| DB | `npm run test:db`。ローカルLinux Dockerと固定版PostgreSQL 16で代表SQL 3本を実行。残りのSQL／Nodeスクリプトは各行の専用環境で起動 | `backend-db`。並行系は任意候補 |
+| DB | `npm run test:db`。ローカルLinux Dockerと固定版PostgreSQL 16で代表SQL 4本を実行。残りのSQL／Nodeスクリプトは各行の専用環境で起動 | `backend-db`。並行系は任意候補 |
 | Integration | 専用Supabaseまたは承認済みの検証先。実Auth／PostgREST／Realtime、必要に応じて模擬Expo。既存環境を再利用する入口ではデータ・証跡の前提を確認 | 手動。自己完結したセットを任意CI候補とする |
 | Device | 専用アカウントと端末。受信・表示・タップ後の挙動を実機で判定 | 手動 |
 
@@ -61,6 +61,7 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | ID | シナリオ | Lv. | ファイル | 境界 |
 | --- | --- | --- | --- | --- |
 | AUTH-01 | Auth SDKの例外・応答を401/503に分類しルートへ伝播 | 1/3 | `test-auth-classification.ts` | SDKエラーと下流を注入 |
+| AUTH-02 | 端末ログアウト、解除失敗と再試行、登録競合、通知延長の拒否、アカウント切替 | 1/3 | `test-logout.ts` | メモリストレージ、実Auth SDKと模擬HTTP、注入した端末登録処理 |
 | PROFILE-01 | 暇表示の期限、取得失敗・逆順応答 | 1 | `test-availability-display.ts` | 仮想時計・取得モック |
 | PROFILE-02 | toggle、明示ON/OFF、延長のHTTP契約 | 3 | `test-profile-toggle.ts` | Auth・RPC注入 |
 | GROUP-01 | 作成・一覧・招待・参加・退出、actor・入力の検査 | 1/3 | `test-groups.ts` | Auth・RPC注入、版番号検査 |
@@ -84,7 +85,7 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 
 ## DB・Integration・Device
 
-`backend-db` は毎回作成したコンテナに対し、グループfixture、グループmigration、チャットfixture、チャットmigrationの順に適用する。その後 `group_mvp.test.sql`、`group_availability.test.sql`、`group_chat_mvp.test.sql` を直列に実行する。コンテナはネットワークなし・公開ポートなし・データtmpfsで、SQLはコンテナ内のUnixソケットへ送る。全migration、実Auth・Realtime、通知ワーカーはそれぞれの専用環境で扱う。
+`backend-db` は毎回作成したコンテナに対し、グループfixture、グループmigration、チャットfixture、チャットmigration、端末トークンmigrationの順に適用する。その後、グループ・チャット・端末ログアウトの必須SQL 4本を直列に実行する。コンテナはネットワークなし・公開ポートなし・データtmpfsで、SQLはコンテナ内のUnixソケットへ送る。全migration、実Auth・Realtime、通知ワーカーはそれぞれの専用環境で扱う。
 
 新規 `supabase/tests/**/*.test.sql` は [DBランナー](../../scripts/test-db.mjs) の必須一覧または理由付きの延期一覧に登録する。必須テストが追加・変更された場合は、検証ブロック数と完了条件も確認する。ローカル実行では `.runtime/backend-db/` に実行ごとのJSONを保存し、`DB_TEST_REPORT` で保存先を指定できる。Docker接続先は既定のローカルソケット・Windows名前付きパイプに限定し、Docker環境変数による接続先の上書きやローカルDBの接続情報は使用しない。
 
@@ -95,6 +96,7 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | DB-PROFILE | 保護列、所有者、書き込み権限 | 2／DB | 実装済み。 `profile_write_permissions.test.sql` |
 | DB-GROUP | 作成・参加・退出、所属・暇表示 | 2／DB | 実装済み。 `group_mvp.test.sql`、`group_availability.test.sql` |
 | DB-CHAT | 送信・重複・削除・quota・RLS | 2／DB | 実装済み。 `group_chat_mvp.test.sql` |
+| DB-LOGOUT | 端末トークンの削除・RLS、他端末と他アカウントの分離、削除の再試行、暇状態の維持 | 2／DB | `logout_device_tokens.test.sql`。実テーブルとRPC、隔離Auth fixture |
 | DB-TIMER | 通知延長、claim期限・再試行 | 2／DB | 実装済み。 `extend_from_notification.test.sql`、`free_end_notification_claims.test.sql`、`group_timer_notifications.test.sql`、`notification_processing_retry.test.sql` |
 | DB-OUTBOX | 暇ON／チャット宛先と更新の原子性、lease・backoff | 2/3／DB | 実装済み。 `member_free_notifications.test.sql` と `node --import tsx tests/test-chat-message-db.mjs`。後者は専用PG17、`ISSUE36_PG_BIN`、模擬Push |
 | DB-RACE | 並行送信・退出・quota・通知claim・タイマー | 2/3／DB | 実装済み。 `tests/test-chat-db-concurrency.mjs`、`tests/test-group-db-concurrency.mjs` は `node <file>`。 `tests/test-member-free-concurrency.ts` は専用DB URL、`node --import tsx integration/test-notification-db-concurrency.ts` は隔離Docker DB |

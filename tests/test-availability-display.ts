@@ -9,6 +9,7 @@ function createScreen() {
   let cursor = 0;
   let dirty = false;
   let writes = 0;
+  let revision = 0;
   let refresh!: () => void;
   let changed!: () => void;
   let requests = 0;
@@ -39,6 +40,7 @@ function createScreen() {
     '@/components/themed-text': { ThemedText: 'text' },
     '@/components/themed-view': { ThemedView: 'view' },
     '@/lib/availability-events': { subscribeAvailabilityChanged: (callback: () => void) => { changed = callback; return () => {}; } },
+    '@/lib/logout': { logoutFlow: { revision: () => revision, canUseSession: async () => revision === 0 } },
     '@/lib/supabase': { hasSupabaseConfig: true, supabase: {
       auth: { async getSession() {
         requests += 1;
@@ -67,6 +69,7 @@ function createScreen() {
     advance: (milliseconds: number) => { now += milliseconds; },
     failAuth: () => { fail = true; },
     unmount: () => { cleanup?.(); },
+    beginLogout: () => { revision++; },
     get dirty() { return dirty; },
     get writes() { return writes; },
     deferProfiles() {
@@ -81,6 +84,20 @@ function createScreen() {
     },
   };
 }
+
+it('discards a profile response arriving after logout begins, even before unmount', async () => {
+  const screen = createScreen();
+  const pending = screen.deferProfiles();
+  screen.render();
+  try {
+    await setImmediate();
+    const writes = screen.writes;
+    screen.beginLogout();
+    pending.resolve({ username: 'old account' });
+    await setImmediate();
+    assert.equal(screen.writes, writes);
+  } finally { screen.unmount(); }
+});
 
 it('updates expired rows even after repeated fetch failures with unchanged error state', async () => {
   const screen = createScreen();

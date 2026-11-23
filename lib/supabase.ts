@@ -17,6 +17,14 @@ export function createSupabaseClient(url: string, anonKey: string) {
     });
 }
 
+export function createSessionDataClient(accessToken: string) {
+    if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase is not configured');
+    return createClient(supabaseUrl, supabaseAnonKey, {
+        accessToken: async () => accessToken,
+        db: { timeout: 15_000 },
+    });
+}
+
 export const supabase = hasSupabaseConfig
     ? createSupabaseClient(supabaseUrl!, supabaseAnonKey!)
     : null;
