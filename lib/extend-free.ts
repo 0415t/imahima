@@ -24,14 +24,14 @@ function postExtend(notification?: { receivedAt?: number }) {
             return data.session.access_token;
         },
         canUseToken: async (token) => {
-            if (!supabase || !await logoutFlow.canUseSession()) return false;
+            if (!supabase || !await canUse()) return false;
             const { data, error } = await supabase.auth.getSession();
             const session = data.session;
             if (error || !session || !original || session.user.id !== original.userId) return false;
             const sameSession = original.sessionId
                 ? jwtSessionId(session.access_token) === original.sessionId
                 : session.access_token === token;
-            return sameSession && await canUse() && revision === logoutFlow.revision();
+            return sameSession && revision === logoutFlow.revision();
         },
         fetch: (...args) => fetch(...args),
         onChanged: notifyAvailabilityChanged,

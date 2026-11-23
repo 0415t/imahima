@@ -385,12 +385,16 @@ test('registration adapter distinguishes SQL rollback from gateway and transport
     await assert.rejects(registerDeviceToken(session, 'here'), /outcome is unknown/);
 });
 
-for (const sameSession of [true, false]) {
-    test(`notification extension handles ${sameSession ? 'token refresh' : 'same-user session replacement'}`, async () => {
+for (const scenario of ['token refresh', 'same-user session replacement', 'session replacement during the storage check']) {
+    test(`notification extension handles ${scenario}`, async () => {
+        const sameSession = scenario === 'token refresh';
+        const switchDuringCheck = scenario === 'session replacement during the storage check';
         const jwt = (sessionId: string, counter: number) =>
             'header.' + Buffer.from(JSON.stringify({ session_id: sessionId, counter, name: 'テスト' })).toString('base64url') + '.sig';
         const session = { user: { id: 'A' }, access_token: jwt('session-1', 1) };
         const { flow } = fixture();
+        let responseReceived = false;
+        let responseChecks = 0;
         let updates = 0;
         const { extendFreeFromNotification } = loadSource<{
             extendFreeFromNotification(id: string, date: number): Promise<unknown>;
@@ -398,12 +402,22 @@ for (const sameSession of [true, false]) {
             './supabase': { supabase: { auth: { getSession: async () => ({ data: { session: { ...session } } }) } } },
             './availability-events': { notifyAvailabilityChanged: () => { updates++; } },
             './free-end-action': { createExtendClient },
-            './logout': { logoutFlow: flow },
+            './logout': { logoutFlow: {
+                ...flow,
+                async canUseNotification(date: number) {
+                    const allowed = await flow.canUseNotification(date);
+                    if (switchDuringCheck && responseReceived && ++responseChecks === 2) {
+                        session.access_token = jwt('session-2', 2);
+                    }
+                    return allowed;
+                },
+            } },
             './session-identity': { jwtSessionId },
         }, {
             process: { env: { EXPO_PUBLIC_API_URL: 'https://api.example.test' } },
             fetch: async () => {
-                session.access_token = jwt(sameSession ? 'session-1' : 'session-2', 2);
+                if (!switchDuringCheck) session.access_token = jwt(sameSession ? 'session-1' : 'session-2', 2);
+                responseReceived = true;
                 return Response.json({ is_free: true, free_until: '2026-11-24T00:00:00Z' });
             },
         });
