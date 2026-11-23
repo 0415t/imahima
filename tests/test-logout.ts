@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { createExtendClient, notificationReceivedAt } from '../lib/free-end-action';
 import { createLogoutFlow, type LogoutSession } from '../lib/logout-flow';
 import { jwtSessionId } from '../lib/session-identity';
@@ -13,12 +13,18 @@ function deferred<T>() {
     return { promise, resolve };
 }
 
+function sessionToken(sessionId: string) {
+    return 'header.' + Buffer.from(JSON.stringify({ session_id: sessionId })).toString('base64url') + '.sig';
+}
+
+const hereToken = sessionToken('a-here');
+
 function fixture() {
     const stored = new Map<string, string>();
     const rows = new Map([['here', 'A'], ['other', 'A'], ['b-device', 'B']]);
-    const sessions = new Set(['a-here', 'a-other', 'b-here']);
+    const sessions = new Set([hereToken, 'a-other', 'b-here']);
     const events: string[] = [];
-    let current: LogoutSession | null = { user: { id: 'A' }, access_token: 'a-here' };
+    let current: LogoutSession | null = { user: { id: 'A' }, access_token: hereToken };
     const deps = {
         prefix: 'test',
         storage: {
@@ -100,7 +106,8 @@ test('Auth failure preserves the deletion target for a retry and suppresses re-r
     assert.deepEqual(events, ['delete:here', 'delete:here', 'auth']);
 });
 
-test('real Auth SDK keeps the session available for retry until remote local revocation succeeds', async () => {
+for (const alreadyRevoked of [false, true]) {
+test(`real Auth SDK retries until remote revocation is ${alreadyRevoked ? 'confirmed by session_not_found' : 'successful'}`, async () => {
     const { deps } = fixture();
     const revoked = new Set<string>();
     const scopes: string[] = [];
@@ -112,9 +119,12 @@ test('real Auth SDK keeps the session available for retry until remote local rev
         assert.equal(url.searchParams.get('scope'), 'local');
         scopes.push(url.searchParams.get('scope')!);
         const bearer = new Headers(init?.headers).get('authorization');
-        assert.equal(bearer, 'Bearer a-here');
-        if (fail) return Response.json({ message: 'offline' }, { status: 503 });
+        assert.equal(bearer, 'Bearer ' + hereToken);
+        if (fail) return Response.json({ code: 'unexpected_failure', message: 'blocked' }, { status: 403 });
         revoked.add(bearer);
+        if (alreadyRevoked) return Response.json({ code: 'session_not_found', message: 'session missing' }, {
+            status: 403, headers: { 'x-supabase-api-version': '2024-01-01' },
+        });
         return new Response(null, { status: 204 });
     };
     function client(storageKey: string) {
@@ -123,7 +133,7 @@ test('real Auth SDK keeps the session available for retry until remote local rev
             auth: { storageKey, storage: deps.storage, autoRefreshToken: false, detectSessionInUrl: false },
         });
     }
-    for (const [key, token] of [['here-auth', 'a-here'], ['other-auth', 'a-other']]) {
+    for (const [key, token] of [['here-auth', hereToken], ['other-auth', 'a-other']]) {
         await deps.storage.setItem(key, JSON.stringify({
             access_token: token, refresh_token: token + '-refresh',
             expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: 'A' },
@@ -131,6 +141,7 @@ test('real Auth SDK keeps the session available for retry until remote local rev
     }
     const here = client('here-auth');
     const { logoutFlow } = loadSource<{ logoutFlow: ReturnType<typeof createLogoutFlow> }>('lib/logout.ts', {
+        '@supabase/supabase-js': { isAuthApiError, isAuthSessionMissingError },
         './auth-storage': { __esModule: true, default: deps.storage },
         './logout-flow': { createLogoutFlow },
         './push-notifications': {
@@ -141,15 +152,16 @@ test('real Auth SDK keeps the session available for retry until remote local rev
 
     assert.ok((await logoutFlow.signOut()).error);
     assert.deepEqual(scopes, ['local']);
-    assert.equal((await here.auth.getSession()).data.session?.access_token, 'a-here');
+    assert.equal((await here.auth.getSession()).data.session?.access_token, hereToken);
     assert.equal(await logoutFlow.canUseSession(), false);
     fail = false;
     assert.equal((await logoutFlow.signOut()).error, null);
     assert.deepEqual(scopes, ['local', 'local', 'local']);
-    assert.deepEqual([...revoked], ['Bearer a-here']);
+    assert.deepEqual([...revoked], ['Bearer ' + hereToken]);
     assert.equal((await client('here-auth').auth.getSession()).data.session, null);
     assert.equal((await client('other-auth').auth.getSession()).data.session?.access_token, 'a-other');
 });
+}
 
 test('the PostgREST adapter sends a DELETE with both exact filters and the original session bearer', async () => {
     const token = 'ExponentPushToken[test]';
@@ -225,6 +237,45 @@ test('a missing session cannot turn a failed logout into success after restart',
     assert.deepEqual(events, []);
 });
 
+test('corrupt or mismatched logout records cannot skip revocation or overwrite storage', async () => {
+    const markers = ['{', 'null', '[]', '{"userId":"A","sessionId":"a-here","revoked":"false"}',
+        '{"userId":"A","revoked":true}', '{"sessionId":"a-here","revoked":true}',
+        '{"userId":"A","sessionId":"a-other","revoked":true}', '{"userId":"B","sessionId":"a-here","revoked":true}'];
+    for (const raw of markers) {
+        const { deps, flow, events } = fixture();
+        await deps.storage.setItem('test:logout', raw);
+        deps.revoke = async () => assert.fail('cannot revoke using a corrupt or mismatched record');
+        assert.ok((await flow.signOut()).error, raw);
+        assert.equal(await deps.storage.getItem('test:logout'), raw);
+        assert.deepEqual(events, []);
+    }
+});
+
+test('corrupt Push registration is preserved instead of resolving or deleting any token', async () => {
+    const { deps, flow, events } = fixture();
+    const raw = '{"tokens":["here"],"pending":"true"}';
+    await deps.storage.setItem('test:push:A', raw);
+    deps.resolveToken = async () => assert.fail('cannot replace a corrupt record using the current token');
+    assert.match((await flow.signOut()).error!.message, /Invalid device registration record/);
+    assert.equal(await deps.storage.getItem('test:push:A'), raw);
+    assert.deepEqual(events, []);
+});
+
+test('revoked checkpoint does not discard a corrupt or uncertain Push registration on restart', async () => {
+    for (const [raw, expected] of [['null', /Invalid device registration record/],
+        ['{"tokens":["here"],"pending":true}', /registration outcome is unknown/]] as const) {
+        const { deps, events } = fixture();
+        deps.session = async () => null;
+        const checkpoint = '{"userId":"A","sessionId":"a-here","revoked":true}';
+        await deps.storage.setItem('test:logout', checkpoint);
+        await deps.storage.setItem('test:push:A', raw);
+        assert.match((await createLogoutFlow(deps).signOut()).error!.message, expected);
+        assert.equal(await deps.storage.getItem('test:logout'), checkpoint);
+        assert.equal(await deps.storage.getItem('test:push:A'), raw);
+        assert.deepEqual(events, []);
+    }
+});
+
 test('a fresh logout without a session does not write a marker', async () => {
     const { deps, flow } = fixture();
     deps.session = async () => null;
@@ -274,7 +325,7 @@ test('retries persisting confirmed Auth revocation after the local session disap
 
 test('restored session resumes logout and keeps routes blocked while the retry action is available', async () => {
     const { deps, events } = fixture();
-    await deps.storage.setItem('test:logout', JSON.stringify({ userId: 'A' }));
+    await deps.storage.setItem('test:logout', JSON.stringify({ userId: 'A', sessionId: 'a-here' }));
     const flow = createLogoutFlow(deps);
     const remove = deps.remove;
     deps.remove = async () => { throw new Error('network'); };
@@ -377,12 +428,44 @@ test('registration adapter distinguishes SQL rollback from gateway and transport
     response = { status: 500, error: { code: '57014', message: 'canceling statement due to statement timeout',
         details: null, hint: null } };
     assert.match((await registerDeviceToken(session, 'here')).rejected!.message, /statement timeout/);
+    for (const [status, code] of [[503, 'PGRST000'], [503, 'PGRST002'], [504, 'PGRST003']] as const) {
+        response = { status, error: { code, message: 'request not executed', details: null, hint: null } };
+        assert.match((await registerDeviceToken(session, 'here')).rejected!.message, /not executed/);
+    }
     for (const status of [0, 502, 504]) {
         response = { status, error: { code: '', message: 'no definitive reply' } };
         await assert.rejects(registerDeviceToken(session, 'here'), /outcome is unknown/);
     }
     response = { status: 504, error: { code: '57014', message: 'gateway timeout', details: null, hint: null } };
     await assert.rejects(registerDeviceToken(session, 'here'), /outcome is unknown/);
+    for (const [status, code] of [[503, 'PGRST001'], [503, 'PGRST003'], [504, '']] as const) {
+        response = { status, error: { code, message: 'uncertain connection result', details: null, hint: null } };
+        await assert.rejects(registerDeviceToken(session, 'here'), /outcome is unknown/);
+    }
+});
+
+test('extension exceptions suppress the old session result while preserving eligible server errors', async () => {
+    for (const mode of ['fetch', 'body'] as const) {
+        for (const invalidated of [false, true]) {
+            let eligible = true;
+            const extend = createExtendClient({
+                apiUrl: 'https://api.example.test',
+                getAccessToken: async () => hereToken,
+                canUseToken: async () => eligible,
+                onChanged: () => assert.fail('failed requests must not change state'),
+                fetch: async () => {
+                    const reject = () => { eligible = !invalidated; throw new Error('network failed'); };
+                    if (mode === 'fetch') return reject();
+                    const response = new Response();
+                    response.json = async () => reject();
+                    return response;
+                },
+            });
+            assert.deepEqual(await extend('/profiles/me/is-free/extend-from-notification'), {
+                ok: false, reason: invalidated ? 'not-authenticated' : 'server-error',
+            });
+        }
+    }
 });
 
 for (const scenario of ['token refresh', 'same-user session replacement', 'session replacement during the storage check']) {

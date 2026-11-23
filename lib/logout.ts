@@ -1,3 +1,4 @@
+import { isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js';
 import authStorage from './auth-storage';
 import { createLogoutFlow } from './logout-flow';
 import { getCurrentDeviceToken, registerDeviceToken, removeDeviceToken } from './push-notifications';
@@ -24,15 +25,13 @@ export const logoutFlow = createLogoutFlow({
     async revoke(session) {
         if (!supabase) throw new Error('Supabase is not configured');
         const { error } = await supabase.auth.admin.signOut(session.access_token, 'local');
-        if (error) throw error;
+        // This explicit-JWT endpoint maps session_not_found to AuthSessionMissingError in Auth JS.
+        if (error && !isAuthSessionMissingError(error)
+            && !(isAuthApiError(error) && error.code === 'session_not_found')) throw error;
     },
     async signOut() {
         if (!supabase) throw new Error('Supabase is not configured');
         const { error } = await supabase.auth.signOut({ scope: 'local' });
-        if (error) {
-            // The server already confirmed revocation. Only finish if Auth storage was cleared.
-            const result = await supabase.auth.getSession();
-            if (result.error || result.data.session) throw error;
-        }
+        if (error) throw error;
     },
 });

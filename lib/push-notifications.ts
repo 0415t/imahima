@@ -96,8 +96,10 @@ export async function registerDeviceToken(session: LogoutSession, token: string)
         && (error.hint === null || typeof error.hint === 'string');
     const transactionAborted = status === 500 && /^(40[0-9A-Z]{3}|55P03|57014)$/.test(error.code);
     const rejected = status >= 400 && status < 500 && status !== 408 && status !== 429
-        && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code);
-    if (structured && (transactionAborted || rejected)) {
+        && /^(PGRST[1-9]\d{2}|[0-9A-Z]{5})$/.test(error.code);
+    const notExecuted = (status === 503 && (error.code === 'PGRST000' || error.code === 'PGRST002'))
+        || (status === 504 && error.code === 'PGRST003');
+    if (structured && (transactionAborted || rejected || notExecuted)) {
         return { rejected: new Error(error.message) };
     }
     throw new Error('Push registration outcome is unknown');

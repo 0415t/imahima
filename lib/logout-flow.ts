@@ -9,7 +9,20 @@ type Storage = {
 };
 
 type Registration = { tokens: string[]; pending: boolean };
-type PendingLogout = { userId?: string; sessionId?: string; revoked?: boolean };
+type PendingLogout = { userId: string; sessionId: string; revoked?: boolean };
+
+function parsePendingLogout(raw: string): PendingLogout {
+    const value: unknown = JSON.parse(raw);
+    if (value && typeof value === 'object' && 'userId' in value && 'sessionId' in value
+        && typeof value.userId === 'string' && value.userId.trim()
+        && typeof value.sessionId === 'string' && value.sessionId.trim()) {
+        const revoked = 'revoked' in value ? value.revoked : undefined;
+        if (revoked === undefined || typeof revoked === 'boolean') {
+            return { userId: value.userId, sessionId: value.sessionId, revoked };
+        }
+    }
+    throw new Error('Invalid logout record');
+}
 
 export function createLogoutFlow(deps: {
     storage: Storage;
@@ -39,7 +52,7 @@ export function createLogoutFlow(deps: {
         const raw = await deps.storage.getItem(key(userId));
         if (raw === null) return null;
         const value: Registration = JSON.parse(raw);
-        if (!Array.isArray(value.tokens) || !value.tokens.every(token => typeof token === 'string' && token)
+        if (!value || !Array.isArray(value.tokens) || !value.tokens.every(token => typeof token === 'string' && token)
             || typeof value.pending !== 'boolean') throw new Error('Invalid device registration record');
         return value;
     };
@@ -147,20 +160,22 @@ export function createLogoutFlow(deps: {
         if (authenticating) return Promise.resolve({ error: new Error('認証処理を実行中です') });
         logout = Promise.resolve().then(async () => {
             const raw = await deps.storage.getItem(pendingKey);
-            const pending: PendingLogout = confirmedRevocation ?? (raw === null ? {} : JSON.parse(raw));
+            const pending = raw === null ? undefined : parsePendingLogout(raw);
+            if (pending && confirmedRevocation && (pending.userId !== confirmedRevocation.userId
+                || pending.sessionId !== confirmedRevocation.sessionId)) throw new Error('Logout session changed');
+            const checkpoint = confirmedRevocation ?? pending;
             const session = await deps.session();
-            if (!session && raw === null && !confirmedRevocation) return;
-            if (!session && !pending.revoked) throw new Error('Logout session is unavailable before revocation was confirmed');
+            if (!session && !checkpoint) return;
+            if (!session && checkpoint?.revoked !== true) throw new Error('Logout session is unavailable before revocation was confirmed');
 
-            const userId = pending.userId ?? session?.user.id;
-            if (!userId) throw new Error('Logout account is unavailable');
-            const sessionId = pending.sessionId ?? (session && jwtSessionId(session.access_token)) ?? undefined;
+            const userId = checkpoint?.userId ?? session?.user.id;
+            const sessionId = checkpoint?.sessionId ?? (session && jwtSessionId(session.access_token));
+            if (!userId || !sessionId) throw new Error('Logout session identity is unavailable');
             const matches = (current: LogoutSession) => current.user.id === userId
-                && (sessionId ? jwtSessionId(current.access_token) === sessionId
-                    : !session || current.access_token === session.access_token);
+                && jwtSessionId(current.access_token) === sessionId;
             if (session && !matches(session)) throw new Error('Logout session changed');
 
-            if (session && !pending.revoked) {
+            if (session && checkpoint?.revoked !== true) {
                 await deps.storage.setItem(pendingKey, JSON.stringify({ userId, sessionId }));
                 await registration?.catch(() => {});
                 for (const token of await removalTargets(session)) {
@@ -176,6 +191,7 @@ export function createLogoutFlow(deps: {
                 await deps.storage.setItem(pendingKey, JSON.stringify(confirmedRevocation));
                 confirmedRevocation = undefined;
             }
+            if ((await read(userId))?.pending) throw new Error('Push registration outcome is unknown');
             const current = await deps.session();
             if (current && !matches(current)) throw new Error('Logout session changed');
             if (current) await deps.signOut();

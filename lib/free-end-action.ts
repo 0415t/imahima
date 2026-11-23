@@ -56,8 +56,9 @@ export function createExtendClient(options: {
 }) {
   return async (path: string, body?: Record<string, unknown>): Promise<ExtendFreeResult> => {
     if (!options.apiUrl) return { ok: false, reason: 'not-configured' };
+    let token: string | null = null;
     try {
-      const token = await options.getAccessToken();
+      token = await options.getAccessToken();
       if (!token) return { ok: false, reason: 'not-authenticated' };
       const retryDelays = [250, 500, 1000];
       for (let attempt = 0; ; attempt += 1) {
@@ -71,6 +72,7 @@ export function createExtendClient(options: {
         if (response.status === 401) return { ok: false, reason: 'not-authenticated' };
         if (response.status === 409) {
           const errorBody: unknown = await response.json().catch(() => null);
+          if (options.canUseToken && !await options.canUseToken(token)) return { ok: false, reason: 'not-authenticated' };
           if (path === '/profiles/me/is-free/extend-from-notification' && errorBody &&
               typeof errorBody === 'object' && 'code' in errorBody && errorBody.code === 'notification-processing') {
             if (attempt >= retryDelays.length) return { ok: false, reason: 'server-error' };
@@ -79,20 +81,22 @@ export function createExtendClient(options: {
             continue;
           }
           // 別ハンドラで処理済みの場合もDBから再取得する。
-          if (options.canUseToken && !await options.canUseToken(token)) return { ok: false, reason: 'not-authenticated' };
           options.onChanged();
           return { ok: false, reason: 'conflict' };
         }
         if (!response.ok) return { ok: false, reason: 'server-error' };
         const json = await response.json();
+        if (options.canUseToken && !await options.canUseToken(token)) return { ok: false, reason: 'not-authenticated' };
         if (json?.is_free !== true || typeof json.free_until !== 'string' || !Number.isFinite(Date.parse(json.free_until))) {
           return { ok: false, reason: 'server-error' };
         }
-        if (options.canUseToken && !await options.canUseToken(token)) return { ok: false, reason: 'not-authenticated' };
         options.onChanged();
         return { ok: true, freeUntil: json.free_until };
       }
     } catch {
+      if (token && options.canUseToken && !await options.canUseToken(token).catch(() => false)) {
+        return { ok: false, reason: 'not-authenticated' };
+      }
       return { ok: false, reason: 'server-error' };
     }
   };
