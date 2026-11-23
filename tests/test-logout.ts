@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { createClient } from '@supabase/supabase-js';
 import { createExtendClient, notificationReceivedAt } from '../lib/free-end-action';
 import { createLogoutFlow, type LogoutSession } from '../lib/logout-flow';
+import { jwtSessionId } from '../lib/session-identity';
 import { loadSource } from './helpers/load-source';
 
 function deferred<T>() {
@@ -222,6 +224,195 @@ test('a missing session cannot turn a failed logout into success after restart',
     assert.equal(await restarted.canUseSession(), false);
     assert.deepEqual(events, []);
 });
+
+test('a fresh logout without a session does not write a marker', async () => {
+    const { deps, flow } = fixture();
+    deps.session = async () => null;
+    deps.storage.setItem = async () => assert.fail('must not write a marker');
+    deps.storage.removeItem = async () => assert.fail('must not remove a marker');
+    assert.equal((await flow.signOut()).error, null);
+});
+
+for (const rejected of [false, true]) {
+    test(`repairs registration storage after a known ${rejected ? 'rejection' : 'success'}`, async () => {
+        const { deps, flow, rows } = fixture();
+        const write = deps.storage.setItem;
+        const remove = deps.storage.removeItem;
+        deps.storage.setItem = async (key, value) => {
+            if (key.endsWith(':push:A') && JSON.parse(value).pending === false) throw new Error('write failed');
+            await write(key, value);
+        };
+        deps.storage.removeItem = async key => {
+            if (key.endsWith(':push:A')) throw new Error('remove failed');
+            await remove(key);
+        };
+        if (rejected) deps.register = async () => ({ rejected: new Error('rejected') });
+        await assert.rejects(flow.save('A', 'here'));
+        deps.storage.setItem = write;
+        deps.storage.removeItem = remove;
+        assert.equal((await flow.signOut()).error, null);
+        assert.equal(rows.has('here'), false);
+    });
+}
+
+test('retries persisting confirmed Auth revocation after the local session disappears', async () => {
+    const { deps, flow } = fixture();
+    const write = deps.storage.setItem;
+    let revocations = 0;
+    deps.revoke = async () => { revocations++; };
+    deps.storage.setItem = async (key, value) => {
+        if (key === 'test:logout' && JSON.parse(value).revoked) throw new Error('checkpoint failed');
+        await write(key, value);
+    };
+    assert.match((await flow.signOut()).error!.message, /checkpoint/);
+    deps.session = async () => null;
+    assert.ok((await createLogoutFlow(deps).signOut()).error);
+    deps.storage.setItem = write;
+    assert.equal((await flow.signOut()).error, null);
+    assert.equal(revocations, 1);
+});
+
+test('restored session resumes logout and keeps routes blocked while the retry action is available', async () => {
+    const { deps, events } = fixture();
+    await deps.storage.setItem('test:logout', JSON.stringify({ userId: 'A' }));
+    const flow = createLogoutFlow(deps);
+    const remove = deps.remove;
+    deps.remove = async () => { throw new Error('network'); };
+    const effects: (() => void)[] = [];
+    type Element = { type: unknown; props: { onPress?: () => void } | null; children: Element[] };
+    const react = {
+        useState: (() => {
+            let index = 0;
+            const state = [{ user: { id: 'A' } }, false, null];
+            return () => [state[index++ % state.length], () => {}];
+        })(),
+        useEffect: (effect: () => void) => { effects.push(effect); },
+        useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+        createElement: (type: unknown, props: Element['props'], ...children: Element[]) => ({ type, props, children }),
+    };
+    const { default: render } = loadSource<{ default(): Element }>('app/_layout.tsx', {
+        react, 'expo-notifications': {}, 'expo-status-bar': {}, 'react-native-reanimated': {},
+        'expo-router': { Stack: { Protected: 'protected' } },
+        'react-native': { Button: 'retry', ActivityIndicator: 'spinner', StyleSheet: { create: (value: unknown) => value } },
+        '@/lib/push-notifications': {}, '@/components/themed-text': { ThemedText: 'text' },
+        '@/components/themed-view': { ThemedView: 'view' }, '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
+        '@/lib/notification-task': {}, '@/lib/logout': { logoutFlow: flow }, '@/lib/supabase': { supabase: {} },
+    }, { React: react });
+    render();
+    effects[1]();
+    await setImmediate();
+    assert.equal(flow.getError()?.message, 'network');
+    const tree = render();
+    const view = tree.children[0];
+    assert.equal(view.type, 'view');
+    assert.equal(view.children[0].type, 'text');
+    assert.equal(view.children[1].type, 'retry');
+    deps.remove = remove;
+    const retry = view.children[1].props?.onPress;
+    assert.ok(retry);
+    retry();
+    retry();
+    await setImmediate();
+    assert.equal(flow.isBlocked(), false);
+    assert.deepEqual(events, ['delete:here', 'auth']);
+});
+
+test('a cutoff or marker cleanup write failure can resume after restart with revocation confirmed', async () => {
+    for (const failure of ['cutoff', 'marker']) {
+        const { deps, flow, events } = fixture();
+        const write = deps.storage.setItem;
+        const remove = deps.storage.removeItem;
+        deps.storage.setItem = async (key, value) => {
+            if (failure === 'cutoff' && key.endsWith(':notification-cutoff')) throw new Error(failure);
+            await write(key, value);
+        };
+        deps.storage.removeItem = async key => {
+            if (failure === 'marker' && key === 'test:logout') throw new Error(failure);
+            await remove(key);
+        };
+        assert.equal((await flow.signOut()).error?.message, failure);
+        deps.storage.setItem = write;
+        deps.storage.removeItem = remove;
+        const restarted = createLogoutFlow(deps);
+        assert.equal(await restarted.canUseSession(), false);
+        assert.equal((await restarted.signOut()).error, null);
+        assert.deepEqual(events, ['delete:here', 'auth']);
+    }
+});
+
+test('rejects notifications received during the first logout after account switch', async (t) => {
+    let now = 1000;
+    t.mock.method(Date, 'now', () => now);
+    const { deps, flow, setSession } = fixture();
+    const entered = deferred<void>();
+    const proceed = deferred<void>();
+    deps.revoke = async () => { entered.resolve(); await proceed.promise; };
+    const operation = flow.signOut();
+    await entered.promise;
+    assert.equal(await flow.canUseNotification(1100), false);
+    now = 1200;
+    proceed.resolve();
+    assert.equal((await operation).error, null);
+    setSession({ user: { id: 'B' }, access_token: 'b-here' });
+    const restarted = createLogoutFlow(deps);
+    assert.equal(await restarted.canUseNotification(1100), false);
+    assert.equal(await restarted.canUseNotification(1200), false);
+    assert.equal(await restarted.canUseNotification(1201), true);
+    now = 1250;
+    await restarted.authenticate(async () => {});
+    assert.equal(await restarted.canUseNotification(1249), false);
+    assert.equal(await restarted.canUseNotification(1251), true);
+});
+
+test('registration adapter distinguishes SQL rollback from gateway and transport failures', async () => {
+    let response: { status: number; error: { code: string; message: string; hint?: null; details?: null } };
+    const { registerDeviceToken } = loadSource<{
+        registerDeviceToken(session: LogoutSession, token: string): Promise<{ rejected: Error | null }>;
+    }>('lib/push-notifications.ts', {
+        'expo-constants': {}, 'expo-device': {}, 'expo-notifications': { setNotificationHandler() {} },
+        'react-native': { Platform: { OS: 'android' } }, './free-end-action': {},
+        './supabase': { createSessionDataClient: () => ({ rpc: () => ({ retry: () => Promise.resolve(response) }) }) },
+    });
+    const session = { user: { id: 'A' }, access_token: 'a-here' };
+    response = { status: 500, error: { code: '57014', message: 'canceling statement due to statement timeout',
+        details: null, hint: null } };
+    assert.match((await registerDeviceToken(session, 'here')).rejected!.message, /statement timeout/);
+    for (const status of [0, 502, 504]) {
+        response = { status, error: { code: '', message: 'no definitive reply' } };
+        await assert.rejects(registerDeviceToken(session, 'here'), /outcome is unknown/);
+    }
+    response = { status: 504, error: { code: '57014', message: 'gateway timeout', details: null, hint: null } };
+    await assert.rejects(registerDeviceToken(session, 'here'), /outcome is unknown/);
+});
+
+for (const sameSession of [true, false]) {
+    test(`notification extension handles ${sameSession ? 'token refresh' : 'same-user session replacement'}`, async () => {
+        const jwt = (sessionId: string, counter: number) =>
+            'header.' + Buffer.from(JSON.stringify({ session_id: sessionId, counter, name: 'テスト' })).toString('base64url') + '.sig';
+        const session = { user: { id: 'A' }, access_token: jwt('session-1', 1) };
+        const { flow } = fixture();
+        let updates = 0;
+        const { extendFreeFromNotification } = loadSource<{
+            extendFreeFromNotification(id: string, date: number): Promise<unknown>;
+        }>('lib/extend-free.ts', {
+            './supabase': { supabase: { auth: { getSession: async () => ({ data: { session: { ...session } } }) } } },
+            './availability-events': { notifyAvailabilityChanged: () => { updates++; } },
+            './free-end-action': { createExtendClient },
+            './logout': { logoutFlow: flow },
+            './session-identity': { jwtSessionId },
+        }, {
+            process: { env: { EXPO_PUBLIC_API_URL: 'https://api.example.test' } },
+            fetch: async () => {
+                session.access_token = jwt(sameSession ? 'session-1' : 'session-2', 2);
+                return Response.json({ is_free: true, free_until: '2026-11-24T00:00:00Z' });
+            },
+        });
+        assert.deepEqual(await extendFreeFromNotification('claim', Date.now()), sameSession
+            ? { ok: true, freeUntil: '2026-11-24T00:00:00Z' }
+            : { ok: false, reason: 'not-authenticated' });
+        assert.equal(updates, sameSession ? 1 : 0);
+    });
+}
 
 test('switching to B re-registers the device, and an A delete can never remove B’s row', async () => {
     const { flow, deps, rows, setSession, events } = fixture();

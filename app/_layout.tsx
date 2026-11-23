@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Platform, StyleSheet } from 'react-native';
+import { ActivityIndicator, Button, Platform, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
@@ -23,8 +23,8 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(hasSupabaseConfig && supabase));
-  const [authError, setAuthError] = useState<string | null>(null);
   const blocked = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.isBlocked, logoutFlow.isBlocked);
+  const logoutError = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.getError, logoutFlow.getError);
   const [checkedSession, setCheckedSession] = useState<{ userId: string; revision: number } | null>(null);
   const sessionUser = session?.user.id;
   const revision = logoutFlow.revision();
@@ -41,7 +41,6 @@ export default function RootLayout() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      setAuthError(null);
       setIsLoading(false);
     });
 
@@ -51,13 +50,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (isLoading || blocked || !supabase) return;
     let active = true;
-    void logoutFlow.canUseSession().then(async allowed => {
+    void logoutFlow.canUseSession().then(allowed => {
       if (!active) return;
       setCheckedSession(allowed && sessionUser ? { userId: sessionUser, revision } : null);
-      if (!allowed && !sessionUser) {
-        const { error } = await logoutFlow.signOut();
-        if (active && error) setAuthError(error.message);
-      }
+      if (!allowed) void logoutFlow.signOut();
     });
     return () => { active = false; };
   }, [blocked, isLoading, revision, sessionUser]);
@@ -138,13 +134,14 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      {isLoading || (session && !userId) || blocked ? (
+      {blocked && logoutError ? (
+        <ThemedView style={styles.loading}>
+          <ThemedText accessibilityRole="alert">ログアウトを完了できませんでした。</ThemedText>
+          <Button title="再試行" onPress={() => { void logoutFlow.signOut(); }} />
+        </ThemedView>
+      ) : isLoading || (session && !userId) || blocked ? (
         <ThemedView style={styles.loading}>
           <ActivityIndicator size="large" />
-        </ThemedView>
-      ) : authError ? (
-        <ThemedView style={styles.loading}>
-          <ThemedText>ログイン状態を確認できませんでした: {authError}</ThemedText>
         </ThemedView>
       ) : (
         <Stack key={userId ?? 'signed-out'}>

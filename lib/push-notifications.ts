@@ -90,8 +90,14 @@ export async function registerDeviceToken(session: LogoutSession, token: string)
     }).retry(false);
 
     if (!error) return { rejected: null };
-    // A structured PostgREST/SQL rejection confirms that no registration committed.
-    if (status >= 400 && status < 500 && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code)) {
+    // PostgREST maps some transaction aborts, including query cancellation, to 5xx.
+    const structured = typeof error.message === 'string'
+        && (error.details === null || typeof error.details === 'string')
+        && (error.hint === null || typeof error.hint === 'string');
+    const transactionAborted = status === 500 && /^(40[0-9A-Z]{3}|55P03|57014)$/.test(error.code);
+    const rejected = status >= 400 && status < 500 && status !== 408 && status !== 429
+        && /^(PGRST\d{3}|[0-9A-Z]{5})$/.test(error.code);
+    if (structured && (transactionAborted || rejected)) {
         return { rejected: new Error(error.message) };
     }
     throw new Error('Push registration outcome is unknown');

@@ -28,7 +28,7 @@ Lv.1 は単体、Lv.2 はDB結合、Lv.3 は機能結合、Lv.4 はバックエ�
 
 | 機能 | 対応するID・ファイルと未検証範囲 |
 | --- | --- |
-| 認証・セッション | Lv.1/3は `AUTH-01`。Lv.2は `DB-PROFILE` 等の所有権・RLS、Lv.3は `INT-AUTH` の実Authとストレージ復元、Lv.4は `INT-CHAT` 等の実JWT経路が基準CIで未実行。実端末の復元は未整備 |
+| 認証・セッション | Lv.1/3は `AUTH-01` と `AUTH-02`。端末ログアウトの `AUTH-02` は下記の基準SHA時点では未収録。Lv.2は `DB-PROFILE` 等の所有権・RLS、Lv.3は `INT-AUTH` の実Authとストレージ復元、Lv.4は `INT-CHAT` 等の実JWT経路が基準CIで未実行。実端末の復元は未整備 |
 | プロフィール・暇状態 | Lv.1は `PROFILE-01`、Lv.3は `PROFILE-02`。Lv.2は `DB-GROUP` の暇表示のみ成功し、`DB-PROFILE` の保護列・権限は延期。Lv.3/4の実Auth・更新経路は `INT-AUTH`、`INT-MEMBER` に残る |
 | 暇タイマー・延長 | Lv.1は `TIMER-02/03` と `PUSH-03`、Lv.3は `PROFILE-02`、`TIMER-01`。Lv.2の `DB-TIMER` と `DB-RACE`、Lv.3/4の `INT-AUTH` の延長経路は未実行。`DB-GROUP` の表示状態fixtureは実タイマー処理の検証に数えない |
 | グループ管理 | Lv.1/3は `GROUP-01`。Lv.2は `DB-GROUP` 成功、`DB-RACE` の参加・退出競合は未実行。Lv.3は `DB-HTTP`、Lv.4は `INT-CHAT` のグループ回帰が未実行 |
@@ -117,7 +117,7 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | 実行区分 | 基準runの結果 | 検証範囲・証跡 |
 | --- | --- | --- |
 | 必須CI・`backend-static` | 成功 | Node 24.15.0／npm 11.12.1 の照合、`npm ci`、TypeScript型チェック、全体lint |
-| 必須CI・`backend-offline` | 19ファイル・277件成功。失敗・skip・TODO・取消は各0件 | 上のOffline必須表のLv.1と模擬境界でのLv.3。[Offline JSON](https://github.com/0415t/imahima/actions/runs/44941911947/artifacts/14721528922) |
+| 必須CI・`backend-offline` | 19ファイル・277件成功。失敗・skip・TODO・取消は各0件 | 基準SHAに含まれるOffline必須テストのLv.1と模擬境界でのLv.3。後から追加した `AUTH-02` はこの実績の対象外。[Offline JSON](https://github.com/0415t/imahima/actions/runs/44941911947/artifacts/14721528922) |
 | 必須CI・`backend-db` | SQL 3本成功、全件rollback・完了マーカーあり、cleanup成功 | `DB-GROUP` と `DB-CHAT`。fixture 2本とmigration 2本の適用後、順に検証ブロック3・2・8を確認。[DB JSON](https://github.com/0415t/imahima/actions/runs/44941911947/artifacts/14721424277) |
 | 手動・延期したDB | 基準runでは未実行 | `DB-PROFILE`、`DB-TIMER`、`DB-OUTBOX`、`DB-RACE`、`DB-HTTP`、`DB-MIGRATIONS`。実タイマー、通知キュー、並行処理、実HTTP→実DB、全migrationは未評価 |
 | 手動・Integration／Device | 基準runでは対象外 | `INT-AUTH`、`INT-CHAT`、`INT-MEMBER`、`INT-END`、`INT-CHAT-PUSH`、`UI-E2E`、`DEVICE-PUSH`。実Auth・Realtime・実機と部分実装の通し経路は未評価 |

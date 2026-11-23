@@ -53,7 +53,7 @@ for (const timing of ['simultaneous', 'after-completion']) {
       client('/profiles/me/is-free/extend-from-notification', { claim_id: id }));
     const effects: (() => void | (() => void))[] = [];
     let stateIndex = 0;
-    const state = [{ user: { id: 'self' } }, false, null, { userId: 'self', revision: 0 }];
+    const state = [{ user: { id: 'self' } }, false, { userId: 'self', revision: 0 }];
     const react = { useState: () => [state[stateIndex++], () => {}],
       useSyncExternalStore: () => false,
       useEffect(effect: typeof effects[number]) { effects.push(effect); }, createElement() { return null; } };

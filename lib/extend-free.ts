@@ -2,12 +2,14 @@ import { supabase } from './supabase';
 import { notifyAvailabilityChanged } from './availability-events';
 import { createExtendClient, type ExtendFreeResult } from './free-end-action';
 import { logoutFlow } from './logout';
+import { jwtSessionId } from './session-identity';
 export type { ExtendFreeResult } from './free-end-action';
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 
 function postExtend(notification?: { receivedAt?: number }) {
     const revision = logoutFlow.revision();
+    let original: { userId: string; sessionId: string | undefined } | undefined;
     const canUse = () => notification
         ? logoutFlow.canUseNotification(notification.receivedAt)
         : logoutFlow.canUseSession();
@@ -18,13 +20,18 @@ function postExtend(notification?: { receivedAt?: number }) {
             const { data, error } = await supabase.auth.getSession();
             if (error || !data.session || !await canUse()
                 || revision !== logoutFlow.revision()) return null;
+            original = { userId: data.session.user.id, sessionId: jwtSessionId(data.session.access_token) };
             return data.session.access_token;
         },
         canUseToken: async (token) => {
             if (!supabase || !await logoutFlow.canUseSession()) return false;
             const { data, error } = await supabase.auth.getSession();
-            return !error && data.session?.access_token === token && await canUse()
-                && revision === logoutFlow.revision();
+            const session = data.session;
+            if (error || !session || !original || session.user.id !== original.userId) return false;
+            const sameSession = original.sessionId
+                ? jwtSessionId(session.access_token) === original.sessionId
+                : session.access_token === token;
+            return sameSession && await canUse() && revision === logoutFlow.revision();
         },
         fetch: (...args) => fetch(...args),
         onChanged: notifyAvailabilityChanged,
