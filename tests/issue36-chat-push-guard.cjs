@@ -1,5 +1,6 @@
 // Loaded before the production entrypoint. Only the final Expo request is mocked.
 const assert = require('node:assert/strict');
+const { Server: HttpServer } = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
@@ -35,15 +36,31 @@ const tsxPipePath = path.join(os.tmpdir(), `tsx-${process.geteuid?.() ?? os.user
 const tsxPipe = process.platform === 'win32' ? `\\\\?\\pipe\\${tsxPipePath}` : tsxPipePath;
 net.Socket.prototype.connect = function guardedConnect(...args) {
   const options = Array.isArray(args[0]) ? args[0][0] : args[0];
-  if ((typeof options === 'object' && options !== null ? options.path : options) === tsxPipe) {
+  const ipcPath = typeof options === 'object' && options !== null ? options.path
+    : typeof options === 'string' && !/^\d+$/.test(options) ? options : undefined;
+  if (ipcPath === tsxPipe) {
     blockedLoaderIpc++;
     throw new Error('ISSUE36_LOADER_IPC_BLOCKED');
   }
+  if (ipcPath != null) deny('IPC other path');
   const host = typeof options === 'object' && options !== null ? options.host : args[1];
   const port = typeof options === 'object' && options !== null ? options.port : options;
   if (host !== '127.0.0.1' || Number(port) !== Number(origin.port)) deny(
     host === undefined ? 'TCP without host' : host === '127.0.0.1' ? 'TCP other loopback port' : 'TCP other host');
   return connect.apply(this, args);
+};
+
+// Express binds port 0 itself. Report the live listener without reserving a
+// separate socket or changing the application entrypoint.
+const emitHttp = HttpServer.prototype.emit;
+HttpServer.prototype.emit = function guardedHttpEmit(event, ...args) {
+  if (event === 'listening') {
+    const address = this.address();
+    assert.equal(address?.address, '127.0.0.1');
+    assert.ok(Number.isInteger(address.port) && address.port > 0);
+    process.send?.({type:'express-bound',port:address.port});
+  }
+  return emitHttp.call(this,event,...args);
 };
 
 const realFetch = globalThis.fetch;
@@ -93,7 +110,10 @@ process.on('message', message=>{
 });
 assert.throws(()=>new net.Socket().connect(443,'203.0.113.1'),/ISSUE36_OUTBOUND_BLOCKED/);
 assert.throws(()=>new net.Socket().connect(1,'127.0.0.1'),/ISSUE36_OUTBOUND_BLOCKED/);
-assert.equal(blocked,2);
+const otherPipe = tsxPipe + '.unexpected';
+assert.throws(()=>new net.Socket().connect(otherPipe),/ISSUE36_OUTBOUND_BLOCKED/);
+assert.throws(()=>new net.Socket().connect({path:otherPipe,host:'127.0.0.1',port:Number(origin.port)}),/ISSUE36_OUTBOUND_BLOCKED/);
+assert.equal(blocked,4);
 blocked=0;
 blockedKinds.length=0;
 process.send?.({type:'guard-ready'});

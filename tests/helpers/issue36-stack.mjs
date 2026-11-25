@@ -58,6 +58,9 @@ export function createStack(signal) {
       throw new Error(`Docker ${args[args[0] === '--host' ? 2 : 0]} failed (${child.error?.code ?? child.status}) ${reason}`);
     }
     const operation = args[0] === '--host' ? args.slice(2) : args;
+    if (process.env.ISSUE36_FAIL_CONTAINER_LIST === '1' && operation[0] === 'ps') {
+      throw new Error('Simulated Docker container listing failure');
+    }
     const fault = process.env.ISSUE36_SIMULATE_LOST_CREATE;
     if (child.status === 0 && (
       (fault === 'network' && operation[0] === 'network' && operation[1] === 'create') ||
@@ -118,7 +121,7 @@ export function createStack(signal) {
     const input = [
       'url = '+JSON.stringify(url), 'request = '+JSON.stringify(method),
       ...Object.entries(headers).map(([key,value])=>'header = '+JSON.stringify(`${key}: ${value}`)),
-      ...(body ? ['data-binary = '+JSON.stringify(body)] : []),
+      ...(body ? ['data-raw = '+JSON.stringify(body)] : []),
     ].join('\n')+'\n';
     // An internal bridge cannot publish loopback ports on all Docker backends.
     // Relay unmodified HTTP via the owned DB container, keeping secrets on stdin.
@@ -143,7 +146,7 @@ export function createStack(signal) {
     });
   }
   async function start() {
-    console.log(`Issue #36 Docker run UUID: ${run}`);
+    console.log(`Issue #36 Docker run UUID: ${run} (socket: ${host})`);
     network = docker(['network','create','--internal','--label',`${label}=${run}`,networkName]);
     assert.match(network,/^[a-f0-9]{64}$/);
     const [networkInfo] = JSON.parse(docker(['network','inspect',network]));
@@ -242,8 +245,12 @@ export function createStack(signal) {
     const errors=[];
     const filter = `label=${label}=${run}`;
     const ids = output => output.split(/\r?\n/).filter(Boolean);
+    const list = (args, description) => {
+      try { return ids(docker(args)); }
+      catch { errors.push(description); return []; }
+    };
     // A create may have succeeded in Docker even when the CLI never returned an ID.
-    for (const id of ids(docker(['ps','-aq','--no-trunc','--filter',filter]))) {
+    for (const id of list(['ps','-aq','--no-trunc','--filter',filter], 'owned container listing failed')) {
       try {
         assert.match(id,/^[a-f0-9]{64}$/);
         const {Name}=inspect(id);
@@ -251,7 +258,7 @@ export function createStack(signal) {
         docker(['rm','-fv',id]);
       } catch { errors.push('owned container cleanup failed'); }
     }
-    for (const id of ids(docker(['network','ls','-q','--no-trunc','--filter',filter]))) {
+    for (const id of list(['network','ls','-q','--no-trunc','--filter',filter], 'owned network listing failed')) {
       try {
         assert.match(id,/^[a-f0-9]{64}$/);
         const [meta]=JSON.parse(docker(['network','inspect',id]));

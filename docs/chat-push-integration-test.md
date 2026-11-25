@@ -40,15 +40,19 @@ JWT、パスワード、Pushトークン、実通知内容の出力は不要で�
 正常完了、テスト失敗、SIGINT/SIGTERMで実行中の子プロセスと当該実行のDockerリソースを終了します。
 ### 強制終了後の手動復旧
 
-ローカルDockerコンテキストで、対象ランナーが終了済みであることを確認します。
-先頭の `Issue #36 Docker run UUID` に表示された値を指定し、PowerShellで対象を照合します。
+対象ランナーが終了済みであることを確認します。先頭の `Issue #36 Docker run UUID` に表示されたUUIDと
+同じ行の `socket` を指定し、PowerShellで対象を照合します。現在のDockerコンテキストが変わっていても、実行時と同じソケットを使います。
 
 ```powershell
 $run = '<出力された実行UUID>'
+$socket = '<同じ行に出力されたDockerソケット>'
 if ($run -cnotmatch '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') { throw 'Invalid run UUID' }
+if ($socket -cnotin @('npipe:////./pipe/docker_engine', 'npipe:////./pipe/dockerDesktopLinuxEngine',
+    'unix:///var/run/docker.sock', 'unix:///run/docker.sock')) { throw 'Invalid Docker socket' }
+Remove-Item Env:DOCKER_CONTEXT,Env:DOCKER_HOST -ErrorAction SilentlyContinue
 $filter = "label=imahima.issue36.run=$run"
-docker ps -a --no-trunc --filter $filter --format '{{.ID}} {{.Names}} {{.Labels}}'
-docker network ls --no-trunc --filter $filter --format '{{.ID}} {{.Name}} {{.Labels}}'
+docker --host $socket ps -a --no-trunc --filter $filter --format '{{.ID}} {{.Names}} {{.Labels}}'
+docker --host $socket network ls --no-trunc --filter $filter --format '{{.ID}} {{.Name}} {{.Labels}}'
 ```
 
 表示されたUUIDが一致し、コンテナ名が `imahima-issue36-<UUID>-db`、`-auth`、`-rest` のいずれか、
@@ -56,8 +60,8 @@ docker network ls --no-trunc --filter $filter --format '{{.ID}} {{.Name}} {{.Lab
 コンテナを全件削除した後にネットワークを削除します。
 
 ```powershell
-docker rm -fv <確認済みのコンテナID>
-docker network rm <確認済みのネットワークID>
+docker --host $socket rm -fv <確認済みのコンテナID>
+docker --host $socket network rm <確認済みのネットワークID>
 ```
 
 一覧コマンドを再実行し、両方とも空であることを確認します。別の実行UUIDや既存のSupabase環境には触れません。
@@ -65,3 +69,5 @@ docker network rm <確認済みのネットワークID>
 障害注入では、`ISSUE36_SKIP_FINAL_VALIDATE=1` で最終validateの欠落を検出できます。
 `ISSUE36_SIMULATE_LOST_CREATE=network` または `container` では、Dockerで実際に作成された後に
 CLIの結果が失われた場合を再現できます。各コマンドは失敗し、当該UUIDのリソースは後始末されます。
+`ISSUE36_SIMULATE_LOST_CREATE=network` と `ISSUE36_FAIL_CONTAINER_LIST=1` を併用すると、
+コンテナの一覧取得失敗を報告しながら、作成済みネットワークを後始末できることを確認できます。

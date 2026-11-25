@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Agent, request as httpRequest } from 'node:http';
-import { createServer } from 'node:net';
-import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { cleanEnv, createStack, waitFor } from './helpers/issue36-stack.mjs';
+import { stopIssue36Server } from './helpers/issue36-process.mjs';
 
 const cwd = new URL('../', import.meta.url);
 const sqlLiteral = text => "'" + text.replaceAll("'", "''") + "'";
@@ -22,7 +21,6 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
   const terminate = () => {
     interrupted = true;
     interrupt.abort();
-    for (const server of servers) server.child.kill();
   };
   process.once('SIGINT',terminate);
   process.once('SIGTERM',terminate);
@@ -35,13 +33,6 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
     });
     assert.ok(passed, `Stopping after failed case: ${name}`);
   };
-  async function freePort() {
-    const socket=createServer();
-    await new Promise((resolve,reject)=>{socket.once('error',reject);socket.listen(0,'127.0.0.1',resolve);});
-    const {port}=socket.address();
-    await new Promise(resolve=>socket.close(resolve));
-    return port;
-  }
   const makeToken = () => `ExpoPushToken[issue36_${randomUUID().replaceAll('-','')}]`;
   const auth = {};
   const fakeTokens = [];
@@ -49,13 +40,13 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
   try {
     const config = await stack.start();
     const localOrigins=new Set([config.url]);
-    async function request(base, path, {method='GET', jwt=config.anon, body, status}={}) {
+    async function request(base, path, {method='GET', jwt=config.anon, body, rawBody, status}={}) {
       assert.ok(localOrigins.has(base) && /^\/(?!\/)/.test(path));
       const url=new URL(path,base);
       assert.equal(url.origin,base);
       assert.equal(url.hostname,'127.0.0.1');
       assert.equal(url.protocol,'http:');
-      const payload=body===undefined?undefined:JSON.stringify(body);
+      const payload=rawBody ?? (body===undefined?undefined:JSON.stringify(body));
       const {statusCode,text}=await new Promise((resolve,reject)=>{
         const req=httpRequest(url,{
           agent:directAgent,method,signal:AbortSignal.any([signal,AbortSignal.timeout(8000)]),
@@ -91,14 +82,12 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
       auth[name]={id:user.id,jwt:session.access_token,token};
     }
     async function startServer(worker, barrierId='') {
-      const port=await freePort();
-      const url=`http://127.0.0.1:${port}`;
       const messages=[];
       // Pass only OS essentials, never parent DB settings, preloads or credentials.
       const child=spawn(process.execPath,['--require','./tests/issue36-chat-push-guard.cjs','--import','tsx','server/index.ts'],{
         cwd,windowsHide:true,stdio:['ignore','pipe','pipe','ipc'],
         env:{...cleanEnv,DOTENV_CONFIG_PATH:process.platform==='win32'?'NUL':'/dev/null',DOTENV_CONFIG_QUIET:'true',
-          HOST:'127.0.0.1',PORT:String(port),SUPABASE_URL:config.url,SUPABASE_SERVICE_ROLE_KEY:config.service,
+          HOST:'127.0.0.1',PORT:'0',SUPABASE_URL:config.url,SUPABASE_SERVICE_ROLE_KEY:config.service,
           ISSUE36_GATEWAY:config.url,ISSUE36_FAKE_TOKENS:JSON.stringify(fakeTokens),ISSUE36_BARRIER_ID:barrierId,
           ISSUE36_SKIP_FINAL_VALIDATE:process.env.ISSUE36_SKIP_FINAL_VALIDATE==='1'?'1':'0',
           EXPO_ACCESS_TOKEN:'',EXPO_BASE_URL:'https://exp.host',FREE_END_NOTIFICATIONS_ENABLED:'false',
@@ -106,9 +95,9 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
           CHAT_MESSAGE_NOTIFICATIONS_INTERVAL_MS:'1000',GROUP_RATE_SECRET:randomBytes(24).toString('hex')},
       });
       let ended=false, error;
-      let sawListen=false, sawWorker=false;
+      let sawWorker=false;
       const done=new Promise(resolve=>child.once('close',(code,signal)=>{ended=true;resolve({code,signal});}));
-      const server={url,child,done,messages,get ended(){return ended;}};
+      const server={child,done,messages,get ended(){return ended;}};
       servers.push(server);
       child.once('error',value=>{error=value;});
       child.on('message',message=>{
@@ -116,28 +105,31 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
         if(message.type==='mock-push') observed.push(...message.messages);
       });
       child.stdout.on('data',chunk=>{
-        sawListen ||= String(chunk).includes('API server listening');
         sawWorker ||= String(chunk).includes('Chat message notification poller started');
       });
       child.stderr.resume();
-      localOrigins.add(url);
-      await waitFor(async()=>{
+      const bound=await waitFor(()=>{
         assert.ok(!ended && !error,'Express entrypoint exited or failed to spawn');
-        if(!sawListen || !messages.some(message=>message.type==='guard-ready')) return false;
-        return (await request(url,'/health')).status===200;
-      },'normal Express entrypoint',signal);
+        if(!messages.some(message=>message.type==='guard-ready')) return false;
+        return messages.find(message=>message.type==='express-bound');
+      },'Express loopback binding',signal);
+      assert.ok(Number.isInteger(bound.port) && bound.port>0 && bound.port<=65535);
+      server.url=`http://127.0.0.1:${bound.port}`;
+      assert.ok(!localOrigins.has(server.url),'Expected a distinct listener');
+      localOrigins.add(server.url);
+      assert.equal((await request(server.url,'/health')).status,200);
       if(worker) await waitFor(()=>sawWorker,'chat worker startup',signal);
       else assert.equal(sawWorker,false);
       return server;
     }
-    async function stopServer(server) {
-      if(!server.ended) server.child.send({type:'shutdown'});
-      const timer=setTimeout(()=>server.child.kill(),7000);
-      try { assert.equal((await server.done).code,0,'Graceful worker/Express shutdown'); }
-      finally {clearTimeout(timer);}
-    }
     const names=['sender','eligible','off','expired','outsider','rejoin','reon'];
     for(const name of names) await actor(name);
+    await runCase('relay passes an at-prefixed body verbatim to PostgREST',async()=>{
+      const invalid=await request(config.url,'/rest/v1/rpc/upsert_device_token',{
+        method:'POST',jwt:auth.eligible.jwt,rawBody:`@/issue36-nonexistent-${randomUUID()}`,status:400,
+      });
+      assert.equal(invalid.data.code,'PGRST102');
+    });
     // The guard and gateway are pinned to the verified local network and cluster.
     stack.verifyIdentity();
     const api=await startServer(false);
@@ -295,17 +287,16 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
         mockedExpoSends:observed.length,externalNetworkAttempts:0,loaderIpcBlocked,guardRejectionProbesPassed:true,
         sharedDatabaseConnections:0,terminalOutboxRows:finalRows.length}));
     });
-    for(const server of servers) await stopServer(server);
   } finally {
     directAgent.destroy();
-    process.removeListener('SIGINT',terminate);
-    process.removeListener('SIGTERM',terminate);
-    for(const server of servers) if(!server.ended) server.child.kill();
+    const results=await Promise.all(servers.map(({child,done,ended})=>stopIssue36Server(child,done,ended)));
     try {
-      await Promise.race([Promise.all(servers.map(server=>server.done)),delay(7000,undefined,{ref:false}).then(()=>{
-        throw new Error('Express process cleanup timed out');
-      })]);
-    } finally {await stack.stop();}
+      await stack.stop();
+    } finally {
+      process.removeListener('SIGINT',terminate);
+      process.removeListener('SIGTERM',terminate);
+    }
     console.log('Issue #36: owned test processes and Docker resources removed');
+    for(const result of results) assert.equal(result.code,0,'Graceful worker/Express shutdown');
   }
 });

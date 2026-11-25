@@ -11,6 +11,7 @@ const files = [
   'tests/test-free-end-action.ts',
   'tests/test-free-end-notifications.ts',
   'tests/test-groups.ts',
+  'tests/test-issue36-process.mjs',
   'tests/test-logout.ts',
   'tests/test-member-free-notifications.ts',
   'tests/test-member-free-review.mjs',
