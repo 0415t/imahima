@@ -323,25 +323,23 @@ test('retries persisting confirmed Auth revocation after the local session disap
     assert.equal(revocations, 1);
 });
 
-test('restored session resumes logout and keeps routes blocked while the retry action is available', async () => {
-    const { deps, events } = fixture();
-    await deps.storage.setItem('test:logout', JSON.stringify({ userId: 'A', sessionId: 'a-here' }));
-    const flow = createLogoutFlow(deps);
-    const remove = deps.remove;
-    deps.remove = async () => { throw new Error('network'); };
+function layoutFixture(flow: ReturnType<typeof createLogoutFlow>) {
     const effects: (() => void)[] = [];
-    type Element = { type: unknown; props: { onPress?: () => void } | null; children: Element[] };
+    type Element = { type: unknown; props: { onPress?: () => void; key?: string } | null; children: Element[] };
+    const state: unknown[] = [{ user: { id: 'A' } }, false, null, false, 0];
+    let index = 0;
     const react = {
-        useState: (() => {
-            let index = 0;
-            const state = [{ user: { id: 'A' } }, false, null];
-            return () => [state[index++ % state.length], () => {}];
-        })(),
+        useState: () => {
+            const slot = index++;
+            return [state[slot], (value: unknown) => {
+                state[slot] = typeof value === 'function' ? value(state[slot]) : value;
+            }];
+        },
         useEffect: (effect: () => void) => { effects.push(effect); },
         useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
         createElement: (type: unknown, props: Element['props'], ...children: Element[]) => ({ type, props, children }),
     };
-    const { default: render } = loadSource<{ default(): Element }>('app/_layout.tsx', {
+    const { default: renderLayout } = loadSource<{ default(): Element }>('app/_layout.tsx', {
         react, 'expo-notifications': {}, 'expo-status-bar': {}, 'react-native-reanimated': {},
         'expo-router': { Stack: { Protected: 'protected' } },
         'react-native': { Button: 'retry', ActivityIndicator: 'spinner', StyleSheet: { create: (value: unknown) => value } },
@@ -349,6 +347,54 @@ test('restored session resumes logout and keeps routes blocked while the retry a
         '@/components/themed-view': { ThemedView: 'view' }, '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
         '@/lib/notification-task': {}, '@/lib/logout': { logoutFlow: flow }, '@/lib/supabase': { supabase: {} },
     }, { React: react });
+    return {
+        effects,
+        render() {
+            index = 0;
+            effects.length = 0;
+            return renderLayout();
+        },
+        retryAttempt: () => state[4],
+    };
+}
+
+test('a transient startup storage failure blocks routes without signing out, and can be rechecked', async () => {
+    const { deps, flow, events, rows } = fixture();
+    const read = deps.storage.getItem;
+    let failed = false;
+    deps.storage.getItem = async key => {
+        if (!failed && key === 'test:logout') {
+            failed = true;
+            throw new Error('temporary storage failure');
+        }
+        return read(key);
+    };
+    const { render, effects, retryAttempt } = layoutFixture(flow);
+    render();
+    effects[1]();
+    await setImmediate();
+    assert.deepEqual(events, []);
+    assert.equal((await deps.session())?.access_token, hereToken);
+    assert.equal(rows.get('here'), 'A');
+    const view = render().children[0];
+    assert.equal(view.type, 'view');
+    assert.equal(view.children[1].type, 'retry');
+    view.children[1].props?.onPress?.();
+    assert.equal(retryAttempt(), 1);
+    render();
+    effects[1]();
+    await setImmediate();
+    assert.equal(render().children[0].props?.key, 'A');
+    assert.deepEqual(events, []);
+});
+
+test('restored session resumes logout and keeps routes blocked while the retry action is available', async () => {
+    const { deps, events } = fixture();
+    await deps.storage.setItem('test:logout', JSON.stringify({ userId: 'A', sessionId: 'a-here' }));
+    const flow = createLogoutFlow(deps);
+    const remove = deps.remove;
+    deps.remove = async () => { throw new Error('network'); };
+    const { render, effects } = layoutFixture(flow);
     render();
     effects[1]();
     await setImmediate();

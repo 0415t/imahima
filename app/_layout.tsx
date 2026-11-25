@@ -26,9 +26,11 @@ export default function RootLayout() {
   const blocked = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.isBlocked, logoutFlow.isBlocked);
   const logoutError = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.getError, logoutFlow.getError);
   const [checkedSession, setCheckedSession] = useState<{ userId: string; revision: number } | null>(null);
+  const [storageReadFailed, setStorageReadFailed] = useState(false);
+  const [storageRetry, setStorageRetry] = useState(0);
   const sessionUser = session?.user.id;
   const revision = logoutFlow.revision();
-  const userId = !blocked && checkedSession?.userId === sessionUser && checkedSession?.revision === revision
+  const userId = !blocked && !storageReadFailed && checkedSession?.userId === sessionUser && checkedSession?.revision === revision
     ? sessionUser
     : undefined;
 
@@ -50,13 +52,14 @@ export default function RootLayout() {
   useEffect(() => {
     if (isLoading || blocked || !supabase) return;
     let active = true;
-    void logoutFlow.canUseSession().then(allowed => {
+    void logoutFlow.sessionAvailability().then(availability => {
       if (!active) return;
-      setCheckedSession(allowed && sessionUser ? { userId: sessionUser, revision } : null);
-      if (!allowed) void logoutFlow.signOut();
+      setStorageReadFailed(availability === 'read-failed');
+      setCheckedSession(availability === 'ready' && sessionUser ? { userId: sessionUser, revision } : null);
+      if (availability === 'logout-pending') void logoutFlow.signOut();
     });
     return () => { active = false; };
-  }, [blocked, isLoading, revision, sessionUser]);
+  }, [blocked, isLoading, revision, sessionUser, storageRetry]);
 
   useEffect(() => {
     void registerNotificationCategories().catch((error: unknown) => {
@@ -138,6 +141,11 @@ export default function RootLayout() {
         <ThemedView style={styles.loading}>
           <ThemedText accessibilityRole="alert">ログアウトを完了できませんでした。</ThemedText>
           <Button title="再試行" onPress={() => { void logoutFlow.signOut(); }} />
+        </ThemedView>
+      ) : storageReadFailed && !blocked ? (
+        <ThemedView style={styles.loading}>
+          <ThemedText accessibilityRole="alert">ログイン状態を確認できませんでした。</ThemedText>
+          <Button title="再確認" onPress={() => { setStorageRetry(attempt => attempt + 1); }} />
         </ThemedView>
       ) : isLoading || (session && !userId) || blocked ? (
         <ThemedView style={styles.loading}>

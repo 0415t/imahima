@@ -90,14 +90,20 @@ export function createLogoutFlow(deps: {
         for (const listener of listeners) listener();
     }
 
-    async function canUseSession() {
-        if (blocked) return false;
+    async function sessionAvailability(): Promise<'ready' | 'logout-pending' | 'read-failed'> {
+        if (blocked) return 'logout-pending';
         const started = revision;
         try {
-            return await deps.storage.getItem(pendingKey) === null && !blocked && started === revision;
+            const marker = await deps.storage.getItem(pendingKey);
+            if (blocked || started !== revision) return 'read-failed';
+            return marker === null ? 'ready' : 'logout-pending';
         } catch {
-            return false;
+            return 'read-failed';
         }
+    }
+
+    async function canUseSession() {
+        return await sessionAvailability() === 'ready';
     }
 
     async function canUseNotification(receivedAt: number | undefined) {
@@ -214,7 +220,7 @@ export function createLogoutFlow(deps: {
     }
 
     return {
-        save, signOut, authenticate, canUseSession, canUseNotification,
+        save, signOut, authenticate, canUseSession, sessionAvailability, canUseNotification,
         revision: () => revision,
         isBlocked: () => blocked,
         getError: () => logoutError,

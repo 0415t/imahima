@@ -64,6 +64,7 @@ HttpServer.prototype.emit = function guardedHttpEmit(event, ...args) {
 };
 
 const realFetch = globalThis.fetch;
+const heldPushMessages = [];
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
   if (url.href === expo) {
@@ -75,7 +76,9 @@ globalThis.fetch = async (input, init) => {
       assert.ok(tokens.has(message.to), 'Unexpected Expo destination');
       assert.equal(message.data.type, 'chat_message');
     }
-    process.send?.({type:'mock-push',messages});
+    const report = {type:'mock-push',messages};
+    if (process.env.ISSUE36_DELAY_MOCK_IPC === '1') heldPushMessages.push(report);
+    else process.send?.(report);
     return Response.json({data:messages.map(()=>({status:'ok',id:'issue36-local-mock-ticket'}))});
   }
   if (url.origin !== origin.origin || !/^\/(auth|rest)\/v1\//.test(url.pathname)) deny(
@@ -106,7 +109,10 @@ process.on('disconnect',shutdown);
 process.on('message', message=>{
   if (message.type === 'release-final-validate') release?.();
   if (message.type === 'shutdown') shutdown();
-  if (message.type === 'guard-status') process.send?.({type:'guard-status',blocked,blockedKinds,blockedLoaderIpc});
+  if (message.type === 'guard-status') {
+    for (const report of heldPushMessages.splice(0)) process.send?.(report);
+    process.send?.({type:'guard-status',blocked,blockedKinds,blockedLoaderIpc});
+  }
 });
 assert.throws(()=>new net.Socket().connect(443,'203.0.113.1'),/ISSUE36_OUTBOUND_BLOCKED/);
 assert.throws(()=>new net.Socket().connect(1,'127.0.0.1'),/ISSUE36_OUTBOUND_BLOCKED/);

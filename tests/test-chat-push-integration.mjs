@@ -90,6 +90,7 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
           HOST:'127.0.0.1',PORT:'0',SUPABASE_URL:config.url,SUPABASE_SERVICE_ROLE_KEY:config.service,
           ISSUE36_GATEWAY:config.url,ISSUE36_FAKE_TOKENS:JSON.stringify(fakeTokens),ISSUE36_BARRIER_ID:barrierId,
           ISSUE36_SKIP_FINAL_VALIDATE:process.env.ISSUE36_SKIP_FINAL_VALIDATE==='1'?'1':'0',
+          ISSUE36_DELAY_MOCK_IPC:process.env.ISSUE36_DELAY_MOCK_IPC==='1'?'1':'0',
           EXPO_ACCESS_TOKEN:'',EXPO_BASE_URL:'https://exp.host',FREE_END_NOTIFICATIONS_ENABLED:'false',
           MEMBER_FREE_NOTIFICATIONS_ENABLED:'false',CHAT_MESSAGE_NOTIFICATIONS_ENABLED:String(worker),
           CHAT_MESSAGE_NOTIFICATIONS_INTERVAL_MS:'1000',GROUP_RATE_SECRET:randomBytes(24).toString('hex')},
@@ -233,6 +234,7 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
     assert.equal(observed.length,0);
     const raceId=forMessage(old.race)[0].id;
     const worker=await startServer(true,raceId);
+    let loaderIpcBlocked=0;
     await runCase('6 continued: deletion between validations leaves no send',async()=>{
       await waitFor(()=>worker.messages.some(r=>r.type==='before-final-validate'),'in-flight worker before second validation',signal);
       assert.equal(forMessage(old.race)[0].status,'processing');
@@ -243,6 +245,13 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
       assert.deepEqual(validation,{type:'final-validate-response',notificationId:raceId,status:200,owned:false});
       await waitFor(()=>rows().every(row=>!['pending','processing','failed'].includes(row.status)),
         'terminal outbox',signal,65000,500);
+      if(process.env.ISSUE36_DELAY_MOCK_IPC==='1') assert.equal(observed.length,0,'Mock IPC must still be held after terminal outbox');
+      for(const server of servers){
+        server.child.send({type:'guard-status'});
+        const status=await waitFor(()=>server.messages.find(m=>m.type==='guard-status'),'outbound audit IPC',signal);
+        assert.equal(status.blocked,0,`Unexpected network attempts: ${status.blockedKinds.join(', ')}`);
+        loaderIpcBlocked+=status.blockedLoaderIpc;
+      }
       for(const [kind,id] of Object.entries(old)) {
         assert.equal(forMessage(id)[0].status,kind==='expired'?'expired':'cancelled');
         assert.equal(observed.some(message=>message.data.messageId===id),false);
@@ -276,13 +285,6 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
       }
       assert.ok(config.traffic.get('/rest/v1/rpc/validate_chat_message_notification 200') >= good.size*2+2);
       assert.equal(config.traffic.get('/rest/v1/rpc/complete_chat_message_notification 200'),good.size);
-      let loaderIpcBlocked=0;
-      for(const server of servers){
-        server.child.send({type:'guard-status'});
-        const status=await waitFor(()=>server.messages.find(m=>m.type==='guard-status'),'outbound audit IPC',signal);
-        assert.equal(status.blocked,0,`Unexpected network attempts: ${status.blockedKinds.join(', ')}`);
-        loaderIpcBlocked+=status.blockedLoaderIpc;
-      }
       console.log(JSON.stringify({isolatedServices:['PostgreSQL 17','GoTrue','PostgREST','Express','chat Push worker'],
         mockedExpoSends:observed.length,externalNetworkAttempts:0,loaderIpcBlocked,guardRejectionProbesPassed:true,
         sharedDatabaseConnections:0,terminalOutboxRows:finalRows.length}));

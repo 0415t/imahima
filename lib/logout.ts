@@ -1,7 +1,6 @@
 import { isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js';
 import authStorage from './auth-storage';
 import { createLogoutFlow } from './logout-flow';
-import { getCurrentDeviceToken, registerDeviceToken, removeDeviceToken } from './push-notifications';
 import { createSessionDataClient, supabase } from './supabase';
 
 export const logoutFlow = createLogoutFlow({
@@ -13,15 +12,15 @@ export const logoutFlow = createLogoutFlow({
         if (error) throw error;
         return data.session;
     },
-    resolveToken: getCurrentDeviceToken,
+    resolveToken: async () => (await import('./push-notifications')).getCurrentDeviceToken(),
     async hasRegistrations(session) {
         const { data, error } = await createSessionDataClient(session.access_token)
             .from('user_device_tokens').select('id').eq('user_id', session.user.id).limit(1);
         if (error) throw error;
         return data.length > 0;
     },
-    register: registerDeviceToken,
-    remove: removeDeviceToken,
+    register: async (session, token) => (await import('./push-notifications')).registerDeviceToken(session, token),
+    remove: async (session, token) => (await import('./push-notifications')).removeDeviceToken(session, token),
     async revoke(session) {
         if (!supabase) throw new Error('Supabase is not configured');
         const { error } = await supabase.auth.admin.signOut(session.access_token, 'local');

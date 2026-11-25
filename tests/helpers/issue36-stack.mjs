@@ -32,7 +32,7 @@ export async function waitFor(check, label, signal, timeout = 15000, interval = 
   throw new Error(`Timed out: ${label}`);
 }
 
-export function createStack(signal) {
+export function createStack(signal, { allowSignup = false } = {}) {
   const label = 'imahima.issue36.run';
   const run = randomUUID();
   const networkName = 'imahima-issue36-' + run;
@@ -180,7 +180,7 @@ export function createStack(signal) {
     const auth = create('auth',{
       GOTRUE_API_HOST:'0.0.0.0', GOTRUE_API_PORT:'9999', API_EXTERNAL_URL:'http://127.0.0.1/auth/v1',
       GOTRUE_DB_DRIVER:'postgres', GOTRUE_DB_DATABASE_URL:`postgres://supabase_auth_admin:${authPassword}@db:5432/${database}?sslmode=disable`,
-      GOTRUE_SITE_URL:'http://127.0.0.1', GOTRUE_DISABLE_SIGNUP:'true', GOTRUE_EXTERNAL_EMAIL_ENABLED:'true',
+      GOTRUE_SITE_URL:'http://127.0.0.1', GOTRUE_DISABLE_SIGNUP:String(!allowSignup), GOTRUE_EXTERNAL_EMAIL_ENABLED:'true',
       GOTRUE_MAILER_AUTOCONFIRM:'true', GOTRUE_JWT_SECRET:secret, GOTRUE_JWT_AUD:'authenticated',
       GOTRUE_JWT_ADMIN_ROLES:'service_role', GOTRUE_JWT_DEFAULT_GROUP_NAME:'authenticated', GOTRUE_JWT_EXP:'3600',
       GOTRUE_LOG_LEVEL:'warn',
