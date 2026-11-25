@@ -12,6 +12,7 @@ const auditedCount = 23;
 // postflight SQL. These hashes describe stored statements, not source bytes.
 const auditedHistory = 'c8a6652a4fd252e9008644032d5d1147782160557adce8f328108a4bcbfe1e59';
 const auditedSources = '7e17af74ee1ef2bbbec8a6883a8967d055a9eeaaf5a9f5aa88d467ba0a2d09b8';
+const auditedMetadata = '8058cd5f6e3d29a40e78ec463ed2d858089fbcfd707c42bd4c8d800f3b8ab2a9';
 const digest = (bytes, algorithm = 'sha256') => createHash(algorithm).update(bytes).digest('hex');
 
 function requireCondition(condition, message) {
@@ -64,6 +65,10 @@ export function loadMigrationLedger({ ledger = ledgerUrl, directory = migrations
   requireCondition(digest(JSON.stringify(history)) === auditedHistory, 'Audited migration history or rebuild order changed');
   const sources = audited.map(entry => [entry.version, entry.gitBlob, entry.sourceSha256]);
   requireCondition(digest(JSON.stringify(sources)) === auditedSources, 'Audited migration sources changed');
+  const metadata = audited.map(({ file, dependsOn, apply }) => [
+    file, dependsOn, Object.keys(apply).sort().map(key => [key, apply[key]]),
+  ]);
+  requireCondition(digest(JSON.stringify(metadata)) === auditedMetadata, 'Audited migration dependencies or apply conditions changed');
   return migrations;
 }
 

@@ -11,6 +11,13 @@ import { loadMigrationLedger } from '../scripts/db/ledger.mjs';
 const originalLedger = new URL('../supabase/management/migration-ledger.json', import.meta.url);
 const originalMigrations = new URL('../supabase/migrations/', import.meta.url);
 
+function unusedVersion(entries) {
+  const versions = new Set(entries.map(({version}) => version));
+  let version = 20990101000000n;
+  while (versions.has(String(version))) version++;
+  return String(version);
+}
+
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'imahima-ledger-'));
   const directory = pathToFileURL(join(root, 'migrations') + sep);
@@ -32,12 +39,12 @@ function fixture(t) {
   return {entries, directory, load};
 }
 
-test('verifies all 23 migrations in the reviewed rebuild order', () => {
+test('verifies the fixed 23-migration prefix in the reviewed rebuild order', () => {
   const migrations = loadMigrationLedger();
-  assert.equal(migrations.length, 23);
+  assert.ok(migrations.length >= 23);
   assert.equal(migrations[11].version, '20261118000000');
   assert.equal(migrations[12].version, '20261107000000');
-  assert.equal(migrations.at(-1).version, '20261121000000');
+  assert.equal(migrations[22].version, '20261121000000');
 });
 
 test('accepts Windows checkout line endings without changing verified SQL', t => {
@@ -57,7 +64,7 @@ test('rejects duplicate versions, missing files and unlisted migrations', t => {
   unlinkSync(file);
   assert.throws(load, /Missing migration file/);
   copyFileSync(new URL(entries[0].file, originalMigrations), file);
-  writeFileSync(new URL('20990101000000_extra.sql', directory), 'SELECT 1;');
+  writeFileSync(new URL(`${unusedVersion(entries)}_extra.sql`, directory), 'SELECT 1;');
   assert.throws(load, /Migration files missing from ledger/);
 });
 
@@ -87,14 +94,35 @@ test('detects changed statements history independently of the file hashes', t =>
   assert.throws(load, /Invalid migration hashes/);
 });
 
+test('rejects removal of an otherwise valid dependency in the fixed prefix', t => {
+  const {entries, load} = fixture(t);
+  assert.ok(entries[1].dependsOn.length > 0);
+  entries[1].dependsOn = [];
+  assert.throws(load, /Audited migration dependencies or apply conditions changed/);
+});
+
+test('rejects removal or modification of a fixed apply precondition', t => {
+  const {entries, load} = fixture(t);
+  const {apply} = entries[0];
+  assert.ok(apply.preconditions.length > 0);
+  apply.preconditions = [];
+  assert.throws(load, /Audited migration dependencies or apply conditions changed/);
+  apply.preconditions = ['Different condition'];
+  assert.throws(load, /Audited migration dependencies or apply conditions changed/);
+  delete apply.preconditions;
+  assert.throws(load, /Invalid migration apply conditions/);
+});
+
 test('accepts an appended migration before it has a shared history fingerprint', t => {
   const {entries, directory, load} = fixture(t);
   const sql = '-- 追加マイグレーション\nSELECT 1;\n';
   const bytes = Buffer.from(sql);
+  const before = entries.length;
+  const version = unusedVersion(entries);
   const entry = {
-    version: '20990101000000',
+    version,
     name: 'example',
-    file: '20990101000000_example.sql',
+    file: `${version}_example.sql`,
     dependsOn: [entries.at(-1).version],
     gitBlob: createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex'),
     sourceSha256: createHash('sha256').update(bytes).digest('hex'),
@@ -105,7 +133,7 @@ test('accepts an appended migration before it has a shared history fingerprint',
   const file = new URL(entry.file, directory);
   writeFileSync(file, sql);
   const migrations = load();
-  assert.equal(migrations.length, 24);
+  assert.equal(migrations.length, before + 1);
   assert.deepEqual(migrations.at(-1), { ...entry, sql });
   writeFileSync(file, sql.replace(/\n/g, '\r\n'));
   assert.deepEqual(load(), migrations);
