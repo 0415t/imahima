@@ -16,6 +16,7 @@ const files = [
   'tests/test-member-free-notifications.ts',
   'tests/test-member-free-review.mjs',
   'tests/test-member-free-transport.ts',
+  'tests/test-migration-ledger.mjs',
   'tests/test-notification-runtime.ts',
   'tests/test-notifications.ts',
   'tests/test-profile-toggle.ts',

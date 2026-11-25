@@ -1,0 +1,403 @@
+{
+  "schemaVersion": 1,
+  "sourceHashFormat": "sha256 of Git blob content bytes",
+  "sharedHistoryHashFormat": "sha256 of UTF-8 PostgreSQL to_jsonb(statements)::text",
+  "sharedHistoryEvidence": "Issue #35 final audit and Issue #36 reviewed postflight SQL",
+  "migrations": [
+    {
+      "version": "20261001000000",
+      "name": "initial_schema",
+      "file": "20261001000000_initial_schema.sql",
+      "dependsOn": [],
+      "gitBlob": "850ff17a8a475e8a5a2ffb3c5590c054b1b4ae1e",
+      "sourceSha256": "44077731dba40c426329d4730489e7f9e24892f924331efda9d9096206df9689",
+      "sharedHistorySha256": "c60ca041d429dca8a4dd359e97e4bc4826ae6a293a957360a38388b734b5d7f4",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Supabase Auth already initialized"
+        ]
+      }
+    },
+    {
+      "version": "20261006000000",
+      "name": "toggle_profile_is_free",
+      "file": "20261006000000_toggle_profile_is_free.sql",
+      "dependsOn": [
+        "20261001000000"
+      ],
+      "gitBlob": "876d81ac21f6ac698ce5790aac1ca5ed0de56a17",
+      "sourceSha256": "b38fa86ba2f5873c16e03c8cfa57a137805aa727465c088466ad4c32965b457a",
+      "sharedHistorySha256": "6ec3eed74d1c9e809c9bc376e25d018762ada0bb2c598c77ec587064b2a0bb42",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261017000000",
+      "name": "create_user_device_tokens",
+      "file": "20261017000000_create_user_device_tokens.sql",
+      "dependsOn": [
+        "20261001000000"
+      ],
+      "gitBlob": "90535e4088f1b27e64f5201aef38b4769fe39ff0",
+      "sourceSha256": "96297b60e49ba0186145130c9612163a7b57c9d37fbb35bf4666595ae8d3b3da",
+      "sharedHistorySha256": "9ef60a9ffa4ffe56108b2a19926f735213b1a21f82423d2bb0ee35f9f8ba2e0e",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261104000000",
+      "name": "profile_free_until",
+      "file": "20261104000000_profile_free_until.sql",
+      "dependsOn": [
+        "20261001000000"
+      ],
+      "gitBlob": "5f0df70e1495eacec4383eeda6e62dfbdebd60e1",
+      "sourceSha256": "934c37e698d86cd0c0eb300fb21b55e3fdff45d14e3dea23d39ef0b0e7df9605",
+      "sharedHistorySha256": "7873d399fb5b3b36740b9b1f4f589e84215ff75cc1a51f5e9cdb82817e356cc0",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261105000000",
+      "name": "set_profile_is_free_atomic",
+      "file": "20261105000000_set_profile_is_free_atomic.sql",
+      "dependsOn": [
+        "20261104000000"
+      ],
+      "gitBlob": "3f1f8f6d56191b90d08d8e6cce079ad4e5e2c4a4",
+      "sourceSha256": "e1ea8c3bfa79b801a7cf9ba47839980d0b3460cfd333350188f2a5f9853fcff8",
+      "sharedHistorySha256": "2f5614919833a90e5acc940f389e347c16050906a9b1b96e56b1f7c937973ded",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261105000001",
+      "name": "extend_profile_is_free",
+      "file": "20261105000001_extend_profile_is_free.sql",
+      "dependsOn": [
+        "20261104000000"
+      ],
+      "gitBlob": "99861305552ea91004d1ba50046e587c9f2b3cd3",
+      "sourceSha256": "d0160fa855d3acdff2968369e3d6ab039dc532d33aba11868c9b7b5e9b49f064",
+      "sharedHistorySha256": "acd977bff7f510296a01f8278d1f5ea190c983825e68891f6b5f04c402685d0e",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261105000002",
+      "name": "enable_pg_cron",
+      "file": "20261105000002_enable_pg_cron.sql",
+      "dependsOn": [
+        "20261001000000"
+      ],
+      "gitBlob": "4c52e8125a71c1326351d6ecf54feb673cbc64ec",
+      "sourceSha256": "44e36fdb35162ed6892a9a02ff5a4278e4c525575dfeb23cc7841fbf1d972369",
+      "sharedHistorySha256": "800343de7860aecc3c8c52cb03d3e35ad491081187ef4c69d5b5be79bf0531c0",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "pg_cron available to the migration role"
+        ]
+      }
+    },
+    {
+      "version": "20261106000000",
+      "name": "auto_expire_free_status",
+      "file": "20261106000000_auto_expire_free_status.sql",
+      "dependsOn": [
+        "20261104000000"
+      ],
+      "gitBlob": "1bfed5ede0d0d5c9a9794d746105ff875257ddae",
+      "sourceSha256": "8691ef4758a75bc454941380c8c804912b147debfb1173b4a3c718c29318c3f9",
+      "sharedHistorySha256": "525d352a8cef0b7a644bd6188d3d57ee1f9d2f15e609e5df1492bebc0d75c77f",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261106000001",
+      "name": "schedule_auto_expire",
+      "file": "20261106000001_schedule_auto_expire.sql",
+      "dependsOn": [
+        "20261105000002",
+        "20261106000000"
+      ],
+      "gitBlob": "5cc18e11c56855b24fb3ac33634efbfdd45d8ceb",
+      "sourceSha256": "ae745bd9148d58320f6e50bf8a1057bac7d2f16aa0345dc3c728790136510cbc",
+      "sharedHistorySha256": "35ec86188100df0e86a8cc9ea7e8e7ef15677ba6fc3bfda0e5487e75908d46bc",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Cron registration available; job execution disabled in isolated tests"
+        ]
+      }
+    },
+    {
+      "version": "20261111000000",
+      "name": "group_management_mvp",
+      "file": "20261111000000_group_management_mvp.sql",
+      "dependsOn": [
+        "20261001000000"
+      ],
+      "gitBlob": "96c4af290137e612fd834519c188d685c7cffc90",
+      "sourceSha256": "d0f1faf92ce1c427929f4078af8d60103e9bbacadfb3e7b93514256ee4111e0d",
+      "sharedHistorySha256": "0ef8596bfeeb97f24b79d067b34fedde7482f46ea54761d34466cf6251b0e9d7",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261111000001",
+      "name": "restrict_profile_client_writes",
+      "file": "20261111000001_restrict_profile_client_writes.sql",
+      "dependsOn": [
+        "20261105000000",
+        "20261105000001"
+      ],
+      "gitBlob": "48f147b7077aff3aaf62248c7b882a5ac3054c49",
+      "sourceSha256": "63fa2a53f70b19199e48fbadd24002d5caeb2ad9cb2f3715e687c385a7de251f",
+      "sharedHistorySha256": "23d39b30fde92e087f99e338041b79fcbc6b8528025d5cfa754b46d9f790a936",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261118000000",
+      "name": "harden_core_runtime_privileges",
+      "file": "20261118000000_harden_core_runtime_privileges.sql",
+      "dependsOn": [
+        "20261006000000",
+        "20261017000000",
+        "20261106000001",
+        "20261111000000",
+        "20261111000001"
+      ],
+      "gitBlob": "8121e7f383cddf665c18055dab3fbdafb6ecea4d",
+      "sourceSha256": "36fe22d61e83d4f3969eb43925348ba9052894b22ae822f9afc2b3ca68bfab3d",
+      "sharedHistorySha256": "6538e6f822db292aac927fe6a3576939758451b3127f2ba7d5c3bf90bd7bac41",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261107000000",
+      "name": "free_end_notification_claims",
+      "file": "20261107000000_free_end_notification_claims.sql",
+      "dependsOn": [
+        "20261118000000"
+      ],
+      "gitBlob": "a8c5a4acc8cbba630d0baaf3936f31336bc83ebb",
+      "sourceSha256": "cc5373b6b056e94c63c911cc2d73fe9be8be434b9bbf36071ee4dc2dc554571b",
+      "sharedHistorySha256": "5e203d7ca07df8c3e679093d357f5a29e354404486fb39f7d509d8e28951f852",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261110000000",
+      "name": "extend_profile_is_free_from_notification",
+      "file": "20261110000000_extend_profile_is_free_from_notification.sql",
+      "dependsOn": [
+        "20261105000001",
+        "20261107000000"
+      ],
+      "gitBlob": "ba9e234d50f5b1fbe0ef4d9464259bd60dfd2b49",
+      "sourceSha256": "abab88749335f5b5cb44fa320bdf5971df7184ac3d6242b4424f4bab0b88f804",
+      "sharedHistorySha256": "cc70e8469f279f5e2fd0808fab4c7ccbd9bdcfe3c697c6301149331bb6ccadab",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261117000001",
+      "name": "fix_timer_lock_time_and_notification_retry",
+      "file": "20261117000001_fix_timer_lock_time_and_notification_retry.sql",
+      "dependsOn": [
+        "20261105000000",
+        "20261107000000",
+        "20261110000000"
+      ],
+      "gitBlob": "16056d96081d0d140aa45dec8ce7e56b2acf8055",
+      "sourceSha256": "d4157cbb0f6da753ff8862741925b936022115b8965f7ff19b5f7efc54565826",
+      "sharedHistorySha256": "3b53b8b65296a10a6b9ea12cb3f727f14e1effd2bb7108a9d7e69ae7720e91fc",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261117000000",
+      "name": "index_group_mvp_rate_limits_window_start",
+      "file": "20261117000000_index_group_mvp_rate_limits_window_start.sql",
+      "dependsOn": [
+        "20261111000000"
+      ],
+      "gitBlob": "879af3261d9e64b7aa43d450757b4b10845412e6",
+      "sourceSha256": "77d36231e04aec5030520859ce61be683c5f18385dc52c0ab60988a63e868bde",
+      "sharedHistorySha256": "7a79cc5d78795d01abb8347af097b6c02fde8b12d7c81a406eaabf4347317483",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261112000000",
+      "name": "member_free_notifications",
+      "file": "20261112000000_member_free_notifications.sql",
+      "dependsOn": [
+        "20261111000000",
+        "20261117000001"
+      ],
+      "gitBlob": "a2ef5bd6105f075f64bfd036e60397dc6a2bdb79",
+      "sourceSha256": "3b09e10970c6981bf3f717f4e48f22841e3d985df9b8b21b4bedcd977bb82e29",
+      "sharedHistorySha256": "00d6256f938d18220cdff112894b42490737229a616730b46fe755265a5d01f9",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261118000001",
+      "name": "harden_notification_runtime_privileges",
+      "file": "20261118000001_harden_notification_runtime_privileges.sql",
+      "dependsOn": [
+        "20261118000000",
+        "20261117000001",
+        "20261112000000"
+      ],
+      "gitBlob": "98a67422b8f867d3c87784734a899c2011c6ba7d",
+      "sourceSha256": "d27ece9b52f907f81233523ebdb9025d7178c3c09e15bb14d591e3dbafd7d045",
+      "sharedHistorySha256": "22c0e3f882f04ef8e9cf7739016456dd696ef28d3148765ef0f55fb3099093a2",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261113000000",
+      "name": "group_chat_mvp",
+      "file": "20261113000000_group_chat_mvp.sql",
+      "dependsOn": [
+        "20261111000000",
+        "20261118000001"
+      ],
+      "gitBlob": "860afafc1e3372304b2acc6026e569bf36e2cd6b",
+      "sourceSha256": "fd91db0cd9900097c292f0ca8055dd8a358071657ef4732e6b6cf5bfddfb0fa7",
+      "sharedHistorySha256": "caa560693c3e496fd28c07ccb98f5ce39fa21fc1fe0e5841e6d8f559b13b7c66",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "supabase_realtime publication exists"
+        ]
+      }
+    },
+    {
+      "version": "20261118000002",
+      "name": "harden_chat_runtime_privileges",
+      "file": "20261118000002_harden_chat_runtime_privileges.sql",
+      "dependsOn": [
+        "20261113000000"
+      ],
+      "gitBlob": "e8e3230d0ae0746bec50b69212181bbde785379d",
+      "sourceSha256": "db1735c3c133c8abcb3ec5c0fd4fae0eab778ca9f32da7eab8b1228abf7164cf",
+      "sharedHistorySha256": "218089120ed75721be9643f178e05450591ddc558f36292cf9de79f7893ccb7f",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261116000000",
+      "name": "group_mvp_managed_archive",
+      "file": "20261116000000_group_mvp_managed_archive.sql",
+      "dependsOn": [
+        "20261111000000",
+        "20261118000002"
+      ],
+      "gitBlob": "2712e157e76ec9332bba23fc0c66ae9258f7f779",
+      "sourceSha256": "dfc0f9c527cb56cd93ab325eff1ca6c27f43501446dc676987eb47a942bddce3",
+      "sharedHistorySha256": "66439a35188ce472cdd0500f9ca0fbfe2bbe3a383a7f734b97be404d8a53a1f9",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Reviewed room classification supplied; empty array only for a fresh empty fixture"
+        ]
+      }
+    },
+    {
+      "version": "20261118000003",
+      "name": "harden_archive_runtime_privileges",
+      "file": "20261118000003_harden_archive_runtime_privileges.sql",
+      "dependsOn": [
+        "20261116000000"
+      ],
+      "gitBlob": "f691696181800abbbe250d7bb7f9981d9803f092",
+      "sourceSha256": "4739dd5009070c51e00ddd1a88821e5e06d6acb9961339fb5c2132ecc2b01457",
+      "sharedHistorySha256": "af1754e25067bc2b8fed98b6c8b710c22f81b7214a101b6f1f6d2b615271f2f0",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": []
+      }
+    },
+    {
+      "version": "20261121000000",
+      "name": "chat_message_push_notifications",
+      "file": "20261121000000_chat_message_push_notifications.sql",
+      "dependsOn": [
+        "20261112000000",
+        "20261113000000",
+        "20261116000000",
+        "20261118000003"
+      ],
+      "gitBlob": "1346d8c89dd86ef40aec6d8abb438f4e050ae5e1",
+      "sourceSha256": "dbb8c2293f22813825275774d9e9da0f167291be5b9a73adaa61ed63b3562f8e",
+      "sharedHistorySha256": "9f0809b7934d9485f5b2ab3ca5ea15904fd47f9731464390a74126dfb164437e",
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "public.profiles.free_period_id and group chat membership/events exist"
+        ]
+      }
+    }
+  ]
+}
