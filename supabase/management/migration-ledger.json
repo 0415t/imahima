@@ -398,6 +398,27 @@
           "public.profiles.free_period_id and group chat membership/events exist"
         ]
       }
+    },
+    {
+      "version": "20261125000000",
+      "name": "device_registration_recovery_foundation",
+      "file": "20261125000000_device_registration_recovery_foundation.sql",
+      "dependsOn": [
+        "20261001000000",
+        "20261017000000",
+        "20261118000000"
+      ],
+      "gitBlob": "5b78922c05ece7bfa58ad550cd5c3eaef7fbbf8d",
+      "sourceSha256": "131fd1472c415ccfe33965946823f2a7700ca5cd6831d5682d30477faa1f2082",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "auth.users and public.user_device_tokens exist",
+          "Application roles anon, authenticated and service_role exist"
+        ]
+      }
     }
   ]
 }

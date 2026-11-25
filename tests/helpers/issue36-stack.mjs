@@ -2,22 +2,16 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { transactionBody } from '../../verification/issue35/sql-transactions.mjs';
+import { loadMigrationLedger } from '../../scripts/db/ledger.mjs';
 
 const images = {
   db: 'public.ecr.aws/supabase/postgres:17.11.0.011',
   auth: 'public.ecr.aws/supabase/gotrue:v2.197.0',
   rest: 'public.ecr.aws/supabase/postgrest:v16.5',
 };
-const versions = [
-  '20261001000000','20261006000000','20261017000000','20261104000000','20261105000000','20261105000001',
-  '20261105000002','20261106000000','20261106000001','20261111000000','20261111000001','20261118000000',
-  '20261107000000','20261110000000','20261117000001','20261117000000','20261112000000','20261118000001',
-  '20261113000000','20261118000002','20261116000000','20261118000003','20261121000000',
-];
 export const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   /^(PATH|SYSTEMROOT|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|PATHEXT|HOME|USERPROFILE|LOCALAPPDATA)$/i.test(key)));
 
@@ -146,6 +140,7 @@ export function createStack(signal, { allowSignup = false } = {}) {
     });
   }
   async function start() {
+    const migrations = loadMigrationLedger();
     console.log(`Issue #36 Docker run UUID: ${run} (socket: ${host})`);
     network = docker(['network','create','--internal','--label',`${label}=${run}`,networkName]);
     assert.match(network,/^[a-f0-9]{64}$/);
@@ -191,17 +186,12 @@ export function createStack(signal, { allowSignup = false } = {}) {
     await waitFor(()=>healthy(authOrigin+'/health'),'real GoTrue',signal,30000);
     verifyIdentity();
     assert.equal(admin('SELECT count(*) FROM auth.users;'),'0');
-    const dir = new URL('../../supabase/migrations/',import.meta.url);
-    const files = readdirSync(dir);
-    assert.equal(files.length,versions.length,'Review new migration list before running this test');
     assert.equal(admin("SELECT count(*) FROM pg_publication WHERE pubname='supabase_realtime';"),'1');
-    for (const version of versions) {
+    for (const {version,sql} of migrations) {
       signal?.throwIfAborted();
-      const file = files.find(name=>name.startsWith(version+'_'));
-      assert.ok(file);
       try {
         admin("BEGIN; SET LOCAL ROLE postgres; SET LOCAL imahima.room_classification='[]';\n"+
-          transactionBody(readFileSync(new URL(file,dir),'utf8'))+'\nCOMMIT;');
+          transactionBody(sql)+'\nCOMMIT;');
       } catch(error) { throw new Error(`Isolated migration ${version}: ${error.message}`); }
     }
     const rest = create('rest',{
