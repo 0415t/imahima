@@ -29,6 +29,7 @@ const excluded = {
   'tests/test-chat-db.ts': ['DB / Integration', '隔離PostgreSQLまたは実Auth・PostgREST'],
   'tests/test-chat-lock-timeout.mjs': ['DB', '隔離PostgreSQLのロック待ち'],
   'tests/test-chat-message-db.mjs': ['DB', '専用PostgreSQLクラスタ'],
+  'tests/test-chat-push-integration.mjs': ['Integration', '専用GoTrue・PostgREST・PG17と模擬Expo'],
   'tests/test-chat-review.mjs': ['Offline（手動）', '一時ファイルとGitクローンを操作'],
   'tests/test-group-db-concurrency.mjs': ['DB', '隔離PostgreSQLの並行接続'],
   'tests/test-member-free-api.mjs': ['Integration', '専用Supabaseの実Auth・DB'],
