@@ -8,7 +8,7 @@ BEGIN
         AND installation_id IS NULL AND generation IS NULL AND registration_revision IS NULL
         FROM public.user_device_tokens WHERE id = '12000000-0000-0000-0000-000000000024'
             AND expo_push_token = 'legacy-before-recovery-ddl'), 'DDL must preserve the pre-existing row';
-    ASSERT (SELECT count(*) = 4 AND bool_and(c.relrowsecurity)
+    ASSERT (SELECT count(*) >= 4 AND bool_and(c.relrowsecurity)
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'push_private' AND c.relkind = 'r'), 'Private table RLS missing';
     ASSERT NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'push_private');

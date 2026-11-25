@@ -419,6 +419,27 @@
           "Application roles anon, authenticated and service_role exist"
         ]
       }
+    },
+    {
+      "version": "20261126000000",
+      "name": "device_registration_recovery_rpc",
+      "file": "20261126000000_device_registration_recovery_rpc.sql",
+      "dependsOn": [
+        "20261125000000",
+        "20261118000000"
+      ],
+      "gitBlob": "e80692b5a81d498124d2bb3d3e7fa68a31848537",
+      "sourceSha256": "8f2597a128962ed526dee80107e1791038abe33f79307e0fe295d7eef683a372",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Migration owner can create a dedicated NOLOGIN role",
+          "PostgREST authenticator and application roles must not inherit verifier access",
+          "No verifier login is provisioned by this migration"
+        ]
+      }
     }
   ]
 }

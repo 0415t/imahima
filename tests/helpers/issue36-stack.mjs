@@ -105,6 +105,15 @@ export function createStack(signal, { allowSignup = false } = {}) {
     verifyIdentity();
     return admin(input);
   }
+  function openSqlSession() {
+    verifyIdentity();
+    const child = spawn('docker', ['--host',host,'exec','-i',db,'psql','-X','-w','-h','/var/run/postgresql',
+      '-U','supabase_admin','-d',database,'-Atq','-v','ON_ERROR_STOP=1'],
+    {env:cleanEnv,windowsHide:true,stdio:['pipe','pipe','pipe']});
+    relays.add(child);
+    child.once('close',()=>relays.delete(child));
+    return child;
+  }
   function key(role) {
     const header = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
     const claims = Buffer.from(JSON.stringify({role, iss:'supabase', exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');
@@ -258,5 +267,5 @@ export function createStack(signal, { allowSignup = false } = {}) {
     }
     assert.deepEqual(errors,[]);
   }
-  return {start,stop,query,verifyIdentity};
+  return {start,stop,query,verifyIdentity,openSqlSession};
 }
