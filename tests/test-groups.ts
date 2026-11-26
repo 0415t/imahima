@@ -37,6 +37,7 @@ describe('Group API authorization and contracts', () => {
     const freeUntil = new Date(Date.now() + 60 * 60_000).toISOString();
     server = createServer(createApp({
       getUserId: deps.getUserId,
+      authenticateNotificationSession: async () => ({ userId: 'actor', status: 200 }),
       toggleIsFree: async () => ({ isFree: false, error: null }),
       setIsFree: async (_id, isFree) => ({ isFree, freeUntil, error: null }),
       extendIsFree: async () => ({ isFree: true, freeUntil, error: null }),

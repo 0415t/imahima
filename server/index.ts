@@ -9,7 +9,7 @@ import { createPushNotificationService } from './services/notifications';
 import { groupService } from './services/groups';
 import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
-import { createDeviceVerifierPool, deviceVerifierRouter } from './device-verifier';
+import { createDeviceVerifierPool, deviceVerifierRouter, notificationSessionAuthenticator } from './device-verifier';
 import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim } from './jobs/member-free-notifications';
 import { createChatMessageNotificationPoller, parseChatNotificationOptions, type ChatMessageClaim } from './jobs/chat-message-notifications';
 
@@ -36,15 +36,13 @@ const getUserId = async (accessToken: string) => {
 
 const groups = groupService(serverSupabase, getUserId);
 const verifierDatabaseUrl = process.env.DEVICE_VERIFIER_DATABASE_URL;
-const deviceVerifier = verifierDatabaseUrl
-  ? deviceVerifierRouter(
-      createDeviceVerifierPool(verifierDatabaseUrl),
-      new URL('/auth/v1', process.env.SUPABASE_URL).href,
-      token => serverSupabase.auth.getClaims(token),
-    )
-  : undefined;
+const verifierPool = verifierDatabaseUrl ? createDeviceVerifierPool(verifierDatabaseUrl) : undefined;
+const issuer = verifierPool ? new URL('/auth/v1', process.env.SUPABASE_URL).href : '';
+const claimsLookup = (token: string) => serverSupabase.auth.getClaims(token);
+const deviceVerifier = verifierPool ? deviceVerifierRouter(verifierPool, issuer, claimsLookup) : undefined;
 const app = createApp({
   getUserId,
+  authenticateNotificationSession: verifierPool ? notificationSessionAuthenticator(verifierPool, issuer, claimsLookup) : undefined,
   toggleIsFree: async (userId) => {
     const { data, error } = await serverSupabase.rpc('toggle_profile_is_free', {
       target_profile_id: userId,

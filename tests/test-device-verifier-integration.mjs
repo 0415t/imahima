@@ -6,7 +6,7 @@ import { Agent, request } from 'node:http';
 import { test } from 'node:test';
 import { createClient } from '@supabase/supabase-js';
 import { createApp } from '../server/app.ts';
-import { createDeviceVerifierPool, deviceSigningBytes, deviceVerifierRouter } from '../server/device-verifier.ts';
+import { createDeviceVerifierPool, deviceSigningBytes, deviceVerifierRouter, notificationSessionAuthenticator } from '../server/device-verifier.ts';
 import { createStack, waitFor } from './helpers/issue36-stack.mjs';
 
 function makeKey() {
@@ -69,15 +69,25 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       const { data, error } = await auth.auth.signUp({ email, password: userPassword });
       assert.equal(Boolean(error), false);
       assert.ok(data.session);
-      return { email, userPassword, access: data.session.access_token };
+      return { email, userPassword, access: data.session.access_token, refresh: data.session.refresh_token };
     }
     const first = await signup();
     const second = await signup();
     const issuer = 'http://127.0.0.1/auth/v1';
     assert.equal(deviceSigningBytes(['あ', '', 'A', null]).toString('utf8'),
       '23:imahima-device-proof-v13:あ0:1:A-:');
-    const router = deviceVerifierRouter(pool, issuer, token => auth.auth.getClaims(token));
-    server = createApp({}, undefined, undefined, undefined, undefined, router).listen(0, '127.0.0.1');
+    let cachedOldClaims;
+    const claimsLookup = token => token === first.access && cachedOldClaims
+      ? Promise.resolve(cachedOldClaims) : auth.auth.getClaims(token);
+    const router = deviceVerifierRouter(pool, issuer, claimsLookup);
+    let notificationExtensions = 0;
+    server = createApp({
+      authenticateNotificationSession: notificationSessionAuthenticator(pool, issuer, claimsLookup),
+      extendIsFreeFromNotification: async () => {
+        notificationExtensions++;
+        return { isFree: true, freeUntil: null, error: null };
+      },
+    }, undefined, undefined, undefined, undefined, router).listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`;
     async function post(action, body, status = 200, access = first.access) {
@@ -94,6 +104,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     const installationId = randomUUID();
     const base = { installationId, keyVersion: '1' };
     function signed(action, body, signingKey = key, access = first.access) {
+      if (action === 'confirm-auth-revocation') action = 'confirm_auth_revocation';
       const jwt = JSON.parse(Buffer.from(access.split('.')[1], 'base64url'));
       const bytes = deviceSigningBytes([issuer, jwt.sub, jwt.session_id, body.installationId, action,
         action === 'challenge' ? body.purpose : action, body.keyVersion ?? '1', body.generation ?? null,
@@ -152,8 +163,24 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     await post('register', good);
     const lookup = signed('lookup', { ...base, generation, operationId, nonce: await challenge('lookup') });
     assert.equal((await post('lookup', lookup)).result.registered, true);
+    const confirmation = { ...base, generation, operationId: randomUUID() };
+    const confirm = async (access = unrelatedSession, fields = confirmation, status = 200) => {
+      const request = signed('confirm-auth-revocation', {
+        ...fields, nonce: await challenge('confirm_auth_revocation', access),
+      }, key, access);
+      return post('confirm-auth-revocation', request, status, access);
+    };
+    await confirm(unrelatedSession, confirmation, 403);
     const fence = signed('fence', { ...base, generation, operationId: randomUUID(), nonce: await challenge('fence') });
     assert.equal((await post('fence', fence)).result.fenced, true);
+    assert.equal((await confirm()).result.status, 'pending');
+    await confirm(second.access, confirmation, 403);
+    await confirm(unrelatedSession, { ...confirmation, generation: '999999' }, 403);
+    const openAs = async (access, status) => post('enroll', signed('enroll', {
+      ...base, nonce: await challenge('enroll', access),
+    }, key, access), status, access);
+    await openAs(second.access, 403);
+    await openAs(unrelatedSession, 403);
     await post('register', signed('register', { ...register, operationId: randomUUID(), nonce: await challenge('register') }), 403);
 
     const expired = await challenge('lookup');
@@ -313,6 +340,137 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     await post('enrollment-challenge', enroll, 429);
     assert.ok(gateway.traffic.get('/auth/v1/user 200') > 0);
     assert.ok(gateway.traffic.get('/rest/v1/rpc/lock_device_verification_key 404') > 0);
+
+    base.keyVersion = '2';
+    confirmation.keyVersion = '2';
+    // Start this independent recovery scenario below the bounded issuance quota.
+    stack.query(`DELETE FROM push_private.device_challenges WHERE installation_id='${installationId}';`);
+    const jwtClaims = token => JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
+    const oldSession = jwtClaims(first.access).session_id;
+    const survivingSession = jwtClaims(unrelatedSession).session_id;
+    const boundWhere = `installation_id='${installationId}' AND generation=${generation}`;
+    stack.query(`UPDATE push_private.installation_bindings SET session_id='${jwtClaims(second.access).session_id}'
+      WHERE ${boundWhere};`);
+    await confirm(unrelatedSession, confirmation, 503);
+    assert.equal(stack.query(`SELECT auth_revocation_confirmed_at IS NULL FROM push_private.installation_bindings WHERE ${boundWhere};`), 't');
+    stack.query(`UPDATE push_private.installation_bindings SET session_id='${oldSession}' WHERE ${boundWhere};`);
+
+    const extendFromNotification = access => localFetch(origin)(origin + '/profiles/me/is-free/extend-from-notification', {
+      method: 'POST', headers: { authorization: 'Bearer ' + access, 'content-type': 'application/json' },
+      body: JSON.stringify({ claim_id: randomUUID() }),
+    });
+    assert.equal((await extendFromNotification(first.access)).status, 200);
+    // Emulate a signature-valid JWT check that doesn't consult Auth again, as
+    // with a locally verified asymmetric token after its session was removed.
+    cachedOldClaims = await auth.auth.getClaims(first.access);
+    assert.ok(cachedOldClaims.data?.claims && !cachedOldClaims.error);
+    const localAuth = localFetch(gateway.url);
+    const headers = { authorization: 'Bearer ' + first.access, 'content-type': 'application/json' };
+    const [logout, refresh] = await Promise.all([
+      localAuth(gateway.url + '/auth/v1/logout?scope=local', { method: 'POST', headers }),
+      localAuth(gateway.url + '/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST', headers, body: JSON.stringify({ refresh_token: first.refresh }),
+      }),
+    ]);
+    assert.equal(logout.status, 204);
+    assert.ok([200, 400, 401].includes(refresh.status));
+    assert.equal(stack.query(`SELECT EXISTS (SELECT 1 FROM auth.sessions WHERE id='${oldSession}'),
+      EXISTS (SELECT 1 FROM auth.sessions WHERE id='${survivingSession}');`), 'f|t');
+    assert.equal((await extendFromNotification(first.access)).status, 401);
+    assert.equal(notificationExtensions, 1);
+    await post('enrollment-challenge', enroll, 401, first.access);
+
+    stack.query(`CREATE ROLE device_proof_no_auth NOLOGIN;
+      GRANT USAGE ON SCHEMA push_private TO device_proof_no_auth;
+      ALTER FUNCTION push_private.auth_session_present(uuid,uuid) OWNER TO device_proof_no_auth;`);
+    try {
+      assert.equal((await extendFromNotification(unrelatedSession)).status, 503);
+      await post('enrollment-challenge', enroll, 503, unrelatedSession);
+    } finally {
+      stack.query('ALTER FUNCTION push_private.auth_session_present(uuid,uuid) OWNER TO postgres;');
+    }
+    assert.equal(stack.query(`SELECT auth_revocation_confirmed_at IS NULL FROM push_private.installation_bindings WHERE ${boundWhere};`), 't');
+
+    const pendingProof = signed('confirm-auth-revocation', {
+      ...confirmation, nonce: await challenge('confirm_auth_revocation', unrelatedSession),
+    }, key, unrelatedSession);
+    const sessionFunction = Buffer.from(stack.query(`SELECT encode(convert_to(
+      pg_get_functiondef('push_private.auth_session_present(uuid,uuid)'::regprocedure),'UTF8'),'hex');`), 'hex').toString();
+    const injectOldSessionCheck = sql => {
+      const target = 'SELECT s.user_id INTO owner_id';
+      assert.ok(sessionFunction.includes(target));
+      stack.query(sessionFunction.replace(target, `IF p_session='${oldSession}' THEN ${sql} END IF;\n    ${target}`));
+    };
+    // A separate isolated fixture induces the same RLS read error without modifying auth.sessions.
+    stack.query(`CREATE TABLE push_private.test_invisible_session (id uuid PRIMARY KEY);
+      INSERT INTO push_private.test_invisible_session VALUES ('${oldSession}');
+      ALTER TABLE push_private.test_invisible_session ENABLE ROW LEVEL SECURITY;
+      GRANT SELECT ON push_private.test_invisible_session TO device_proof_no_auth;
+      CREATE FUNCTION push_private.test_rls_presence() RETURNS boolean
+      LANGUAGE sql SECURITY DEFINER SET search_path='' SET row_security=off AS $$
+        SELECT EXISTS (SELECT 1 FROM push_private.test_invisible_session);
+      $$;
+      ALTER FUNCTION push_private.test_rls_presence() OWNER TO device_proof_no_auth;`);
+    injectOldSessionCheck('PERFORM push_private.test_rls_presence();');
+    try {
+      await post('confirm-auth-revocation', pendingProof, 503, unrelatedSession);
+    } finally {
+      stack.query(sessionFunction);
+    }
+    assert.equal(stack.query(`SELECT auth_revocation_confirmed_at IS NULL FROM push_private.installation_bindings WHERE ${boundWhere};`), 't');
+
+    const probeHold = stack.openSqlSession();
+    let probeOutput = '';
+    probeHold.stdout.on('data', chunk => { probeOutput += chunk; });
+    const probeClosed = once(probeHold, 'close');
+    probeHold.stdin.write('BEGIN; SELECT pg_advisory_xact_lock(260027, 1);\n\\echo probe-ready\n');
+    let probeRequest;
+    try {
+      await waitFor(() => probeOutput.includes('probe-ready'), 'old session read fault lock held', t.signal);
+      injectOldSessionCheck('PERFORM set_config(\'lock_timeout\',\'0\',true); PERFORM pg_advisory_xact_lock(260027, 1);');
+      probeRequest = post('confirm-auth-revocation', pendingProof, null, unrelatedSession);
+      await waitFor(blocked, 'confirmation waits during the old session check', t.signal);
+      const probePid = stack.query(`SELECT pid FROM pg_stat_activity WHERE pid<>pg_backend_pid()
+        AND application_name='device-proof-test' AND usename='imahima_device_api_login'
+        AND cardinality(pg_blocking_pids(pid))>0;`);
+      assert.match(probePid, /^[1-9][0-9]*$/);
+      assert.equal(stack.query(`SELECT pg_terminate_backend(${probePid});`), 't');
+      assert.equal((await probeRequest).status, 503);
+    } finally {
+      probeHold.stdin.end('ROLLBACK;\n');
+      await probeClosed;
+      await probeRequest;
+      stack.query(sessionFunction);
+    }
+    assert.equal(stack.query(`SELECT auth_revocation_confirmed_at IS NULL FROM push_private.installation_bindings WHERE ${boundWhere};`), 't');
+    stack.query(`CREATE FUNCTION push_private.test_fail_confirmation() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.kind='confirm_auth_revocation' THEN RAISE EXCEPTION 'fixture abort'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER test_fail_confirmation BEFORE INSERT ON push_private.operations
+      FOR EACH ROW EXECUTE FUNCTION push_private.test_fail_confirmation();`);
+    await post('confirm-auth-revocation', pendingProof, 503, unrelatedSession);
+    assert.equal(stack.query(`SELECT auth_revocation_confirmed_at IS NULL FROM push_private.installation_bindings WHERE ${boundWhere};`), 't');
+    assert.equal(stack.query(`SELECT count(*) FROM push_private.operations WHERE operation_id='${confirmation.operationId}';`), '0');
+    stack.query('DROP TRIGGER test_fail_confirmation ON push_private.operations;');
+    // The handler sends headers after COMMIT. Drop the response stream before
+    // handing the result to the caller and recover it with a fresh challenge.
+    await new Promise((resolve, reject) => {
+      const req = request(origin + '/device-recovery/confirm-auth-revocation', {
+        method: 'POST', agent,
+        headers: { authorization: 'Bearer ' + unrelatedSession, 'content-type': 'application/json' },
+      }, response => {
+        response.destroy();
+        if (response.statusCode === 200) resolve();
+        else reject(new Error(`Unexpected confirmation response status ${response.statusCode}`));
+      });
+      req.on('error', reject);
+      req.end(JSON.stringify(pendingProof));
+    });
+    assert.equal((await confirm()).result.status, 'confirmed');
+    assert.equal((await post('lookup', signed('lookup', {
+      ...confirmation, nonce: await challenge('lookup', unrelatedSession),
+    }, key, unrelatedSession), 200, unrelatedSession)).result.status, 'confirmed');
+    await confirm(unrelatedSession, { ...confirmation, operationId }, 409);
+    await openAs(second.access, 200);
   } finally {
     agent.destroy();
     if (server) {

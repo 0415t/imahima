@@ -6,7 +6,7 @@ import { abortable, TIMEOUTS } from './timeouts';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const publicKeyPrefix = Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex');
-const purposes = ['enroll', 'register', 'fence', 'lookup'];
+const purposes = ['enroll', 'register', 'fence', 'lookup', 'confirm_auth_revocation'];
 const hash = (value: Buffer) => createHash('sha256').update(value).digest();
 
 class Rejected extends Error {
@@ -114,7 +114,27 @@ const operations = {
   register: 'SELECT push_private.register_device_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
   fence: 'SELECT push_private.fence_device_registration($1,$2,$3,$4,$5,$6,$7) AS result',
   lookup: 'SELECT push_private.get_device_operation($1,$2,$3,$4,$5,$6) AS result',
+  confirm_auth_revocation: 'SELECT push_private.confirm_auth_revocation($1,$2,$3,$4,$5,$6) AS result',
 } as const;
+
+async function requireLiveSession(db: PoolClient, identity: { user: string; session: string }) {
+  const checked = await db.query('SELECT push_private.auth_session_present($1,$2) AS present',
+    [identity.user, identity.session]).catch(() => { throw new Rejected(503); });
+  const present = checked.rows[0]?.present;
+  if (present !== true) throw new Rejected(present === false ? 401 : 503);
+}
+
+export function notificationSessionAuthenticator(pool: Pool, issuer: string, claimsLookup: ClaimsLookup) {
+  return async (token: string) => {
+    try {
+      const identity = await getIdentity(`Bearer ${token}`, issuer, claimsLookup);
+      await transaction(pool, db => requireLiveSession(db, identity));
+      return { userId: identity.user, status: 200 as const };
+    } catch (error) {
+      return { userId: null, status: error instanceof Rejected && error.status === 401 ? 401 as const : 503 as const };
+    }
+  };
+}
 
 const signedFields = ['installationId', 'keyVersion', 'nonce', 'signature'];
 const operationFields = [...signedFields, 'generation', 'operationId'];
@@ -126,6 +146,7 @@ const requestFields = {
   register: [...operationFields, 'token', 'platform', 'deviceName'],
   fence: operationFields,
   lookup: operationFields,
+  confirm_auth_revocation: operationFields,
 };
 
 export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: ClaimsLookup) {
@@ -134,7 +155,9 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
   router.post('/:action', async (request, response) => {
     response.set('Cache-Control', 'no-store');
     try {
-      const action = request.params.action as keyof typeof requestFields;
+      const path = request.params.action;
+      const action = (path === 'confirm-auth-revocation' ? 'confirm_auth_revocation' : path) as keyof typeof requestFields;
+      if (path === 'confirm_auth_revocation') throw new Rejected(404);
       if (!Object.hasOwn(requestFields, action)) throw new Rejected(404);
       if (!request.is('application/json') || !request.body || Array.isArray(request.body)) throw new Rejected(400);
       const body = request.body;
@@ -145,7 +168,7 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
       const keyVersion = bootstrap ? '1' : positiveBigint(body.keyVersion);
       const purpose = action === 'challenge' ? body.purpose : action;
       if (action === 'challenge' && !purposes.includes(purpose)) throw new Rejected(400);
-      const write = ['register', 'fence', 'lookup'].includes(action);
+      const write = ['register', 'fence', 'lookup', 'confirm_auth_revocation'].includes(action);
       const generation = write ? positiveBigint(body.generation) : null;
       const operation = write ? string(body.operationId, uuidPattern, 36) : null;
       const token = action === 'register' ? string(body.token, /^(?:Expo|Exponent)PushToken\[[A-Za-z0-9_-]+\]$/, 256) : null;
@@ -162,6 +185,7 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
       const result = await transaction(pool, async db => {
         if (action === 'enrollment-challenge' && publicKey) {
           p256Key(publicKey);
+          await requireLiveSession(db, identity);
           const challenge = randomBytes(32);
           const issued = await db.query('SELECT push_private.issue_device_enrollment($1,$2,$3,$4,$5) AS expires',
             [hash(challenge), identity.user, identity.session, installation, hash(publicKey)]);
@@ -170,6 +194,7 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
         if (!signature || !nonce) throw new Rejected(400);
         if (action === 'enroll-installation' && publicKey) {
           if (!verify('sha256', signed, { key: p256Key(publicKey), dsaEncoding: 'ieee-p1363' }, signature)) throw new Rejected(403);
+          await requireLiveSession(db, identity);
           await db.query('SELECT push_private.finish_device_enrollment($1,$2,$3,$4,$5)',
             [hash(nonce), identity.user, identity.session, installation, publicKey]);
           return { keyVersion };
@@ -178,6 +203,7 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
         const key = locked.rows[0];
         if (key?.key_version !== keyVersion ||
             !verify('sha256', signed, { key: p256Key(key.public_key), dsaEncoding: 'ieee-p1363' }, signature)) throw new Rejected(403);
+        await requireLiveSession(db, identity);
         if (action === 'challenge') {
           const challenge = randomBytes(32);
           const issued = await db.query('SELECT push_private.issue_bounded_device_challenge($1,$2,$3,$4) AS expires',
@@ -191,7 +217,7 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
           args = [...actor, generation!, operation!, ...proof];
           if (action === 'register') args.push(token!, platform!, deviceName);
         }
-        if (action === 'lookup') args = [installation, identity.user, generation!, operation!, ...proof];
+        if (action === 'lookup' || action === 'confirm_auth_revocation') args = [installation, identity.user, generation!, operation!, ...proof];
         const executed = await db.query(operations[action as keyof typeof operations], args);
         return { result: executed.rows[0].result };
       });

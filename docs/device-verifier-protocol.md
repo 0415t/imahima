@@ -16,11 +16,12 @@ the verified token. The token's issuer is the configured Supabase origin plus
 | `enroll` | `keyVersion`, `nonce`, `signature` | `result` (generation as a decimal string) |
 | `register` | `keyVersion`, `nonce`, `signature`, `generation`, `operationId`, `token`, `platform`, optional `deviceName` | `result` (durable operation result) |
 | `fence`, `lookup` | `keyVersion`, `nonce`, `signature`, `generation`, `operationId` | `result` (durable operation result; lookup may return null) |
+| `confirm-auth-revocation` | `keyVersion`, `nonce`, `signature`, `generation`, `operationId` | `result.status`: `pending` or `confirmed` |
 
 Generate a random installation UUID. Use lowercase canonical UUID strings and
 positive decimal strings without leading zeroes for PostgreSQL bigint fields.
 `purpose` for challenge issuance is one of `enroll`, `register`, `fence`,
-and `lookup`. A challenge request uses 32 fresh random bytes as its client nonce.
+`lookup`, and `confirm_auth_revocation`. A challenge request uses 32 fresh random bytes as its client nonce.
 For all other signed requests, use the server nonce for the corresponding action.
 Public keys, nonces and signatures use unpadded base64url. The P-256 public key
 is the 65-byte uncompressed SEC1 point `04 || X || Y`, with 32-byte
@@ -38,7 +39,7 @@ two ASCII bytes `-:`. There are no separators, BOM or final newline.
 2. JWT issuer, user ID, session ID
 3. Installation ID, action, purpose (the action itself except for `challenge`)
 4. Key version (use `1` for `enroll-installation`)
-5. Generation and operation ID (both null outside `register`, `fence`, `lookup`)
+5. Generation and operation ID (both null outside `register`, `fence`, `lookup`, `confirm_auth_revocation`)
 6. Nonce in its canonical base64url form
 7. Expo token, platform, and device name (null outside `register`)
 8. Public key in its canonical base64url form (null outside `enroll-installation`)
@@ -77,8 +78,23 @@ role memberships. The migration creates no login or password. Every request
 uses a bounded transaction and sets the verifier role locally. A registered
 public key is row-locked for verification and execution on the same connection.
 
-The verifier handles Push registration state. It does not revoke Auth
-sessions or establish whether an older Auth session has been revoked.
+`confirm-auth-revocation` uses `confirm_auth_revocation` for both the
+challenge purpose and the signed action. Generation and operation ID are
+both included in the signature. The verifier confirms absence on the primary
+database after fencing and records the observation atomically. It never signs
+out a session itself. Pending means the old row is still present. Retry with
+a fresh challenge for the same generation and operation ID. After confirmation
+the result is durable and can also be read with a fresh lookup proof.
+
+### Deployment prerequisite
+
+Apply migration 27 and configure `DEVICE_VERIFIER_DATABASE_URL` in Express
+before deploying this release. `POST /profiles/me/is-free/extend-from-notification`
+returns HTTP 503 when the dedicated DB connection is unconfigured or
+unavailable. Every verifier request and notification-based extension validates
+the currently presented session on the primary. This does not cancel admitted
+requests, revoke JWT signatures, or change other Express routes, PostgREST
+policies, or Realtime authorization.
 
 Run the dedicated integration with local Docker images and no shared environment configuration.
 

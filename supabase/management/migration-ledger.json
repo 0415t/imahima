@@ -459,6 +459,25 @@
           "No verifier login is provisioned by this migration"
         ]
       }
+    },
+    {
+      "version": "20261128000000",
+      "name": "device_auth_revocation_confirmation",
+      "file": "20261128000000_device_auth_revocation_confirmation.sql",
+      "dependsOn": [
+        "20261127000000"
+      ],
+      "gitBlob": "e6b56628a5eb444d49f868df9c315c5d6e13ed1f",
+      "sourceSha256": "91d188fd40cf3c91e268eb50aae3e1a0bf89281997d653e05d5ac8e9ddef9709",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Primary database and dedicated verifier role from migration 26",
+          "Function owner can read auth.sessions id and user_id without row filtering"
+        ]
+      }
     }
   ]
 }

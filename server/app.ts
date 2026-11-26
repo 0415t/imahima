@@ -5,6 +5,9 @@ import { requestDeadline } from './timeouts';
 
 export type AvailabilityDependencies = {
   getUserId: (accessToken: string) => Promise<{ userId: string | null; error: unknown | null }>;
+  authenticateNotificationSession?: (accessToken: string) => Promise<{
+    userId: string | null; status: 200 | 401 | 503;
+  }>;
   toggleIsFree: (userId: string) => Promise<{ isFree: boolean | null; error: unknown | null }>;
   setIsFree: (
     userId: string,
@@ -218,15 +221,15 @@ export function createApp(
     }
 
     try {
-      const { userId, error: authError } = await dependencies.getUserId(bearerToken);
-
-      if (authError || !userId) {
-        response.status(401).json({ error: 'Invalid or expired access token' });
+      const identity = await dependencies.authenticateNotificationSession?.(bearerToken);
+      if (identity?.status !== 200 || !identity.userId) {
+        const status = identity?.status === 401 ? 401 : 503;
+        response.status(status).json({ error: status === 401 ? 'Invalid or expired access token' : 'Session verification unavailable' });
         return;
       }
 
       const { isFree, freeUntil, error: extendError } = await dependencies.extendIsFreeFromNotification(
-        userId,
+        identity.userId,
         claimId
       );
 
