@@ -25,6 +25,7 @@ for (const enabled of [false, true]) {
     loadSource('server/index.ts', {
       'dotenv/config': {},
       './services/supabase': { serverSupabase: sdk },
+      './device-verifier': {},
       './services/groups': { groupService: (client: unknown, identity: unknown) => {
         assert.equal(client, sdk); assert.equal(typeof identity, 'function'); return groups;
       } },
@@ -48,6 +49,7 @@ for (const enabled of [false, true]) {
       on: (signal: string, callback: () => void) => handlers.set(signal, callback), exit: () => {} },
     console: { log: () => {} }, setTimeout, clearTimeout });
     assert.equal(args[2], groups); assert.equal(args[3], chat);
+    assert.equal(args[5], undefined);
     const identity = await args[0].getUserId('mock');
     assert.equal(identity.userId, 'actor'); assert.equal(identity.error, null);
     await args[0].toggleIsFree('actor');

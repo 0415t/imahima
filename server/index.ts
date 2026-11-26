@@ -9,6 +9,7 @@ import { createPushNotificationService } from './services/notifications';
 import { groupService } from './services/groups';
 import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
+import { createDeviceVerifierPool, deviceVerifierRouter } from './device-verifier';
 import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim } from './jobs/member-free-notifications';
 import { createChatMessageNotificationPoller, parseChatNotificationOptions, type ChatMessageClaim } from './jobs/chat-message-notifications';
 
@@ -34,6 +35,14 @@ const getUserId = async (accessToken: string) => {
 };
 
 const groups = groupService(serverSupabase, getUserId);
+const verifierDatabaseUrl = process.env.DEVICE_VERIFIER_DATABASE_URL;
+const deviceVerifier = verifierDatabaseUrl
+  ? deviceVerifierRouter(
+      createDeviceVerifierPool(verifierDatabaseUrl),
+      new URL('/auth/v1', process.env.SUPABASE_URL).href,
+      token => serverSupabase.auth.getClaims(token),
+    )
+  : undefined;
 const app = createApp({
   getUserId,
   toggleIsFree: async (userId) => {
@@ -76,7 +85,7 @@ const app = createApp({
   },
   sendPushNotifications: (tokens, message) =>
     pushNotifications.sendPushNotifications(tokens, message),
-}, groups, chatService(serverSupabase, groups));
+}, groups, chatService(serverSupabase, groups), undefined, deviceVerifier);
 const port = Number(process.env.PORT ?? 3000);
 
 const server = app.listen({ port, ...(process.env.HOST ? { host: process.env.HOST } : {}) }, () => {

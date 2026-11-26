@@ -1,4 +1,4 @@
-import express, { type ErrorRequestHandler } from 'express';
+import express, { type ErrorRequestHandler, type Router } from 'express';
 import { groupRouter, type GroupDependencies } from './groups';
 import { chatRouter, isChatPath, type ChatDependencies } from './chat';
 import { requestDeadline } from './timeouts';
@@ -35,11 +35,13 @@ export function createApp(
   notifications?: NotificationDependencies,
   groups?: GroupDependencies,
   chat?: ChatDependencies,
-  requestTimeoutMs?: number
+  requestTimeoutMs?: number,
+  deviceVerifier?: Router
 ) {
   const app = express();
 
   app.use(requestDeadline(requestTimeoutMs));
+  if (deviceVerifier) app.use('/device-recovery', deviceVerifier);
   app.use(express.json());
   app.use((_request, response, next) => { if (!response.headersSent && !response.destroyed) next(); });
   if (chat) app.use('/groups', chatRouter(chat));

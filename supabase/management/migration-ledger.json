@@ -440,6 +440,25 @@
           "No verifier login is provisioned by this migration"
         ]
       }
+    },
+    {
+      "version": "20261127000000",
+      "name": "device_verifier_gateway",
+      "file": "20261127000000_device_verifier_gateway.sql",
+      "dependsOn": [
+        "20261126000000"
+      ],
+      "gitBlob": "4769fa433a6c959e6c324fd2fd7403b1b254eb81",
+      "sourceSha256": "b199624ebc4a782dd479f2563c01fd8997bd9e429c805975f3447461519a32fd",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Dedicated verifier role from migration 25 exists",
+          "No verifier login is provisioned by this migration"
+        ]
+      }
     }
   ]
 }

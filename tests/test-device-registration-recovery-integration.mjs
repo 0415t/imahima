@@ -35,12 +35,14 @@ test('registration and fencing serialize in either order on the installation loc
       const token = quoted('test-device-'+randomUUID());
       const enroll = nonce(), register = nonce(), fence = nonce(), lookup = nonce();
       stack.query(`INSERT INTO auth.users(id) VALUES(${user});`);
-      const generation = stack.query(verifier(`DO $$ BEGIN
+      stack.query(`BEGIN; SET LOCAL ROLE postgres; DO $$ BEGIN
         PERFORM push_private.enroll_device_installation(${installation},decode('04','hex'));
-        PERFORM push_private.issue_device_challenge(${installation},1,'enroll',${enroll});
-        PERFORM push_private.issue_device_challenge(${installation},1,'register',${register});
-        PERFORM push_private.issue_device_challenge(${installation},1,'fence',${fence});
-        PERFORM push_private.issue_device_challenge(${installation},1,'lookup',${lookup});
+      END $$; COMMIT;`);
+      const generation = stack.query(verifier(`DO $$ BEGIN
+        PERFORM push_private.issue_bounded_device_challenge(${installation},1,'enroll',${enroll});
+        PERFORM push_private.issue_bounded_device_challenge(${installation},1,'register',${register});
+        PERFORM push_private.issue_bounded_device_challenge(${installation},1,'fence',${fence});
+        PERFORM push_private.issue_bounded_device_challenge(${installation},1,'lookup',${lookup});
       END $$;
       SELECT push_private.open_device_generation(${installation},${user},${authSession},1,${enroll})`));
       assert.match(generation,/^[1-9]\d*$/);

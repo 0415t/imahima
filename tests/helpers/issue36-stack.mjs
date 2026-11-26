@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { createServer as createTcpServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { transactionBody } from '../../verification/issue35/sql-transactions.mjs';
 import { loadMigrationLedger } from '../../scripts/db/ledger.mjs';
@@ -36,6 +37,7 @@ export function createStack(signal, { allowSignup = false } = {}) {
   const authPassword = randomBytes(24).toString('hex');
   const restPassword = randomBytes(24).toString('hex');
   const relays = new Set();
+  const tcpRelays = new Set();
   let network, gateway, identity, db;
 
   function command(args, { input, extra = {}, allowFailure = false } = {}) {
@@ -114,9 +116,37 @@ export function createStack(signal, { allowSignup = false } = {}) {
     child.once('close',()=>relays.delete(child));
     return child;
   }
-  function key(role) {
+  async function openPostgresRelay() {
+    verifyIdentity();
+    const sockets = new Set();
+    const listener = createTcpServer(socket => {
+      sockets.add(socket);
+      const child = spawn('docker',['--host',host,'exec','-i',db,'nc','127.0.0.1','5432'],
+        {env:cleanEnv,windowsHide:true,stdio:['pipe','pipe','ignore']});
+      relays.add(child);
+      child.once('error',()=>socket.destroy());
+      child.once('close',()=>{ relays.delete(child); socket.end(); });
+      child.stdin.on('error',()=>socket.destroy());
+      socket.on('error',()=>socket.destroy());
+      socket.once('close',()=>{ sockets.delete(socket); child.kill(); });
+      socket.pipe(child.stdin);
+      child.stdout.pipe(socket);
+    });
+    await new Promise((resolve,reject)=>{listener.once('error',reject);listener.listen(0,'127.0.0.1',resolve);});
+    const relay = {
+      port: listener.address().port,
+      async close() {
+        tcpRelays.delete(relay);
+        for (const socket of sockets) socket.destroy();
+        await new Promise(resolve=>listener.close(resolve));
+      },
+    };
+    tcpRelays.add(relay);
+    return relay;
+  }
+  function key(role, overrides = {}) {
     const header = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
-    const claims = Buffer.from(JSON.stringify({role, iss:'supabase', exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');
+    const claims = Buffer.from(JSON.stringify({role, iss:'supabase', exp:Math.floor(Date.now()/1000)+3600, ...overrides})).toString('base64url');
     return `${header}.${claims}.${createHmac('sha256',secret).update(`${header}.${claims}`).digest('base64url')}`;
   }
   function relay(url, {method='GET',headers={},body}={}) {
@@ -187,6 +217,7 @@ export function createStack(signal, { allowSignup = false } = {}) {
       GOTRUE_SITE_URL:'http://127.0.0.1', GOTRUE_DISABLE_SIGNUP:String(!allowSignup), GOTRUE_EXTERNAL_EMAIL_ENABLED:'true',
       GOTRUE_MAILER_AUTOCONFIRM:'true', GOTRUE_JWT_SECRET:secret, GOTRUE_JWT_AUD:'authenticated',
       GOTRUE_JWT_ADMIN_ROLES:'service_role', GOTRUE_JWT_DEFAULT_GROUP_NAME:'authenticated', GOTRUE_JWT_EXP:'3600',
+      GOTRUE_JWT_ISSUER:'http://127.0.0.1/auth/v1',
       GOTRUE_LOG_LEVEL:'warn',
     });
     docker(['start',auth]);
@@ -232,9 +263,10 @@ export function createStack(signal, { allowSignup = false } = {}) {
     });
     await new Promise((resolve,reject)=>{gateway.once('error',reject);gateway.listen(0,'127.0.0.1',resolve);});
     verifyIdentity();
-    return { url:`http://127.0.0.1:${gateway.address().port}`, anon:key('anon'), service:key('service_role'), traffic };
+    return { url:`http://127.0.0.1:${gateway.address().port}`, anon:key('anon'), service:key('service_role'), traffic, testJwt: key };
   }
   async function stop() {
+    await Promise.all([...tcpRelays].map(relay=>relay.close()));
     for (const relay of relays) relay.kill();
     if(gateway) {
       gateway.closeAllConnections();
@@ -267,5 +299,5 @@ export function createStack(signal, { allowSignup = false } = {}) {
     }
     assert.deepEqual(errors,[]);
   }
-  return {start,stop,query,verifyIdentity,openSqlSession};
+  return {start,stop,query,verifyIdentity,openSqlSession,openPostgresRelay};
 }
