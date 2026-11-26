@@ -99,6 +99,22 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       if (status !== null) assert.equal(response.status, status, action);
       return { status: response.status, ...result };
     }
+    async function discardCommittedReply(action, body, access = first.access) {
+      // Express sends the headers after COMMIT. The caller never reads the
+      // response body and must recover the result through the normal API.
+      await new Promise((resolve, reject) => {
+        const req = request(origin + '/device-recovery/' + action, {
+          method: 'POST', agent,
+          headers: { authorization: 'Bearer ' + access, 'content-type': 'application/json' },
+        }, response => {
+          response.destroy();
+          if (response.statusCode === 200) resolve();
+          else reject(new Error(`${action} response status ${response.statusCode}`));
+        });
+        req.on('error', reject);
+        req.end(JSON.stringify(body));
+      });
+    }
     const key = makeKey();
     const foreignKey = makeKey();
     const installationId = randomUUID();
@@ -143,8 +159,12 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     }
     await post('challenge', signed('challenge', { ...base, purpose: 'register', nonce }, foreignKey), 403);
     const open = signed('enroll', { ...base, nonce: await challenge('enroll') });
-    const generation = (await post('enroll', open)).result;
+    await discardCommittedReply('enroll', open);
     await post('enroll', open, 403);
+    const generation = (await post('enroll', signed('enroll', { ...base, nonce: await challenge('enroll') }))).result;
+    assert.match(generation, /^[1-9][0-9]*$/);
+    assert.equal(stack.query(`SELECT count(*) FROM push_private.installation_bindings
+      WHERE installation_id='${installationId}';`), '1');
     const operationId = randomUUID();
     const register = { ...base, generation, operationId, token: 'ExpoPushToken[isolated_test]', platform: 'ios', deviceName: '端末' };
     const good = signed('register', { ...register, nonce: await challenge('register') });
@@ -160,9 +180,15 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     const unrelatedSession = secondSession.data.session.access_token;
     const otherSessionProof = signed('register', { ...register, nonce: good.nonce }, key, unrelatedSession);
     await post('register', otherSessionProof, 403, unrelatedSession);
-    await post('register', good);
+    await discardCommittedReply('register', good);
     const lookup = signed('lookup', { ...base, generation, operationId, nonce: await challenge('lookup') });
-    assert.equal((await post('lookup', lookup)).result.registered, true);
+    const registered = (await post('lookup', lookup)).result;
+    assert.deepEqual(registered, { registered: true, generation, revision: '1' });
+    assert.deepEqual((await post('register', signed('register', {
+      ...register, nonce: await challenge('register'),
+    }))).result, registered);
+    assert.equal(stack.query(`SELECT registration_revision FROM public.user_device_tokens
+      WHERE installation_id='${installationId}' AND generation=${generation};`), '1');
     const confirmation = { ...base, generation, operationId: randomUUID() };
     const confirm = async (access = unrelatedSession, fields = confirmation, status = 200) => {
       const request = signed('confirm-auth-revocation', {
@@ -171,8 +197,13 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       return post('confirm-auth-revocation', request, status, access);
     };
     await confirm(unrelatedSession, confirmation, 403);
-    const fence = signed('fence', { ...base, generation, operationId: randomUUID(), nonce: await challenge('fence') });
-    assert.equal((await post('fence', fence)).result.fenced, true);
+    const fenceOperation = randomUUID();
+    const fenceInput = { ...base, generation, operationId: fenceOperation };
+    await discardCommittedReply('fence', signed('fence', { ...fenceInput, nonce: await challenge('fence') }));
+    assert.deepEqual((await post('fence', signed('fence', {
+      ...fenceInput, nonce: await challenge('fence'),
+    }))).result, { fenced: true, generation });
+    assert.equal(stack.query(`SELECT count(*) FROM public.user_device_tokens WHERE installation_id='${installationId}';`), '0');
     assert.equal((await confirm()).result.status, 'pending');
     await confirm(second.access, confirmation, 403);
     await confirm(unrelatedSession, { ...confirmation, generation: '999999' }, 403);
@@ -183,6 +214,8 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     await openAs(unrelatedSession, 403);
     await post('register', signed('register', { ...register, operationId: randomUUID(), nonce: await challenge('register') }), 403);
 
+    // Subsequent independent fault cases should not depend on the 60-second quota clock.
+    stack.query(`DELETE FROM push_private.device_challenges WHERE installation_id='${installationId}';`);
     const expired = await challenge('lookup');
     const expiredDigest = createHash('sha256').update(Buffer.from(expired, 'base64url')).digest('hex');
     stack.query(`UPDATE push_private.device_challenges SET issued_at=clock_timestamp()-interval '2 seconds',
@@ -451,26 +484,34 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     assert.equal(stack.query(`SELECT auth_revocation_confirmed_at IS NULL FROM push_private.installation_bindings WHERE ${boundWhere};`), 't');
     assert.equal(stack.query(`SELECT count(*) FROM push_private.operations WHERE operation_id='${confirmation.operationId}';`), '0');
     stack.query('DROP TRIGGER test_fail_confirmation ON push_private.operations;');
-    // The handler sends headers after COMMIT. Drop the response stream before
-    // handing the result to the caller and recover it with a fresh challenge.
-    await new Promise((resolve, reject) => {
-      const req = request(origin + '/device-recovery/confirm-auth-revocation', {
-        method: 'POST', agent,
-        headers: { authorization: 'Bearer ' + unrelatedSession, 'content-type': 'application/json' },
-      }, response => {
-        response.destroy();
-        if (response.statusCode === 200) resolve();
-        else reject(new Error(`Unexpected confirmation response status ${response.statusCode}`));
-      });
-      req.on('error', reject);
-      req.end(JSON.stringify(pendingProof));
-    });
+    await discardCommittedReply('confirm-auth-revocation', pendingProof, unrelatedSession);
     assert.equal((await confirm()).result.status, 'confirmed');
     assert.equal((await post('lookup', signed('lookup', {
       ...confirmation, nonce: await challenge('lookup', unrelatedSession),
     }, key, unrelatedSession), 200, unrelatedSession)).result.status, 'confirmed');
     await confirm(unrelatedSession, { ...confirmation, operationId }, 409);
-    await openAs(second.access, 200);
+    const nextGeneration = (await openAs(second.access, 200)).result;
+    assert.ok(BigInt(nextGeneration) > BigInt(generation));
+    const nextRegistration = { ...register, ...base, generation: nextGeneration };
+    const postAs = async (action, input, access, status = 200) => post(action, signed(action, {
+      ...input, nonce: await challenge(action, access),
+    }, key, access), status, access);
+    await postAs('register', nextRegistration, second.access, 409);
+    assert.deepEqual((await postAs('register', {
+      ...nextRegistration, operationId: randomUUID(),
+    }, second.access)).result, { registered: true, generation: nextGeneration, revision: '1' });
+
+    await postAs('lookup', { ...confirmation, operationId: fenceOperation }, second.access, 403);
+    await postAs('fence', { ...base, generation: nextGeneration, operationId: fenceOperation }, second.access, 409);
+    await postAs('fence', { ...base, generation: nextGeneration, operationId: randomUUID() }, unrelatedSession, 403);
+    await post('register', good, 403, first.access);
+    await post('register', signed('register', {
+      ...register, ...base, nonce: await challenge('register', unrelatedSession),
+    }), 401, first.access);
+    const nextOwner = jwtClaims(second.access).sub;
+    assert.equal(stack.query(`SELECT count(*) FROM public.user_device_tokens
+      WHERE installation_id='${installationId}' AND generation=${nextGeneration}
+        AND user_id='${nextOwner}' AND expo_push_token='ExpoPushToken[isolated_test]';`), '1');
   } finally {
     agent.destroy();
     if (server) {
