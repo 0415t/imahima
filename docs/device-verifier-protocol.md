@@ -105,3 +105,36 @@ node --import tsx --test tests/test-device-verifier-integration.mjs
 The test uses GoTrue for actual user JWTs, a dedicated PostgreSQL role for
 Express, and PostgREST to confirm that clients cannot reach the private
 functions. The stack applies migrations from the ledger on a newly verified DB.
+
+## Native installation keys
+
+`modules/device-key` is a local Expo module and requires a rebuilt native
+binary. Expo Go and web report `unsupported`. The JS API only exposes
+`getIdentity`, `createInstallation`, and `signDeviceProof`. The native module
+derives the installation ID and public key from its own record and assembles
+the signed protocol fields. For confirmation, pass the canonical signed action
+`confirm_auth_revocation`. It is mapped to `confirm-auth-revocation` on the wire.
+The caller generates challenge-request nonces using a cryptographic RNG.
+
+On iOS, Security.framework creates a permanent, device-only Secure Enclave key
+referenced by a private Keychain tag. CryptoKit converts the ECDSA signature
+to the raw format. On Android, the module uses a private Android Keystore alias.
+On Android 12+ (API 31+), it only accepts the explicit TEE and StrongBox
+levels. On Android 7–11 (API 24–30), the platform's
+`KeyInfo.isInsideSecureHardware()` must positively confirm hardware backing.
+The module reports `secure-hardware` in that case because the API does not
+identify the hardware type. A false result, an unknown level on API 31+,
+or a failed lookup supplies no proof and blocks key use. Android Keystore may create a candidate key on
+unsupported hardware. The module leaves it unregistered and never signs with it.
+Protection information is local diagnostic data and carries no attestation.
+
+Each platform atomically writes a reservation and an installation marker in
+backup-excluded storage before generating a key. The module serializes
+initialization and lookup in the app process. It only exposes the identity after
+writing and rereading the public-key fingerprint. A reserved identity can
+finish using the same alias after process interruption. A missing marker,
+malformed record, mismatched fingerprint, or missing ready key blocks signing
+and replacement. A fresh installation with no local records uses a new UUID
+and never enumerates or adopts old Keychain items. Loss of both files is
+indistinguishable from a fresh installation, so any new identity is unrelated
+to the old server-side registration.

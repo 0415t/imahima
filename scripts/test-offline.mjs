@@ -7,6 +7,7 @@ const files = [
   'tests/test-availability-display.ts',
   'tests/test-chat-message-notifications.ts',
   'tests/test-chat.ts',
+  'tests/test-device-key.ts',
   'tests/test-extend-from-notification.ts',
   'tests/test-free-end-action.ts',
   'tests/test-free-end-notifications.ts',
