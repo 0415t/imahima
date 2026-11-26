@@ -369,7 +369,10 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     } finally {
       stack.query('REVOKE device_proof_unexpected_role FROM imahima_device_api_login;');
     }
-    for (let index = 0; index < 5; index++) await post('enrollment-challenge', enroll);
+    const quotaUser = JSON.parse(Buffer.from(first.access.split('.')[1], 'base64url')).sub;
+    // Exercise the quota in one window, independent of prior fault cases.
+    stack.query(`DELETE FROM push_private.enrollment_challenges WHERE user_id='${quotaUser}';`);
+    for (let index = 0; index < 8; index++) await post('enrollment-challenge', enroll);
     await post('enrollment-challenge', enroll, 429);
     assert.ok(gateway.traffic.get('/auth/v1/user 200') > 0);
     assert.ok(gateway.traffic.get('/rest/v1/rpc/lock_device_verification_key 404') > 0);

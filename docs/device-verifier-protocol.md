@@ -138,3 +138,50 @@ and replacement. A fresh installation with no local records uses a new UUID
 and never enumerates or adopts old Keychain items. Loss of both files is
 indistinguishable from a fresh installation, so any new identity is unrelated
 to the old server-side registration.
+
+## Logout recovery database contract
+
+Migration 28 adds the following private functions. The Express and native
+protocol changes required to call them are separate work.
+
+1. For `begin_device_logout`, use the existing device-verifier role. Verify a
+   live JWT and the installation signature, then consume a `begin_logout`
+   challenge. The signed request must bind the authenticated actor/session,
+   installation, key version, generation and stable caller operation ID.
+   The DB fences the generation, deletes its managed token rows, and creates
+   the recovery and operation result in the same transaction. The caller may
+   attempt GoTrue local revocation after it has recovered this result.
+2. For recovery calls, use a separate login eligible to assume only
+   `imahima_logout_recovery_verifier`. Migration 28 provisions no login or
+   runtime membership. PostgreSQL can give the migration owner an automatic
+   administrative membership without SET or INHERIT. Lock the key, verify the signature, and execute the relevant
+   function in the same transaction. Never convert a client-supplied flag or
+   nonce digest into a proof of signature verification.
+3. For issuance, require a signed, recovery-specific request. Pass purpose
+   `discover` with a null recovery ID, or `confirm`/`ack` with the explicit
+   opaque ID. The database binds the generated 60-second challenge to that
+   purpose, key version and one recovery. It permits at most 16 outstanding
+   or consumed unexpired recovery challenges per installation. Normalize
+   unavailable responses and apply rate limits at the HTTP boundary.
+4. For consumption, use a separate recovery signature domain from the JWT
+   API. Bind the project, installation, version, action, exact purpose,
+   explicit ID or discovery null marker, and challenge. The DB independently
+   enforces the same shape and consumes the challenge once. A discovery proof
+   only returns the latest generation's recovery; if that generation changes,
+   previously issued discovery proofs cannot disclose its previous recovery.
+
+`discover` returns only an opaque recovery ID and `pending`, `confirmed`, or
+`cleared`. `confirm` checks the old session on the primary and persists
+confirmation on the existing binding. Errors leave both the result and the
+challenge consumption uncommitted. `ack` requires confirmed Auth revocation
+and signifies that the client has completed local cleanup. The client retries
+with a new challenge and the same opaque recovery ID. Confirmation and
+acknowledgement are monotonic. A cleared exact-ID replay returns only the
+terminal receipt and cannot alter a newer generation.
+
+New generations remain blocked until the client acknowledges local cleanup.
+The installation row serializes challenge consumption, binding checks, and
+recovery writes. Recovery records keep the original key version. They do not
+support automatic key replacement. Recovery rows have no time-based cleanup.
+The existing binding is their lifecycle parent and retains the user/session
+association. Discovery failure alone cannot establish successful logout.

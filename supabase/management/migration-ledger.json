@@ -478,6 +478,26 @@
           "Function owner can read auth.sessions id and user_id without row filtering"
         ]
       }
+    },
+    {
+      "version": "20261129000000",
+      "name": "device_logout_recovery",
+      "file": "20261129000000_device_logout_recovery.sql",
+      "dependsOn": [
+        "20261128000000"
+      ],
+      "gitBlob": "acf73d54fca43159bff9edbd5ddc7da659c02cae",
+      "sourceSha256": "8694f3d6624aec3176282542f104609b25b4e69984c8721ce571053fc0ee01fc",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Primary database and verified Auth session reader from migration 27",
+          "Migration owner can create a dedicated NOLOGIN role",
+          "No recovery verifier login is provisioned by this migration"
+        ]
+      }
     }
   ]
 }
