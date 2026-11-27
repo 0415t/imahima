@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
 import { createClient, isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { createExtendClient, notificationReceivedAt } from '../lib/free-end-action';
 import { createLogoutFlow, type LogoutSession } from '../lib/logout-flow';
+import { createManagedLogout, type ManagedDeviceApi } from '../lib/managed-logout';
 import { jwtSessionId } from '../lib/session-identity';
 import { loadSource } from './helpers/load-source';
 
@@ -63,6 +65,243 @@ test('logs out locally after removing only the current account and device regist
     assert.deepEqual([...sessions], ['a-other', 'b-here']);
     assert.equal(await deps.session(), null);
     assert.equal(await createLogoutFlow(deps).canUseSession(), true);
+});
+
+function managedFixture() {
+    const userId = '01000000-0000-0000-0000-000000000001';
+    const sessionId = '02000000-0000-0000-0000-000000000002';
+    const installationId = '03000000-0000-0000-0000-000000000003';
+    const recoveryId = '04000000-0000-0000-0000-000000000004';
+    const stored = new Map<string, string>();
+    const events: string[] = [];
+    const a = { user: { id: userId }, access_token: sessionToken(sessionId) };
+    let current: LogoutSession | null = a;
+    let authPresent = true, fenced = false, confirmed = false, acked = false;
+    let fail = '', keyAvailable = true, initialized = false;
+    let operations = 0;
+    const failOnce = (name: string) => {
+        if (fail === name) { fail = ''; throw new Error('interrupted ' + name); }
+    };
+    const api: ManagedDeviceApi = {
+        async identity(create) {
+            if (create && keyAvailable) initialized = true;
+            return keyAvailable && initialized ? installationId : null;
+        },
+        operationId: () => `05000000-0000-0000-0000-${String(++operations).padStart(12, '0')}`,
+        open: async () => { events.push('open'); failOnce('open'); return '1'; },
+        async register() { events.push('register'); failOnce('register'); },
+        async begin(session, entry) {
+            assert.equal(session, a);
+            assert.equal(entry.installationId, installationId);
+            assert.equal(entry.generation, '1');
+            assert.equal(JSON.parse(stored.get('test:logout-v2-intent')!).operationId, entry.operationId);
+            events.push('begin:' + entry.operationId);
+            fenced = true;
+            failOnce('begin');
+            return recoveryId;
+        },
+        async recovery(_installation, action, id) {
+            events.push(action);
+            if (!fenced) throw new Error('No proven recovery');
+            if (action !== 'discover') assert.equal(id, recoveryId);
+            if (action === 'confirm' && !authPresent) confirmed = true;
+            if (action === 'ack') {
+                assert.equal(confirmed, true);
+                assert.equal(current, null);
+                assert.equal(stored.has('test:notification-cutoff'), true);
+                assert.equal(JSON.parse(stored.get('test:logout-v2')!).stage, 'ack');
+                acked = true;
+            }
+            failOnce(action);
+            return { recoveryId, status: acked ? 'cleared' : confirmed ? 'confirmed' : 'pending' };
+        },
+    };
+    const storage = {
+        async getItem(key: string) { failOnce('read:' + key); return stored.get(key) ?? null; },
+        async setItem(key: string, value: string) { failOnce('write:' + key); stored.set(key, value); },
+        async removeItem(key: string) { failOnce('remove:' + key); stored.delete(key); },
+    };
+    function restart() {
+        const session = async () => current;
+        return createLogoutFlow({
+            ...fixture().deps, storage, session, hasRegistrations: async () => false,
+            register: async () => assert.fail('Managed registration cannot fall back'),
+            remove: async () => assert.fail('Managed logout cannot fall back'),
+            managed: createManagedLogout({
+                storage, session, api, enableNew: true, prefix: 'test',
+                async revoke(session) {
+                    assert.equal(session, a);
+                    events.push('revoke');
+                    failOnce('before-revoke');
+                    authPresent = false;
+                    failOnce('revoke');
+                },
+                async clean() { assert.equal(confirmed, true); events.push('clear'); current = null; failOnce('clear'); },
+            }),
+        });
+    }
+    return { stored, events, a, restart, failAt: (name: string) => { fail = name; },
+        replaceSession: (session: LogoutSession | null) => { current = session; },
+        loseKey: () => { keyAvailable = false; }, api };
+}
+
+for (const fault of ['begin', 'confirm', 'clear', 'ack', 'write:test:logout-v2',
+    'write:test:notification-cutoff', 'remove:test:logout-v2-intent', 'remove:test:logout-v2']) {
+    test(`managed logout resumes after process loss at ${fault}`, async () => {
+        const { stored, events, a, restart, failAt } = managedFixture();
+        const flow = restart();
+        await flow.save(a.user.id, 'test-push');
+        failAt(fault);
+        const first = flow.signOut();
+        assert.equal(first, flow.signOut());
+        assert.equal(await flow.canUseSession(), false);
+        assert.ok((await first).error);
+        const resumed = restart();
+        assert.equal(await resumed.sessionAvailability(), 'logout-pending');
+        assert.equal(await resumed.canUseNotification(Date.now() + 1000), false);
+        await assert.rejects(resumed.authenticate(() => assert.fail('Sign-in is blocked')));
+        assert.deepEqual(await resumed.signOut(), { error: null });
+        assert.equal(stored.has('test:logout-v2'), false);
+        assert.equal(stored.has('test:logout-v2-intent'), false);
+        assert.equal(stored.has('test:device-v2'), false);
+        assert.equal(events.indexOf('clear') > events.indexOf('confirm'), true);
+        assert.equal(events.indexOf('ack') > events.indexOf('clear'), true);
+        assert.equal(new Set(events.filter(event => event.startsWith('begin:'))).size, 1);
+    });
+}
+
+test('managed logout confirms after a lost Auth reply and fences an unknown registration', async () => {
+    const { a, events, restart, failAt } = managedFixture();
+    const flow = restart();
+    failAt('register');
+    await assert.rejects(flow.save(a.user.id, 'test-push'));
+    failAt('revoke');
+    assert.deepEqual(await flow.signOut(), { error: null });
+    assert.equal(events.filter(event => event === 'register').length, 1);
+    assert.ok(events.includes('confirm'));
+});
+
+test('logout never creates a generation to resolve a lost generation-opening reply', async () => {
+    const { a, events, restart, failAt } = managedFixture();
+    const flow = restart();
+    failAt('open');
+    await assert.rejects(flow.save(a.user.id, 'test-push'));
+    assert.match((await restart().signOut()).error!.message, /generation outcome is unknown/);
+    assert.equal(events.filter(event => event === 'open').length, 1);
+    assert.ok(!events.includes('revoke'));
+});
+
+test('damaged managed journal discovers a case but holds when its durable case reference was never received', async () => {
+    const { stored, events, a, restart, failAt, replaceSession } = managedFixture();
+    const start = restart();
+    await start.save(a.user.id, 'test-push');
+    failAt('begin');
+    assert.ok((await start.signOut()).error);
+    stored.set('test:logout-v2', '{broken');
+    replaceSession(null);
+    const resumed = restart();
+    assert.equal(await resumed.sessionAvailability(), 'logout-pending');
+    assert.match((await resumed.signOut()).error!.message, /no verified local scope/);
+    assert.ok(events.includes('discover'));
+    assert.ok(!events.includes('clear'));
+    assert.ok(!events.includes('ack'));
+});
+
+test('damaged managed journal resumes without the old JWT when the discovered case matches the backup', async () => {
+    const { stored, events, a, restart, failAt, replaceSession } = managedFixture();
+    const start = restart();
+    await start.save(a.user.id, 'test-push');
+    failAt('confirm');
+    assert.ok((await start.signOut()).error);
+    stored.set('test:logout-v2', '{broken');
+    replaceSession(null);
+    assert.deepEqual(await restart().signOut(), { error: null });
+    assert.ok(events.includes('discover'));
+    assert.ok(events.includes('ack'));
+});
+
+test('a known recovery ID does not unlock while the lost JWT still has a live Auth row', async () => {
+    const { a, restart, events, failAt, replaceSession } = managedFixture();
+    const flow = restart();
+    await flow.save(a.user.id, 'test-push');
+    failAt('before-revoke');
+    assert.match((await flow.signOut()).error!.message, /Old session remains/);
+    replaceSession(null);
+    assert.match((await restart().signOut()).error!.message, /Old session remains/);
+    assert.equal(events.filter(event => event === 'revoke').length, 1);
+    assert.ok(!events.includes('ack'));
+});
+
+test('managed session read errors, account substitution and key loss block cleanup', async () => {
+    const { stored, events, a, restart, failAt, replaceSession, loseKey } = managedFixture();
+    await restart().save(a.user.id, 'test-push');
+    failAt('read:test:logout-v2');
+    assert.equal(await restart().sessionAvailability(), 'read-failed');
+    assert.equal(await restart().sessionAvailability(), 'ready');
+    replaceSession({ ...a, access_token: sessionToken('06000000-0000-0000-0000-000000000006') });
+    assert.equal(await restart().sessionAvailability(), 'logout-pending');
+    assert.match((await restart().signOut()).error!.message, /session changed/);
+    replaceSession(a);
+    loseKey();
+    assert.equal(await restart().sessionAvailability(), 'logout-pending');
+    assert.match((await restart().signOut()).error!.message, /key is unavailable/);
+    assert.equal(stored.has('test:device-v2'), true);
+    assert.ok(!events.includes('clear'));
+});
+
+test('lost managed records trigger discovery and never unlock without a verified local scope', async () => {
+    const { stored, events, a, restart, failAt } = managedFixture();
+    const flow = restart();
+    await flow.save(a.user.id, 'test-push');
+    failAt('begin');
+    assert.ok((await flow.signOut()).error);
+    stored.clear();
+    const resumed = restart();
+    assert.equal(await resumed.sessionAvailability(), 'logout-pending');
+    assert.match((await resumed.signOut()).error!.message, /no verified local scope/);
+    assert.ok(events.includes('discover'));
+    assert.ok(!events.includes('clear'));
+    assert.ok(!events.includes('ack'));
+});
+
+test('production adapter uses JWT only for begin and exact HTTP fields for recovery', async () => {
+    const id = '03000000-0000-0000-0000-000000000003';
+    const recoveryId = '04000000-0000-0000-0000-000000000004';
+    const session = { user: { id }, access_token: sessionToken(id) };
+    const requests: { url: string; body: Record<string, string>; headers: Record<string, string> }[] = [];
+    const proofs: Record<string, string>[] = [];
+    const { createDeviceRecoveryApi } = loadSource<{
+        createDeviceRecoveryApi(api: string, auth: string): ManagedDeviceApi;
+    }>('lib/device-recovery-api.ts', {
+        'expo-modules-core': { uuid: { v4: randomUUID } },
+        'react-native': { Platform: { OS: 'android' } },
+        './session-identity': { jwtSessionId },
+        '../modules/device-key': {
+            async signDeviceProof(input: Record<string, string>) { proofs.push(input); return { status: 'ready', signature: 'test' }; },
+            async signLogoutRecoveryProof(input: Record<string, string>) { proofs.push(input); return { status: 'ready', signature: 'test' }; },
+        },
+    }, {
+        URL, AbortController, setTimeout, clearTimeout,
+        fetch: async (url: string, init: { body: string; headers: Record<string, string> }) => {
+            requests.push({ url, body: JSON.parse(init.body), headers: init.headers });
+            return { status: 200, json: async () => url.endsWith('/challenge') ? { nonce: 'A'.repeat(43) } :
+                { result: { status: 'confirmed', recoveryId } } };
+        },
+    });
+    const api = createDeviceRecoveryApi('https://express.example.test', 'https://auth.example.test');
+    assert.equal(await api.begin(session, { installationId: id, sessionId: id, userId: id, operationId: id, generation: '1' }), recoveryId);
+    assert.equal((await api.recovery(id, 'discover')).recoveryId, recoveryId);
+    assert.equal((await api.recovery(id, 'confirm', recoveryId)).status, 'confirmed');
+    assert.deepEqual(requests.map(r => new URL(r.url).pathname), [
+        '/device-recovery/challenge', '/device-recovery/begin-logout', '/device-recovery/recovery/challenge',
+        '/device-recovery/recovery/discover', '/device-recovery/recovery/challenge', '/device-recovery/recovery/confirm',
+    ]);
+    assert.ok(requests.slice(0, 2).every(r => r.headers.authorization === 'Bearer ' + session.access_token));
+    assert.ok(requests.slice(2).every(r => !r.headers.authorization));
+    assert.ok(requests.every(r => !('issuer' in r.body || 'userId' in r.body || 'sessionId' in r.body || 'action' in r.body)));
+    assert.ok(proofs.slice(2).every(p => !('userId' in p || 'sessionId' in p)));
+    assert.ok(!('recoveryId' in requests[3].body));
+    assert.equal(requests[5].body.recoveryId, recoveryId);
 });
 
 test('logs out when push is unsupported, the resolved token is absent, or the account has no token rows', async () => {
@@ -144,6 +383,9 @@ test(`real Auth SDK retries until remote revocation is ${alreadyRevoked ? 'confi
         '@supabase/supabase-js': { isAuthApiError, isAuthSessionMissingError },
         './auth-storage': { __esModule: true, default: deps.storage },
         './logout-flow': { createLogoutFlow },
+        './managed-logout': { createManagedLogout },
+        './device-recovery-api': { createDeviceRecoveryApi: () => ({}) },
+        './session-identity': { jwtSessionId },
         './push-notifications': {
             getCurrentDeviceToken: deps.resolveToken, registerDeviceToken: deps.register, removeDeviceToken: deps.remove,
         },
@@ -326,7 +568,7 @@ test('retries persisting confirmed Auth revocation after the local session disap
 function layoutFixture(flow: ReturnType<typeof createLogoutFlow>) {
     const effects: (() => void)[] = [];
     type Element = { type: unknown; props: { onPress?: () => void; key?: string } | null; children: Element[] };
-    const state: unknown[] = [{ user: { id: 'A' } }, false, null, false, 0];
+    const state: unknown[] = [{ user: { id: 'A' }, access_token: hereToken }, false, null, false, 0];
     let index = 0;
     const react = {
         useState: () => {
@@ -346,6 +588,7 @@ function layoutFixture(flow: ReturnType<typeof createLogoutFlow>) {
         '@/lib/push-notifications': {}, '@/components/themed-text': { ThemedText: 'text' },
         '@/components/themed-view': { ThemedView: 'view' }, '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
         '@/lib/notification-task': {}, '@/lib/logout': { logoutFlow: flow }, '@/lib/supabase': { supabase: {} },
+        '@/lib/session-identity': { jwtSessionId },
     }, { React: react });
     return {
         effects,
@@ -384,7 +627,7 @@ test('a transient startup storage failure blocks routes without signing out, and
     render();
     effects[1]();
     await setImmediate();
-    assert.equal(render().children[0].props?.key, 'A');
+    assert.equal(render().children[0].props?.key, 'A:a-here');
     assert.deepEqual(events, []);
 });
 

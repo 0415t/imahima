@@ -1,4 +1,5 @@
 import { jwtSessionId } from './session-identity';
+import type { createManagedLogout } from './managed-logout';
 
 export type LogoutSession = { user: { id: string }; access_token: string };
 
@@ -34,6 +35,7 @@ export function createLogoutFlow(deps: {
     remove(session: LogoutSession, token: string): Promise<void>;
     revoke(session: LogoutSession): Promise<void>;
     signOut(): Promise<void>;
+    managed?: ReturnType<typeof createManagedLogout>;
 }) {
     const pendingKey = deps.prefix + ':logout';
     const cutoffKey = deps.prefix + ':notification-cutoff';
@@ -95,8 +97,9 @@ export function createLogoutFlow(deps: {
         const started = revision;
         try {
             const marker = await deps.storage.getItem(pendingKey);
+            const managed = await deps.managed?.availability();
             if (blocked || started !== revision) return 'read-failed';
-            return marker === null ? 'ready' : 'logout-pending';
+            return marker === null && managed !== 'logout-pending' ? 'ready' : 'logout-pending';
         } catch {
             return 'read-failed';
         }
@@ -147,6 +150,13 @@ export function createLogoutFlow(deps: {
             if (session?.user.id !== userId || !await canUseSession()) return;
             await repairRegistration(userId);
             const previous = await read(userId);
+            if (deps.managed && await deps.managed.save(session, token, async () =>
+                previous === null && !await deps.hasRegistrations(session), async () => {
+                    if (!await canUseSession()) return false;
+                    const current = await deps.session();
+                    return current?.user.id === userId && jwtSessionId(current.access_token) === jwtSessionId(session.access_token)
+                        && await canUseSession();
+                })) return;
             if (previous?.pending) return;
             if (!await canUseSession()) return;
             const tokens = [...new Set([...(previous?.tokens ?? []), token])];
@@ -166,6 +176,10 @@ export function createLogoutFlow(deps: {
         if (authenticating) return Promise.resolve({ error: new Error('認証処理を実行中です') });
         logout = Promise.resolve().then(async () => {
             const raw = await deps.storage.getItem(pendingKey);
+            if (deps.managed) {
+                await registration?.catch(() => {});
+                if (await deps.managed.finish(raw !== null, advanceCutoff)) return;
+            }
             const pending = raw === null ? undefined : parsePendingLogout(raw);
             if (pending && confirmedRevocation && (pending.userId !== confirmedRevocation.userId
                 || pending.sessionId !== confirmedRevocation.sessionId)) throw new Error('Logout session changed');

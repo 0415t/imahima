@@ -72,6 +72,7 @@ for (const timing of ['simultaneous', 'after-completion']) {
       '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
       '@/lib/notification-task': { handleFreeEndAction }, '@/lib/supabase': {},
       '@/lib/logout': { logoutFlow: { revision: () => 0 } },
+      '@/lib/session-identity': { jwtSessionId: () => 'test-session' },
     }, { React: react });
     root.default();
     // Exercise the actual root effect that installs the listener and reads the launch response.

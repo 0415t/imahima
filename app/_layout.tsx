@@ -13,6 +13,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 // バックグラウンドタスクの定義・登録のためモジュールスコープで読み込む
 import { handleFreeEndAction } from '@/lib/notification-task';
 import { logoutFlow } from '@/lib/logout';
+import { jwtSessionId } from '@/lib/session-identity';
 import { hasSupabaseConfig, supabase } from '@/lib/supabase';
 
 export const unstable_settings = {
@@ -25,14 +26,16 @@ export default function RootLayout() {
   const [isLoading, setIsLoading] = useState(Boolean(hasSupabaseConfig && supabase));
   const blocked = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.isBlocked, logoutFlow.isBlocked);
   const logoutError = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.getError, logoutFlow.getError);
-  const [checkedSession, setCheckedSession] = useState<{ userId: string; revision: number } | null>(null);
+  const [checkedSession, setCheckedSession] = useState<{ identity: string | Session | null; revision: number } | null>(null);
   const [storageReadFailed, setStorageReadFailed] = useState(false);
   const [storageRetry, setStorageRetry] = useState(0);
   const sessionUser = session?.user.id;
+  const sessionId = session ? jwtSessionId(session.access_token) : undefined;
+  const identity = sessionId ? `${sessionUser}:${sessionId}` : session;
   const revision = logoutFlow.revision();
-  const userId = !blocked && !storageReadFailed && checkedSession?.userId === sessionUser && checkedSession?.revision === revision
-    ? sessionUser
-    : undefined;
+  const authorized = !supabase || (!blocked && !storageReadFailed
+    && checkedSession?.identity === identity && checkedSession?.revision === revision);
+  const userId = authorized ? sessionUser : undefined;
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
@@ -55,11 +58,11 @@ export default function RootLayout() {
     void logoutFlow.sessionAvailability().then(availability => {
       if (!active) return;
       setStorageReadFailed(availability === 'read-failed');
-      setCheckedSession(availability === 'ready' && sessionUser ? { userId: sessionUser, revision } : null);
+      setCheckedSession(availability === 'ready' ? { identity, revision } : null);
       if (availability === 'logout-pending') void logoutFlow.signOut();
     });
     return () => { active = false; };
-  }, [blocked, isLoading, revision, sessionUser, storageRetry]);
+  }, [blocked, isLoading, revision, identity, storageRetry]);
 
   useEffect(() => {
     void registerNotificationCategories().catch((error: unknown) => {
@@ -73,9 +76,10 @@ export default function RootLayout() {
     const processResponse = async (response: Notifications.NotificationResponse) => {
       if (!isActive) return;
       const result = await handleFreeEndAction(response);
-      if (isActive && result && (result.ok || result.reason === 'conflict' || result.reason === 'not-authenticated')) {
+      if (isActive && logoutFlow.revision() === revision && result && (result.ok || result.reason === 'conflict' || result.reason === 'not-authenticated')) {
         const last = await Notifications.getLastNotificationResponseAsync();
-        if (last?.notification.request.identifier === response.notification.request.identifier &&
+        if (isActive && logoutFlow.revision() === revision &&
+            last?.notification.request.identifier === response.notification.request.identifier &&
             last.actionIdentifier === response.actionIdentifier) {
           await Notifications.clearLastNotificationResponseAsync();
         }
@@ -94,7 +98,7 @@ export default function RootLayout() {
       isActive = false;
       subscription.remove();
     };
-  }, [userId]);
+  }, [userId, identity, revision]);
 
   useEffect(() => {
     if (!userId) {
@@ -133,7 +137,7 @@ export default function RootLayout() {
         clearTimeout(retryTimeout);
       }
     };
-  }, [userId]);
+  }, [userId, identity, revision]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -147,12 +151,12 @@ export default function RootLayout() {
           <ThemedText accessibilityRole="alert">ログイン状態を確認できませんでした。</ThemedText>
           <Button title="再確認" onPress={() => { setStorageRetry(attempt => attempt + 1); }} />
         </ThemedView>
-      ) : isLoading || (session && !userId) || blocked ? (
+      ) : isLoading || !authorized || blocked ? (
         <ThemedView style={styles.loading}>
           <ActivityIndicator size="large" />
         </ThemedView>
       ) : (
-        <Stack key={userId ?? 'signed-out'}>
+        <Stack key={session ? `${sessionUser}:${sessionId ?? revision}` : 'signed-out'}>
           <Stack.Protected guard={!session}>
             <Stack.Screen name="sign-in" options={{ headerShown: false }} />
           </Stack.Protected>

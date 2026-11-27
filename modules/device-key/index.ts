@@ -56,3 +56,7 @@ export async function signDeviceProof(request: DeviceProofRequest): Promise<Devi
 export async function signLogoutRecoveryProof(request: LogoutRecoveryProofRequest): Promise<DeviceSignatureResult> {
   return native?.signLogoutRecoveryProof?.(request) ?? unsupported;
 }
+
+export function supportsLogoutRecoverySigning(): boolean {
+  return typeof native?.signLogoutRecoveryProof === 'function';
+}

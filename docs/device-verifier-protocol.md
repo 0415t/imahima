@@ -286,3 +286,26 @@ and run with the TSV path. `DeviceProofVectors.kt` runs the same corpus against
 `DeviceProof.kt` with Android's Base64 API available. The Windows Node suite
 checks server framing and bridge behavior. A JVM test key can verify DER-to-P1363
 interoperability without depending on a mobile keystore.
+
+### App rollout and logout journal
+
+Set `EXPO_PUBLIC_DEVICE_RECOVERY_ENABLED=true` only for managed-registration
+rollout after deploying the Express endpoints and a compatible native build.
+The flag allows enrollment of previously unbound devices. The app does not
+silently migrate legacy registrations, and an existing managed binding
+continues to use the recovery path even if the flag is off.
+
+The app stores the installation, user/session IDs, generation, and a stable
+begin operation ID before starting logout. Once returned, the opaque recovery
+ID is also written to the backup intent. Neither the JWT nor the private key
+is copied to the journal. On confirmed Auth absence it clears the matching
+local Auth session and advances the notification cutoff. It then acknowledges
+cleanup and waits for the cleared receipt before removing the journal.
+
+Discovery can resume a damaged journal when the returned recovery ID matches
+the durable backup. If every copy of the recovery ID is lost, the current API
+does not associate its opaque result with a verifiable local generation or
+account. The app keeps that case blocked. A lost generation-opening result
+also stays blocked during logout, since retrying open at that point could
+create a new generation. An authoritative read-only association path would
+be needed to resolve these cases without guessing.
