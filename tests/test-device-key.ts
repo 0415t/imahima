@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type * as DeviceKey from '../modules/device-key';
-import { deviceSigningBytes } from '../server/device-verifier';
+import { deviceSigningBytes, logoutRecoverySigningBytes } from '../server/device-verifier';
 import { loadSource } from './helpers/load-source';
 
 const fields = [
@@ -46,4 +47,80 @@ test('Expo Go or web without the native module never generates or signs a key', 
   assert.equal((await deviceKey.signDeviceProof({
     action: 'enroll-installation', issuer: fields[0]!, userId: fields[1]!, sessionId: fields[2]!, nonce: fields[10]!,
   })).status, 'unsupported');
+  assert.equal((await deviceKey.signLogoutRecoveryProof({
+    action: 'discover', issuer: fields[0]!, keyVersion: '1', nonce: fields[10]!,
+  })).status, 'unsupported');
+});
+
+const vectors = readFileSync('tests/fixtures/device-proof-vectors.tsv', 'utf8').trimEnd().split(/\r?\n/).map(row => {
+  const [name, mode, installation, expected, ...entries] = row.split('\t');
+  const input = Object.fromEntries(entries.map(entry => {
+    const split = entry.indexOf('=');
+    return [entry.slice(0, split), entry.slice(split + 1)];
+  }));
+  assert.ok(name && mode && installation && expected);
+  return { name, mode, installation, expected, input };
+});
+
+test('shared native vectors agree with both Express signature domains', () => {
+  const accepted = vectors.filter(({ expected }) => expected !== 'reject');
+  assert.equal(accepted.length, 10);
+  for (const { name, mode, installation, expected, input } of accepted) {
+    const common = [input.action, input.purpose ?? input.action];
+    const actual = mode === 'recovery'
+      ? logoutRecoverySigningBytes([input.issuer, installation, input.keyVersion, ...common,
+        input.recoveryId ?? null, input.nonce, input.issuedAt ?? null])
+      : deviceSigningBytes([input.issuer, input.userId, input.sessionId, installation, ...common,
+        input.keyVersion, input.generation ?? null, input.operationId ?? null, input.nonce,
+        input.token ?? null, input.platform ?? null, input.deviceName ?? null, null]);
+    assert.equal(actual.toString('utf8'), expected, name);
+  }
+});
+
+test('recovery signature rejects the normal domain and changed scope', () => {
+  const fixture = vectors.find(row => row.name === 'issue-confirm');
+  assert.ok(fixture);
+  const { input, installation, expected } = fixture;
+  const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const scope = [input.issuer, installation, input.keyVersion, input.action, input.purpose,
+    input.recoveryId, input.nonce, input.issuedAt];
+  const signature = sign('sha256', Buffer.from(expected), { key: pair.privateKey, dsaEncoding: 'ieee-p1363' });
+  const key = { key: pair.publicKey, dsaEncoding: 'ieee-p1363' as const };
+  assert.equal(verify('sha256', logoutRecoverySigningBytes(scope), key, signature), true);
+  assert.equal(verify('sha256', deviceSigningBytes(scope), key, signature), false);
+  const normalSignature = sign('sha256', deviceSigningBytes(scope),
+    { key: pair.privateKey, dsaEncoding: 'ieee-p1363' });
+  assert.equal(verify('sha256', logoutRecoverySigningBytes(scope), key, normalSignature), false);
+  for (const [index, field] of scope.entries()) {
+    const changed = scope.slice();
+    changed[index] = field + 'x';
+    assert.equal(verify('sha256', logoutRecoverySigningBytes(changed), key, signature), false);
+  }
+});
+
+test('recovery passes no JWT fields and propagates key loss without creating a key', async () => {
+  const input: DeviceKey.LogoutRecoveryProofRequest = {
+    action: 'confirm', issuer: fields[0]!, keyVersion: '1', nonce: fields[10]!, recoveryId: fields[9]!,
+  };
+  let calls = 0;
+  const deviceKey = loadSource<typeof DeviceKey>('modules/device-key/index.ts', {
+    expo: {
+      requireOptionalNativeModule: () => ({
+        createInstallation: () => assert.fail('Recovery cannot generate a replacement key'),
+        signDeviceProof: () => assert.fail('Recovery must use its own native entry point'),
+        signLogoutRecoveryProof: (request: DeviceKey.LogoutRecoveryProofRequest) => {
+          assert.equal(request, input);
+          assert.equal('userId' in request || 'sessionId' in request, false);
+          calls++;
+          return Promise.resolve({ status: 'key-loss' });
+        },
+      }),
+    },
+  });
+  assert.equal((await deviceKey.signLogoutRecoveryProof(input)).status, 'key-loss');
+  assert.equal(calls, 1);
+  const olderBuild = loadSource<typeof DeviceKey>('modules/device-key/index.ts', {
+    expo: { requireOptionalNativeModule: () => ({ signDeviceProof: () => assert.fail('Wrong signature domain') }) },
+  });
+  assert.equal((await olderBuild.signLogoutRecoveryProof(input)).status, 'unsupported');
 });

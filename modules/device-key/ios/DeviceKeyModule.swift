@@ -11,18 +11,29 @@ public final class DeviceKeyModule: Module {
     AsyncFunction("getIdentity") { self.perform { try $0.getIdentity().result } }
     AsyncFunction("createInstallation") { self.perform { try $0.createInstallation().result } }
     AsyncFunction("signDeviceProof") { (request: [String: String]) in
-      self.perform { store in
-        let identity = try store.getIdentity()
-        let message = try DeviceProof.message(request, installation: identity.record.id, publicKey: identity.publicKey)
-        var error: Unmanaged<CFError>?
-        guard let der = SecKeyCreateSignature(identity.key, .ecdsaSignatureMessageX962SHA256, message as CFData, &error)
-        else {
-          _ = error?.takeRetainedValue()
-          throw DeviceKeyFailure.unavailable
-        }
-        let signature = try P256.Signing.ECDSASignature(derRepresentation: der as Data).rawRepresentation
-        return ["status": "ready", "signature": DeviceProof.encode(signature)]
+      self.signProof { identity in
+        try DeviceProof.message(request, installation: identity.record.id, publicKey: identity.publicKey)
       }
+    }
+    AsyncFunction("signLogoutRecoveryProof") { (request: [String: String]) in
+      self.signProof { identity in
+        try DeviceProof.recoveryMessage(request, installation: identity.record.id)
+      }
+    }
+  }
+
+  private func signProof(_ encode: (Identity) throws -> Data) -> [String: String] {
+    perform { store in
+      let identity = try store.getIdentity()
+      let message = try encode(identity)
+      var error: Unmanaged<CFError>?
+      guard let der = SecKeyCreateSignature(identity.key, .ecdsaSignatureMessageX962SHA256, message as CFData, &error)
+      else {
+        _ = error?.takeRetainedValue()
+        throw DeviceKeyFailure.unavailable
+      }
+      let signature = try P256.Signing.ECDSASignature(derRepresentation: der as Data).rawRepresentation
+      return ["status": "ready", "signature": DeviceProof.encode(signature)]
     }
   }
 

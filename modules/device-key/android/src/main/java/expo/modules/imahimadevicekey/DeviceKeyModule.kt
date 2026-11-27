@@ -39,18 +39,23 @@ class DeviceKeyModule : Module() {
     AsyncFunction("getIdentity") { perform { getIdentity().result() } }
     AsyncFunction("createInstallation") { perform { createInstallation().result() } }
     AsyncFunction("signDeviceProof") { request: Map<String, String> ->
-      perform {
-        val identity = getIdentity()
-        val message = try { DeviceProof.message(request, identity.record.id, identity.publicKey) }
-        catch (_: IllegalArgumentException) { throw Failure("invalid-request") }
-        val signature = Signature.getInstance("SHA256withECDSA").run {
-          initSign(identity.key)
-          update(message)
-          DeviceSignature.fromDer(sign())
-        }
-        mapOf("status" to "ready", "signature" to DeviceProof.encode(signature))
-      }
+      signProof { DeviceProof.message(request, it.record.id, it.publicKey) }
     }
+    AsyncFunction("signLogoutRecoveryProof") { request: Map<String, String> ->
+      signProof { DeviceProof.recoveryMessage(request, it.record.id) }
+    }
+  }
+
+  private fun signProof(encode: (Identity) -> ByteArray): Map<String, String> = perform {
+    val identity = getIdentity()
+    val message = try { encode(identity) }
+    catch (_: IllegalArgumentException) { throw Failure("invalid-request") }
+    val signature = Signature.getInstance("SHA256withECDSA").run {
+      initSign(identity.key)
+      update(message)
+      DeviceSignature.fromDer(sign())
+    }
+    mapOf("status" to "ready", "signature" to DeviceProof.encode(signature))
   }
 
   private fun perform(call: Store.() -> Map<String, String>): Map<String, String> = synchronized(monitor) {

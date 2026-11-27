@@ -109,8 +109,9 @@ functions. The stack applies migrations from the ledger on a newly verified DB.
 ## Native installation keys
 
 `modules/device-key` is a local Expo module and requires a rebuilt native
-binary. Expo Go and web report `unsupported`. The JS API only exposes
-`getIdentity`, `createInstallation`, and `signDeviceProof`. The native module
+binary. Expo Go and web report `unsupported`. The JS API exposes
+`getIdentity`, `createInstallation`, `signDeviceProof`, and
+`signLogoutRecoveryProof`. The native module
 derives the installation ID and public key from its own record and assembles
 the signed protocol fields. For confirmation, pass the canonical signed action
 `confirm_auth_revocation`. It is mapped to `confirm-auth-revocation` on the wire.
@@ -141,8 +142,8 @@ to the old server-side registration.
 
 ## Logout recovery database contract
 
-Migration 28 adds the following private functions. The Express routes below
-implement this contract. Native recovery signing is the next phase.
+Migration 28 adds the following private functions. The Express routes and
+native signing methods below implement this contract.
 
 1. For `begin_device_logout`, use the existing device-verifier role. Verify a
    live JWT and the installation signature, then consume a `begin_logout`
@@ -263,3 +264,25 @@ aggregate clients. Deployment needs ingress limits by verified client
 address, body/read deadlines, and aggregate limits across replicas. DB
 issuance prunes expired rows for the installation it touches. Expired rows
 on dormant installations can persist up to that installation's row bound.
+
+### Native recovery signing
+
+Use `signDeviceProof` for `begin_logout` and its JWT-bound challenge request.
+Use `signLogoutRecoveryProof` for challenge issuance and each limited
+recovery action. Its request includes `issuer` but carries neither JWT nor JWT
+identity fields. The native module derives the installation ID from its
+existing hardware-backed identity. Include that same ID and the returned
+signature in the HTTP request. Build the HTTP body from the route's allowed
+fields. `issuer`, `action`, and JWT identity fields are signing inputs only.
+Recovery fields use their exact ASCII forms. Normal registration continues to
+require an NFC device name. Both methods return a failure status when a
+ready key cannot be loaded. An older native binary without the recovery
+method returns `unsupported`.
+
+`tests/fixtures/device-proof-vectors.tsv` holds the expected framed bytes
+and rejected shapes for both platform codecs and the Express encoder.
+`DeviceProofVectors.swift` can be compiled together with `DeviceProof.swift`
+and run with the TSV path. `DeviceProofVectors.kt` runs the same corpus against
+`DeviceProof.kt` with Android's Base64 API available. The Windows Node suite
+checks server framing and bridge behavior. A JVM test key can verify DER-to-P1363
+interoperability without depending on a mobile keystore.
