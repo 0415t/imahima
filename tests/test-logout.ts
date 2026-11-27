@@ -88,7 +88,9 @@ function managedFixture() {
             return keyAvailable && initialized ? installationId : null;
         },
         operationId: () => `05000000-0000-0000-0000-${String(++operations).padStart(12, '0')}`,
+        async ensureInstallation() { events.push('ensure-key'); failOnce('ensure-key'); },
         open: async () => { events.push('open'); failOnce('open'); return '1'; },
+        async lookupGeneration() { return null; },
         async register() {
             events.push('register');
             if (fail === 'reject-register') { fail = ''; return 'rejected'; }
@@ -101,17 +103,21 @@ function managedFixture() {
         async begin(session, entry) {
             assert.equal(session, a);
             assert.equal(entry.installationId, installationId);
-            assert.equal(entry.generation, '1');
+            assert.ok(entry.generation === undefined || entry.generation === '1');
             assert.equal(JSON.parse(stored.get('test:logout-v2-intent')!).operationId, entry.operationId);
             events.push('begin:' + entry.operationId);
             fenced = true;
             failOnce('begin');
             return recoveryId;
         },
-        async recovery(_installation, action, id) {
+        async recovery(_installation, action, id, binding) {
             events.push(action);
             if (!fenced) throw new Error('No proven recovery');
-            if (action !== 'discover') assert.equal(id, recoveryId);
+            if (action === 'discover-binding') {
+                assert.equal(binding?.userId, userId);
+                assert.equal(binding?.sessionId, sessionId);
+            }
+            if (action === 'confirm' || action === 'ack') assert.equal(id, recoveryId);
             if (action === 'confirm' && !authPresent) confirmed = true;
             if (action === 'ack') {
                 assert.equal(confirmed, true);
@@ -150,6 +156,7 @@ function managedFixture() {
     }
     return { stored, events, a, restart, failAt: (name: string) => { fail = name; },
         replaceSession: (session: LogoutSession | null) => { current = session; },
+        loseAuth: () => { current = null; authPresent = false; },
         loseKey: () => { keyAvailable = false; }, api };
 }
 
@@ -213,25 +220,25 @@ test('logout never creates a generation to resolve a lost generation-opening rep
     const flow = restart();
     failAt('open');
     await assert.rejects(flow.save(a.user.id, 'test-push'));
-    assert.match((await restart().signOut()).error!.message, /generation outcome is unknown/);
+    assert.deepEqual(await restart().signOut(), { error: null });
     assert.equal(events.filter(event => event === 'open').length, 1);
-    assert.ok(!events.includes('revoke'));
+    assert.ok(events.includes('revoke'));
 });
 
-test('damaged managed journal discovers a case but holds when its durable case reference was never received', async () => {
-    const { stored, events, a, restart, failAt, replaceSession } = managedFixture();
+test('damaged managed journal finds a case using the old binding when all copies of the case ID are lost', async () => {
+    const { stored, events, a, restart, failAt, loseAuth } = managedFixture();
     const start = restart();
     await start.save(a.user.id, 'test-push');
     failAt('begin');
     assert.ok((await start.signOut()).error);
     stored.set('test:logout-v2', '{broken');
-    replaceSession(null);
+    stored.delete('test:logout-v2-intent');
+    loseAuth();
     const resumed = restart();
     assert.equal(await resumed.sessionAvailability(), 'logout-pending');
-    assert.match((await resumed.signOut()).error!.message, /no verified local scope/);
-    assert.ok(events.includes('discover'));
-    assert.ok(!events.includes('clear'));
-    assert.ok(!events.includes('ack'));
+    assert.deepEqual(await resumed.signOut(), { error: null });
+    assert.ok(events.includes('discover-binding'));
+    assert.ok(events.includes('ack'));
 });
 
 test('damaged managed journal resumes without the old JWT when the discovered case matches the backup', async () => {
@@ -243,7 +250,7 @@ test('damaged managed journal resumes without the old JWT when the discovered ca
     stored.set('test:logout-v2', '{broken');
     replaceSession(null);
     assert.deepEqual(await restart().signOut(), { error: null });
-    assert.ok(events.includes('discover'));
+    assert.ok(events.includes('discover-binding'));
     assert.ok(events.includes('ack'));
 });
 
@@ -276,7 +283,7 @@ test('managed session read errors, account substitution and key loss block clean
     assert.ok(!events.includes('clear'));
 });
 
-test('lost managed records trigger discovery and never unlock without a verified local scope', async () => {
+test('lost managed records never unlock without a verified local scope', async () => {
     const { stored, events, a, restart, failAt } = managedFixture();
     const flow = restart();
     await flow.save(a.user.id, 'test-push');
@@ -286,9 +293,23 @@ test('lost managed records trigger discovery and never unlock without a verified
     const resumed = restart();
     assert.equal(await resumed.sessionAvailability(), 'logout-pending');
     assert.match((await resumed.signOut()).error!.message, /no verified local scope/);
-    assert.ok(events.includes('discover'));
+    assert.ok(!events.includes('discover-binding'));
     assert.ok(!events.includes('clear'));
     assert.ok(!events.includes('ack'));
+});
+
+test('logout retries interrupted public key registration without opening a generation', async () => {
+    for (const losingJwt of [false, true]) {
+        const { a, restart, events, failAt, replaceSession } = managedFixture();
+        failAt('ensure-key');
+        await assert.rejects(restart().save(a.user.id, 'test-push'));
+        if (losingJwt) replaceSession(null);
+        const { error } = await restart().signOut();
+        assert.equal(Boolean(error), losingJwt);
+        assert.equal(events.filter(event => event === 'ensure-key').length, losingJwt ? 1 : 2);
+        assert.ok(!events.includes('open'));
+        assert.equal(events.includes('ack'), !losingJwt);
+    }
 });
 
 test('production adapter uses JWT only for begin and exact HTTP fields for recovery', async () => {

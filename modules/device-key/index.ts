@@ -1,12 +1,14 @@
 import { requireOptionalNativeModule } from 'expo';
 
-type Purpose = 'enroll' | 'register' | 'fence' | 'lookup' | 'confirm_auth_revocation' | 'begin_logout';
+type Purpose = 'enroll' | 'register' | 'fence' | 'lookup' | 'confirm_auth_revocation' | 'begin_logout'
+  | 'lookup_generation' | 'begin_session_logout';
 type Context = { issuer: string; userId: string; sessionId: string; nonce: string };
 type Generational = { generation: string; operationId: string };
 export type DeviceProofRequest = Context & (
   | { action: 'enroll-installation' }
   | { action: 'challenge'; purpose: Purpose; keyVersion: string }
-  | { action: 'enroll'; keyVersion: string }
+  | { action: 'enroll' | 'lookup_generation'; keyVersion: string }
+  | { action: 'begin_session_logout'; keyVersion: string; operationId: string }
   | (Generational & { action: 'fence' | 'lookup' | 'confirm_auth_revocation' | 'begin_logout'; keyVersion: string })
   | (Generational & {
       action: 'register'; keyVersion: string; token: string; platform: 'ios' | 'android'; deviceName?: string;
@@ -15,10 +17,14 @@ export type DeviceProofRequest = Context & (
 
 type RecoveryContext = { issuer: string; keyVersion: string; nonce: string };
 type RecoveryTarget = 'confirm' | 'ack';
+type RecoveryBinding = { bindingUserId: string; bindingSessionId: string } & (
+  { bindingGeneration: string; bindingOperationId?: never } | { bindingOperationId: string; bindingGeneration?: never });
 export type LogoutRecoveryProofRequest = RecoveryContext & (
   | { action: 'challenge'; purpose: 'discover'; issuedAt: string; recoveryId?: never }
   | { action: 'challenge'; purpose: RecoveryTarget; issuedAt: string; recoveryId: string }
   | { action: 'discover'; purpose?: never; issuedAt?: never; recoveryId?: never }
+  | (RecoveryBinding & ({ action: 'challenge'; purpose: 'discover-binding'; issuedAt: string }
+    | { action: 'discover-binding' }))
   | { action: RecoveryTarget; purpose?: never; issuedAt?: never; recoveryId: string }
 );
 

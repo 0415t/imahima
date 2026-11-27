@@ -62,7 +62,8 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
     }
 
     async function operation(session: LogoutSession, installationId: string,
-        action: 'enroll' | 'register' | 'begin_logout' | 'lookup', data?: { generation: string; operationId: string; token?: string }) {
+        action: 'enroll' | 'register' | 'begin_logout' | 'lookup' | 'lookup_generation' | 'begin_session_logout',
+        data?: { generation?: string; operationId: string; token?: string }) {
         const sessionId = jwtSessionId(session.access_token);
         if (!sessionId) throw new Error('Device session identity unavailable');
         const context = { issuer: issuer(), keyVersion: '1', userId: session.user.id, sessionId };
@@ -70,11 +71,17 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
         const issued = await post('challenge', { installationId, keyVersion: '1', purpose: action, nonce: clientNonce,
             signature: await signDevice({ ...context, action: 'challenge', purpose: action, nonce: clientNonce }) }, session.access_token);
         const nonce = checkedNonce(issued?.nonce);
-        if (action === 'enroll') {
-            return (await post('enroll', { installationId, keyVersion: '1', nonce,
+        if (action === 'enroll' || action === 'lookup_generation') {
+            return (await post(action.replaceAll('_', '-'), { installationId, keyVersion: '1', nonce,
                 signature: await signDevice({ ...context, action, nonce }) }, session.access_token)).result;
         }
         if (!data) throw new Error('Device operation scope unavailable');
+        if (action === 'begin_session_logout') {
+            const proof = { ...context, action, nonce, operationId: data.operationId } as const;
+            return (await post('begin-session-logout', { installationId, keyVersion: '1', nonce, operationId: data.operationId,
+                signature: await signDevice(proof) }, session.access_token)).result;
+        }
+        if (!data.generation) throw new Error('Generation unavailable');
         const platform = Platform.OS;
         if (action === 'register' && (typeof data.token !== 'string' || (platform !== 'ios' && platform !== 'android'))) {
             throw new Error('Push platform unavailable');
@@ -102,7 +109,7 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
             return result.installationId;
         },
         operationId: () => uuid.v4(),
-        async open(session, installationId) {
+        async ensureInstallation(session, installationId) {
             if (enrolled !== installationId) {
                 const native = await import('../modules/device-key');
                 const identity = await native.getIdentity();
@@ -115,9 +122,13 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
                 if (result?.keyVersion !== '1') throw new Error('Invalid device key version');
                 enrolled = installationId;
             }
-            const generation = await operation(session, installationId, 'enroll');
-            if (typeof generation !== 'string' || !/^[1-9][0-9]{0,18}$/.test(generation)) throw new Error('Invalid generation reply');
-            return generation;
+        },
+        async open(session, installationId) {
+            return checkedGeneration(await operation(session, installationId, 'enroll'));
+        },
+        async lookupGeneration(session, installationId) {
+            const generation = await operation(session, installationId, 'lookup_generation');
+            return generation === null ? null : checkedGeneration(generation);
         },
         async register(session, installationId, generation, operationId, token) {
             const result = await operation(session, installationId, 'register', { generation, operationId, token });
@@ -131,34 +142,47 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
             throw new Error('Invalid push registration lookup result');
         },
         async begin(session, intent) {
-            const result = await operation(session, intent.installationId, 'begin_logout', intent);
+            const result = await operation(session, intent.installationId,
+                intent.generation ? 'begin_logout' : 'begin_session_logout', intent);
             return checkedId(result?.recoveryId);
         },
-        async recovery(installationId, action, recoveryId) {
+        async recovery(installationId, action, recoveryId, binding) {
             const native = await import('../modules/device-key');
             const context = { issuer: issuer(), keyVersion: '1' };
             const issue = { ...context, action: 'challenge' as const, nonce: randomNonce(), issuedAt: String(Math.floor(Date.now() / 1_000)) };
-            const proof: LogoutRecoveryProofRequest = action === 'discover'
-                ? { ...issue, purpose: action } : { ...issue, purpose: action, recoveryId: checkedId(recoveryId) };
+            const scope = binding ? { bindingUserId: binding.userId, bindingSessionId: binding.sessionId,
+                ...(binding.generation ? { bindingGeneration: binding.generation }
+                    : { bindingOperationId: checkedId(binding.operationId) }) } : null;
+            if (action === 'discover-binding' && !scope) throw new Error('Recovery scope unavailable');
+            const proof: LogoutRecoveryProofRequest = action === 'discover-binding'
+                ? { ...issue, purpose: action, ...scope! } : action === 'discover'
+                    ? { ...issue, purpose: action } : { ...issue, purpose: action, recoveryId: checkedId(recoveryId) };
             const sign = async (input: LogoutRecoveryProofRequest) => {
                 const result = await native.signLogoutRecoveryProof(input);
                 if (result.status !== 'ready') throw new Error('Recovery signing unavailable');
                 return result.signature;
             };
-            const target = action === 'discover' ? {} : { recoveryId };
+            const target = action === 'discover-binding' ? scope : action === 'discover' ? {} : { recoveryId };
             const issued = await post('recovery/challenge', { installationId, keyVersion: '1', ...target,
                 purpose: action, issuedAt: issue.issuedAt, nonce: issue.nonce, signature: await sign(proof) });
             const nonce = checkedNonce(issued?.nonce);
-            const use: LogoutRecoveryProofRequest = action === 'discover'
-                ? { ...context, action, nonce } : { ...context, action, nonce, recoveryId: checkedId(recoveryId) };
+            const use: LogoutRecoveryProofRequest = action === 'discover-binding'
+                ? { ...context, action, nonce, ...scope! } : action === 'discover'
+                    ? { ...context, action, nonce } : { ...context, action, nonce, recoveryId: checkedId(recoveryId) };
             const { result } = await post('recovery/' + action, { installationId, keyVersion: '1', ...target, nonce, signature: await sign(use) });
             const resolved = checkedId(result?.recoveryId);
-            if ((action !== 'discover' && resolved !== recoveryId) || !['pending', 'confirmed', 'cleared'].includes(result?.status)) {
+            if (((action === 'confirm' || action === 'ack') && resolved !== recoveryId)
+                || !['pending', 'confirmed', 'cleared'].includes(result?.status)) {
                 throw new Error('Invalid recovery receipt');
             }
             return { recoveryId: resolved, status: result.status };
         },
     };
+}
+
+function checkedGeneration(value: unknown) {
+    if (typeof value !== 'string' || !/^[1-9][0-9]{0,18}$/.test(value)) throw new Error('Invalid generation reply');
+    return value;
 }
 
 function checkedNonce(value: unknown) {

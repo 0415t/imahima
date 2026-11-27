@@ -7,7 +7,8 @@ import { abortable, TIMEOUTS } from './timeouts';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const publicKeyPrefix = Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex');
-const purposes = ['enroll', 'register', 'fence', 'lookup', 'confirm_auth_revocation', 'begin_logout'];
+const purposes = ['enroll', 'register', 'fence', 'lookup', 'confirm_auth_revocation', 'begin_logout',
+  'lookup_generation', 'begin_session_logout'];
 const hash = (value: Buffer) => createHash('sha256').update(value).digest();
 
 class Rejected extends Error {
@@ -133,6 +134,8 @@ const operations = {
   register: 'SELECT push_private.register_device_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
   fence: 'SELECT push_private.fence_device_registration($1,$2,$3,$4,$5,$6,$7) AS result',
   begin_logout: 'SELECT push_private.begin_device_logout($1,$2,$3,$4,$5,$6,$7) AS result',
+  lookup_generation: 'SELECT push_private.lookup_device_generation($1,$2,$3,$4,$5) AS result',
+  begin_session_logout: 'SELECT push_private.begin_device_session_logout($1,$2,$3,$4,$5,$6) AS result',
   lookup: 'SELECT push_private.get_device_operation($1,$2,$3,$4,$5,$6) AS result',
   confirm_auth_revocation: 'SELECT push_private.confirm_auth_revocation($1,$2,$3,$4,$5,$6) AS result',
 } as const;
@@ -166,6 +169,8 @@ const requestFields = {
   register: [...operationFields, 'token', 'platform', 'deviceName'],
   fence: operationFields,
   begin_logout: operationFields,
+  lookup_generation: signedFields,
+  begin_session_logout: [...signedFields, 'operationId'],
   lookup: operationFields,
   confirm_auth_revocation: operationFields,
 };
@@ -178,8 +183,9 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
     try {
       const path = request.params.action;
       const action = (path === 'confirm-auth-revocation' ? 'confirm_auth_revocation' :
-        path === 'begin-logout' ? 'begin_logout' : path) as keyof typeof requestFields;
-      if (path === 'confirm_auth_revocation' || path === 'begin_logout') throw new Rejected(404);
+        path === 'begin-logout' ? 'begin_logout' : path === 'lookup-generation' ? 'lookup_generation' :
+        path === 'begin-session-logout' ? 'begin_session_logout' : path) as keyof typeof requestFields;
+      if (['confirm_auth_revocation', 'begin_logout', 'lookup_generation', 'begin_session_logout'].includes(path)) throw new Rejected(404);
       if (!Object.hasOwn(requestFields, action)) throw new Rejected(404);
       if (!request.is('application/json') || !request.body || Array.isArray(request.body)) throw new Rejected(400);
       const body = request.body;
@@ -190,10 +196,10 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
       const keyVersion = bootstrap ? '1' : positiveBigint(body.keyVersion);
       const purpose = action === 'challenge' ? body.purpose : action;
       if (action === 'challenge' && !purposes.includes(purpose)) throw new Rejected(400);
-      if (purpose === 'begin_logout' && !recoveryEnabled) throw new Rejected(503);
+      if (['begin_logout', 'lookup_generation', 'begin_session_logout'].includes(purpose) && !recoveryEnabled) throw new Rejected(503);
       const write = ['register', 'fence', 'begin_logout', 'lookup', 'confirm_auth_revocation'].includes(action);
       const generation = write ? positiveBigint(body.generation) : null;
-      const operation = write ? string(body.operationId, uuidPattern, 36) : null;
+      const operation = write || action === 'begin_session_logout' ? string(body.operationId, uuidPattern, 36) : null;
       const token = action === 'register' ? string(body.token, /^(?:Expo|Exponent)PushToken\[[A-Za-z0-9_-]+\]$/, 256) : null;
       const platform = action === 'register' ? string(body.platform, /^(?:ios|android)$/, 7) : null;
       const deviceName = action === 'register' && body.deviceName != null
@@ -236,6 +242,7 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
         const actor = [installation, identity.user, identity.session];
         const proof = [keyVersion, hash(nonce)];
         let args: (string | Buffer | null)[] = [...actor, ...proof];
+        if (action === 'begin_session_logout') args = [...actor, operation!, ...proof];
         if (action === 'register' || action === 'fence' || action === 'begin_logout') {
           args = [...actor, generation!, operation!, ...proof];
           if (action === 'register') args.push(token!, platform!, deviceName);
@@ -270,8 +277,9 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
   return router;
 }
 
-const recoveryPurposes = ['discover', 'confirm', 'ack'];
-const recoveryFields = new Set(['installationId', 'keyVersion', 'purpose', 'recoveryId', 'nonce', 'signature', 'issuedAt']);
+const recoveryPurposes = ['discover', 'discover-binding', 'confirm', 'ack'];
+const recoveryFields = new Set(['installationId', 'keyVersion', 'purpose', 'recoveryId', 'nonce', 'signature', 'issuedAt',
+  'bindingUserId', 'bindingSessionId', 'bindingGeneration', 'bindingOperationId']);
 // Standard P-256 generator. Used only to exercise verification for missing keys.
 const dummyRecoveryKey = p256Key(Buffer.from(
   '046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296' +
@@ -321,13 +329,27 @@ export function logoutRecoveryRouter(pool?: Pool, issuer?: string, challengeSecr
         const purpose = issuance ? body.purpose : action;
         if (typeof purpose !== 'string' || !recoveryPurposes.includes(purpose) ||
             (!issuance && (Object.hasOwn(body, 'purpose') || Object.hasOwn(body, 'issuedAt')))) throw new Rejected(400);
-        const recoveryId = purpose === 'discover' ? null : string(body.recoveryId, uuidPattern, 36);
-        if (purpose === 'discover' && Object.hasOwn(body, 'recoveryId')) throw new Rejected(400);
+        const scoped = purpose === 'discover-binding';
+        const discovering = scoped || purpose === 'discover';
+        const recoveryId = discovering ? null : string(body.recoveryId, uuidPattern, 36);
+        if (discovering && Object.hasOwn(body, 'recoveryId')) throw new Rejected(400);
+        const scopeFields = ['bindingUserId', 'bindingSessionId', 'bindingGeneration', 'bindingOperationId'];
+        if (!scoped && scopeFields.some(field => Object.hasOwn(body, field))) throw new Rejected(400);
+        const scopeUser = scoped ? string(body.bindingUserId, uuidPattern, 36) : null;
+        const scopeSession = scoped ? string(body.bindingSessionId, uuidPattern, 36) : null;
+        const scopeGeneration = scoped && Object.hasOwn(body, 'bindingGeneration') ? positiveBigint(body.bindingGeneration) : null;
+        const scopeOperation = scoped && Object.hasOwn(body, 'bindingOperationId') ? string(body.bindingOperationId, uuidPattern, 36) : null;
+        if (scoped && Boolean(scopeGeneration) === Boolean(scopeOperation)) throw new Rejected(400);
         const nonce = encodedBytes(body.nonce, 32);
         const signature = encodedBytes(body.signature, 64);
         const issuedAt = issuance ? string(body.issuedAt, /^[1-9][0-9]*$/, 12) : null;
-        const signed = logoutRecoverySigningBytes([issuer, installation, keyVersion, action, purpose,
-          recoveryId, nonce.toString('base64url'), issuedAt]);
+        const fields = [issuer, installation, keyVersion, action, purpose, recoveryId, nonce.toString('base64url'), issuedAt];
+        if (scoped) fields.push(scopeUser, scopeSession, scopeGeneration, scopeOperation);
+        const signed = logoutRecoverySigningBytes(fields);
+        // PostgreSQL jsonb arrays of these ASCII values use a comma and a space.
+        const identityDigest = scoped ? hash(Buffer.from(`["${scopeUser}", "${scopeSession}"]`)).toString('hex') : null;
+        const scopeDigest = scoped ? hash(Buffer.from(`["${identityDigest}", ${scopeGeneration ?? JSON.stringify(scopeOperation)}]`)) : null;
+        const dbPurpose = scoped ? 'discover_binding' : purpose;
         leave = limits.enter();
         const result = await transaction(pool, async db => {
           const locked = await db.query('SELECT * FROM push_private.lock_device_verification_key($1)', [installation]);
@@ -341,13 +363,13 @@ export function logoutRecoveryRouter(pool?: Pool, issuer?: string, challengeSecr
             // A replay derives the same digest across processes. The DB primary
             // key prevents it creating a second row while the proof is fresh.
             const challenge = createHmac('sha256', challengeSecret).update(signed).digest();
-            const issued = await db.query('SELECT push_private.issue_logout_recovery_challenge($1,$2,$3,$4,$5) AS expires',
-              [installation, keyVersion, purpose, recoveryId, hash(challenge)]);
+            const issued = await db.query('SELECT push_private.issue_scoped_logout_recovery_challenge($1,$2,$3,$4,$5,$6) AS expires',
+              [installation, keyVersion, dbPurpose, recoveryId, hash(challenge), scopeDigest]);
             limits.consume(['verified-installation:' + installation, 8]);
             return { nonce: challenge.toString('base64url'), expiresAt: issued.rows[0].expires };
           }
-          const applied = await db.query('SELECT push_private.apply_logout_recovery($1,$2,$3,$4,$5) AS result',
-            [installation, keyVersion, purpose, recoveryId, hash(nonce)]);
+          const applied = await db.query('SELECT push_private.apply_scoped_logout_recovery($1,$2,$3,$4,$5,$6) AS result',
+            [installation, keyVersion, dbPurpose, recoveryId, hash(nonce), scopeDigest]);
           return { result: applied.rows[0].result };
         }, true);
         response.json(result);

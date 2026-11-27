@@ -309,3 +309,19 @@ account. The app keeps that case blocked. A lost generation-opening result
 also stays blocked during logout, since retrying open at that point could
 create a new generation. An authoritative read-only association path would
 be needed to resolve these cases without guessing.
+### Lost generation and recovery references
+
+Apply migration `20261130000000_device_logout_session_fence.sql` before deploying the Express code that uses the expanded recovery functions.
+
+- `POST /device-recovery/lookup-generation` uses a live JWT and the `lookup_generation` device challenge. It returns `{result: "<generation>"}` for the exact live binding or `{result: null}`. This observation does not cancel an outstanding request.
+- `POST /device-recovery/begin-session-logout` uses a live JWT and a `begin_session_logout` challenge. The ordinary device proof generation field is null and the operation ID is required. Retrying with a new challenge and the same operation ID returns the stored `{result: {recoveryId, generation}}`. Generation is null when there was no active generation for this session. The operation installs a permanent session fence and issues a recovery case under the same installation lock used for generation creation.
+- `POST /device-recovery/recovery/discover-binding` and its challenge require the same protected key and installation ID. Their existing recovery frame is extended by the following four fields in order: old user UUID, old session UUID, generation decimal or null, and session-logout operation UUID or null. Exactly one of generation and operation is supplied. The signed HTTP fields are `bindingUserId`, `bindingSessionId`, `bindingGeneration`, and `bindingOperationId`. The challenge is bound to the selected case and the exact scope. Only the latest matching case ID and status are returned.
+- Public-key registration and the generation-creation checkpoint are separate. Recovery with a live JWT can repeat public-key registration for the same installation and key. It does not open a generation. When the JWT and all relevant binding proof are unavailable, the app holds logout for recovery.
+- Both case types require authoritative Auth absence and a local cleanup acknowledgement. A retry after a lost acknowledgement returns the stored result. The fence stays in place after cleanup and is scoped to the old session and installation.
+
+### Remaining verification
+
+- Phase 6 final integration will inject simultaneous first public-key registration and logout requests.
+- Phase 6 final integration will test loss of the database COMMIT reply itself. The existing tests cover connection loss before COMMIT and loss of the HTTP reply after COMMIT.
+- The cause of the earlier first-run HTTP 503 in the enrollment challenge quota test remains unidentified. Subsequent isolated runs passed.
+- Native compilation and physical-device verification are tracked in Issue #50.

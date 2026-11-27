@@ -5,9 +5,9 @@ import java.net.URI
 import java.text.Normalizer
 
 internal object DeviceProof {
-  private val actions = setOf("enroll", "register", "fence", "lookup", "confirm_auth_revocation", "begin_logout")
-  private val recoveryPurposes = setOf("discover", "confirm", "ack")
-  private val generations = actions - "enroll"
+  private val actions = setOf("enroll", "register", "fence", "lookup", "confirm_auth_revocation", "begin_logout", "lookup_generation", "begin_session_logout")
+  private val recoveryPurposes = setOf("discover", "discover-binding", "confirm", "ack")
+  private val generations = actions - setOf("enroll", "lookup_generation", "begin_session_logout")
   private val uuid = Regex("[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
   private val decimal = Regex("[1-9][0-9]{0,18}")
   private val token = Regex("(Expo|Exponent)PushToken\\[[A-Za-z0-9_-]+\\]")
@@ -49,11 +49,13 @@ internal object DeviceProof {
     require(bootstrap || challenge || action in actions)
     val purpose = if (challenge) field("purpose").also { require(it in actions) } else action
     val generational = action in generations
+    val operation = generational || action == "begin_session_logout"
     val registration = action == "register"
     val allowed = mutableSetOf("action", "issuer", "userId", "sessionId", "nonce")
     if (!bootstrap) allowed.add("keyVersion")
     if (challenge) allowed.add("purpose")
-    if (generational) allowed.addAll(listOf("generation", "operationId"))
+    if (generational) allowed.add("generation")
+    if (operation) allowed.add("operationId")
     if (registration) allowed.addAll(listOf("token", "platform", "deviceName"))
     require(request.keys.all { it in allowed })
     val deviceName = request["deviceName"]?.also {
@@ -62,7 +64,7 @@ internal object DeviceProof {
     return frame(
       "imahima-device-proof-v1", issuer(field("issuer")), id("userId"), id("sessionId"), installation, action, purpose,
       if (bootstrap) "1" else number(field("keyVersion")),
-      if (generational) number(field("generation")) else null, if (generational) id("operationId") else null,
+      if (generational) number(field("generation")) else null, if (operation) id("operationId") else null,
       nonce(field("nonce")), if (registration) field("token").also { require(it.length <= 256 && token.matches(it)) } else null,
       if (registration) field("platform").also { require(it == "android") } else null,
       deviceName, if (bootstrap) publicKey else null
@@ -77,11 +79,21 @@ internal object DeviceProof {
     require(purpose in recoveryPurposes)
     val expected = mutableSetOf("action", "issuer", "keyVersion", "nonce")
     if (challenge) expected.addAll(listOf("purpose", "issuedAt"))
-    if (purpose != "discover") expected.add("recoveryId")
+    val scoped = purpose == "discover-binding"
+    if (purpose == "confirm" || purpose == "ack") expected.add("recoveryId")
+    val generation = request["bindingGeneration"]
+    val operation = request["bindingOperationId"]
+    val scope = if (scoped) {
+      require((generation == null) != (operation == null))
+      expected.addAll(listOf("bindingUserId", "bindingSessionId", if (generation == null) "bindingOperationId" else "bindingGeneration"))
+      listOf(field("bindingUserId").also { require(validUuid(it)) },
+        field("bindingSessionId").also { require(validUuid(it)) },
+        generation?.let(::number), operation?.also { require(validUuid(it)) })
+    } else emptyList()
     require(request.keys == expected)
     val recoveryId = request["recoveryId"]?.also { require(validUuid(it)) }
     val issuedAt = request["issuedAt"]?.also { require(Regex("[1-9][0-9]{0,11}").matches(it)) }
-    return frame("imahima-logout-recovery-v1", issuer(field("issuer")), installation,
-      number(field("keyVersion")), action, purpose, recoveryId, nonce(field("nonce")), issuedAt)
+    return frame(*(listOf("imahima-logout-recovery-v1", issuer(field("issuer")), installation,
+      number(field("keyVersion")), action, purpose, recoveryId, nonce(field("nonce")), issuedAt) + scope).toTypedArray())
   }
 }

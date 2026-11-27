@@ -498,6 +498,24 @@
           "No recovery verifier login is provisioned by this migration"
         ]
       }
+    },
+    {
+      "version": "20261130000000",
+      "name": "device_logout_session_fence",
+      "file": "20261130000000_device_logout_session_fence.sql",
+      "dependsOn": [
+        "20261129000000"
+      ],
+      "gitBlob": "447129b18a0d43c9da92f15f052cff37ce94d4dc",
+      "sourceSha256": "952e0c672a35e39493bb9d102598fd83cef70711b0f43e58ed4cd007a8db21c6",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Existing device and logout recovery verifier roles and primary Auth session reader are available"
+        ]
+      }
     }
   ]
 }

@@ -4,20 +4,23 @@ import type { LogoutSession } from './logout-flow';
 type Storage = { getItem(key: string): Promise<string | null>; setItem(key: string, value: string): Promise<void>;
     removeItem(key: string): Promise<void> };
 type Scope = { installationId: string; userId: string; sessionId: string };
-type Binding = Scope & { generation?: string; openRequested?: boolean;
+type Binding = Scope & { generation?: string; keyRegistered?: boolean; openRequested?: boolean;
     registration?: { operationId: string; token: string; done: boolean } };
-type Intent = Scope & { operationId: string; generation: string };
+type Intent = Scope & { operationId: string; generation?: string };
 type Journal = Intent & { stage: 'begin' | 'revoke' | 'confirm' | 'clear' | 'ack'; recoveryId?: string };
 type Receipt = { recoveryId: string; status: 'pending' | 'confirmed' | 'cleared' };
 
 export type ManagedDeviceApi = {
     identity(create: boolean): Promise<string | null>;
     operationId(): string;
+    ensureInstallation(session: LogoutSession, installationId: string): Promise<void>;
     open(session: LogoutSession, installationId: string): Promise<string>;
+    lookupGeneration(session: LogoutSession, installationId: string): Promise<string | null>;
     register(session: LogoutSession, installationId: string, generation: string, operationId: string, token: string): Promise<void | 'rejected'>;
     lookupRegistration(session: LogoutSession, installationId: string, generation: string, operationId: string): Promise<boolean>;
     begin(session: LogoutSession, intent: Intent): Promise<string>;
-    recovery(installationId: string, action: 'discover' | 'confirm' | 'ack', recoveryId?: string): Promise<Receipt>;
+    recovery(installationId: string, action: 'discover' | 'discover-binding' | 'confirm' | 'ack', recoveryId?: string,
+        binding?: Scope & { generation?: string; operationId?: string }): Promise<Receipt>;
 };
 
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
@@ -33,6 +36,7 @@ function readBinding(raw: string): Binding {
     if (!value || !isUuid(value.installationId) || !isUuid(value.userId) || !isUuid(value.sessionId)
         || (value.generation !== undefined && (typeof value.generation !== 'string' || !generationPattern.test(value.generation)))
         || (value.openRequested !== undefined && typeof value.openRequested !== 'boolean')
+        || (value.keyRegistered !== undefined && typeof value.keyRegistered !== 'boolean')
         || (value.registration !== undefined && (!value.registration || !isUuid(value.registration.operationId)
             || typeof value.registration.token !== 'string' || typeof value.registration.done !== 'boolean'))) {
         throw new Error('Invalid managed device record');
@@ -42,7 +46,7 @@ function readBinding(raw: string): Binding {
 
 function readJournal(raw: string): Journal {
     const value = readBinding(raw) as Journal;
-    if (!value.generation || !isUuid(value.operationId)
+    if (!isUuid(value.operationId)
         || !['begin', 'revoke', 'confirm', 'clear', 'ack'].includes(value.stage)
         || (value.stage === 'begin' ? value.recoveryId !== undefined : !isUuid(value.recoveryId))) {
         throw new Error('Invalid logout journal');
@@ -119,10 +123,18 @@ export function createManagedLogout(options: {
         if (await storage.getItem(bootstrapKey) !== null) await storage.removeItem(bootstrapKey);
         if (!binding.generation) {
             if (!await stillCurrent()) return true;
+            if (!binding.keyRegistered) {
+                await api.ensureInstallation(session, installationId);
+                binding = { ...binding, keyRegistered: true };
+                await put(bindingKey, binding);
+            }
+            if (!await stillCurrent()) return true;
+            const found = binding.openRequested ? await api.lookupGeneration(session, installationId) : null;
+            if (!await stillCurrent()) return true;
             binding = { ...binding, openRequested: true };
             await put(bindingKey, binding);
             if (!await stillCurrent()) return true;
-            binding = { ...binding, generation: await api.open(session, installationId) };
+            binding = { ...binding, generation: found ?? await api.open(session, installationId) };
             await put(bindingKey, binding);
         }
         if (!await stillCurrent()) return true;
@@ -167,11 +179,7 @@ export function createManagedLogout(options: {
                 return false;
             }
             if (!installation || await storage.getItem(cleanKey) === installation) return false;
-            const receipt = await api.recovery(installation, 'discover');
-            if (receipt.status !== 'cleared' || await options.session()) throw new Error('Discovered logout has no verified local scope');
-            await beforeAcknowledgement();
-            await storage.setItem(cleanKey, installation);
-            return true;
+            throw new Error('Discovered logout has no verified local scope');
         }
         if (legacyPending) throw new Error('Conflicting logout records');
         const installationId = await api.identity(false);
@@ -189,10 +197,7 @@ export function createManagedLogout(options: {
         }
         if (entry?.stage === 'begin' && intent?.recoveryId) entry = intent;
         const saved = entry ?? intent ?? binding;
-        if (!saved) {
-            await api.recovery(installationId, 'discover');
-            throw new Error('Discovered logout has no verified local scope');
-        }
+        if (!saved) throw new Error('Discovered logout has no verified local scope');
         if (saved.installationId !== installationId) throw new Error('Logout installation unavailable');
         if (binding && (entry ?? intent) && !sameScope(binding, (entry ?? intent)!)) {
             throw new Error('Logout binding changed');
@@ -210,11 +215,11 @@ export function createManagedLogout(options: {
                 // The backup may be the only write that survived before begin.
                 entry = intent;
             } else {
-                const receipt = await api.recovery(installationId, 'discover');
-                // Discovery only returns an opaque ID. Do not attach a newly
-                // discovered case to potentially stale user/session metadata.
-                if (intent?.recoveryId !== receipt.recoveryId) throw new Error('Discovered logout has no verified local scope');
-                entry = { ...intent, stage: receipt.status === 'pending' ? 'revoke' : 'clear' };
+                if (!scope.generation && !intent?.operationId) throw new Error('Discovered logout has no verified local scope');
+                const receipt = await api.recovery(installationId, 'discover-binding', undefined, scope);
+                if (intent?.recoveryId && intent.recoveryId !== receipt.recoveryId) throw new Error('Discovered logout changed');
+                entry = { ...scope, operationId: intent?.operationId ?? api.operationId(),
+                    recoveryId: receipt.recoveryId, stage: receipt.status === 'pending' ? 'revoke' : 'clear' };
             }
             await put(journalKey, entry);
         }
@@ -224,14 +229,6 @@ export function createManagedLogout(options: {
             if (!session) throw new Error('Logout session unavailable');
             if (await storage.getItem(cleanKey) !== null) await storage.removeItem(cleanKey);
             if (await storage.getItem(bootstrapKey) !== null) await storage.removeItem(bootstrapKey);
-            if (!binding.generation) {
-                if (binding.openRequested) throw new Error('Managed generation outcome is unknown');
-                // The write-ahead marker proves no managed generation request
-                // was sent. Return to the existing logout before any v2 write.
-                await storage.setItem(cleanKey, installationId);
-                await storage.removeItem(bindingKey);
-                return false;
-            }
             entry = { installationId, userId: binding.userId, sessionId: binding.sessionId,
                 generation: binding.generation, operationId: api.operationId(), stage: 'begin' };
             await put(intentKey, entry);
@@ -246,10 +243,12 @@ export function createManagedLogout(options: {
         if (entry.stage === 'begin') {
             const session = await current(entry);
             if (session) {
+                if (!entry.generation) await api.ensureInstallation(session, installationId);
+                if (!await current(entry)) throw new Error('Logout session unavailable');
                 await checkpoint('revoke', await api.begin(session, entry));
             } else {
-                await api.recovery(installationId, 'discover');
-                throw new Error('Discovered logout has no verified local scope');
+                const receipt = await api.recovery(installationId, 'discover-binding', undefined, entry);
+                await checkpoint('revoke', receipt.recoveryId);
             }
         }
         if (entry.stage === 'revoke') {

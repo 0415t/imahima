@@ -64,12 +64,15 @@ const vectors = readFileSync('tests/fixtures/device-proof-vectors.tsv', 'utf8').
 
 test('shared native vectors agree with both Express signature domains', () => {
   const accepted = vectors.filter(({ expected }) => expected !== 'reject');
-  assert.equal(accepted.length, 10);
+  assert.equal(accepted.length, 12);
   for (const { name, mode, installation, expected, input } of accepted) {
     const common = [input.action, input.purpose ?? input.action];
+    const scope = (input.purpose ?? input.action) === 'discover-binding'
+      ? [input.bindingUserId, input.bindingSessionId, input.bindingGeneration ?? null, input.bindingOperationId ?? null]
+      : [];
     const actual = mode === 'recovery'
       ? logoutRecoverySigningBytes([input.issuer, installation, input.keyVersion, ...common,
-        input.recoveryId ?? null, input.nonce, input.issuedAt ?? null])
+        input.recoveryId ?? null, input.nonce, input.issuedAt ?? null, ...scope])
       : deviceSigningBytes([input.issuer, input.userId, input.sessionId, installation, ...common,
         input.keyVersion, input.generation ?? null, input.operationId ?? null, input.nonce,
         input.token ?? null, input.platform ?? null, input.deviceName ?? null, null]);

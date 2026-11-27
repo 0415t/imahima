@@ -6,6 +6,7 @@ import { Agent, request } from 'node:http';
 import { test } from 'node:test';
 import { createClient } from '@supabase/supabase-js';
 import { createApp } from '../server/app.ts';
+import { createManagedLogout } from '../lib/managed-logout.ts';
 import { createDeviceVerifierPool, deviceSigningBytes, deviceVerifierRouter, logoutRecoveryRouter,
   logoutRecoverySigningBytes, notificationSessionAuthenticator } from '../server/device-verifier.ts';
 import { createStack, waitFor } from './helpers/issue36-stack.mjs';
@@ -44,7 +45,7 @@ function isolatedFetch(origin, agent) {
 }
 
 test('isolated GoTrue, Express and PostgreSQL verify device ownership without exposing RPCs to PostgREST', {
-  timeout: 360000,
+  timeout: 480000,
 }, async t => {
   const stack = createStack(t.signal, { allowSignup: true });
   const agent = new Agent({ proxyEnv: {} });
@@ -128,6 +129,8 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     function signed(action, body, signingKey = key, access = first.access) {
       if (action === 'confirm-auth-revocation') action = 'confirm_auth_revocation';
       if (action === 'begin-logout') action = 'begin_logout';
+      if (action === 'begin-session-logout') action = 'begin_session_logout';
+      if (action === 'lookup-generation') action = 'lookup_generation';
       const jwt = JSON.parse(Buffer.from(access.split('.')[1], 'base64url'));
       const bytes = deviceSigningBytes([issuer, jwt.sub, jwt.session_id, body.installationId, action,
         action === 'challenge' ? body.purpose : action, body.keyVersion ?? '1', body.generation ?? null,
@@ -539,8 +542,13 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     assert.match(recoveryId, /^[0-9a-f-]{36}$/);
 
     function recoveryProof(action, fields, signingKey = key, encoder = logoutRecoverySigningBytes) {
-      const bytes = encoder([issuer, fields.installationId, fields.keyVersion, action,
-        fields.purpose ?? action, fields.recoveryId ?? null, fields.nonce, fields.issuedAt ?? null]);
+      const bare = [issuer, fields.installationId, fields.keyVersion, action,
+        fields.purpose ?? action, fields.recoveryId ?? null, fields.nonce, fields.issuedAt ?? null];
+      if ((fields.purpose ?? action) === 'discover-binding') {
+        bare.push(fields.bindingUserId, fields.bindingSessionId,
+          fields.bindingGeneration ?? null, fields.bindingOperationId ?? null);
+      }
+      const bytes = encoder(bare);
       return { ...fields, signature: sign('sha256', bytes, {
         key: signingKey.privateKey, dsaEncoding: 'ieee-p1363',
       }).toString('base64url') };
@@ -645,9 +653,175 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       body: '{}',
     });
     assert.equal(direct.status, 404);
-    const rateProbe = { installationId: randomUUID(), keyVersion: '0' };
-    for (let index = 0; index < 30; index++) await recoveryPost('challenge', rateProbe, 400);
-    await recoveryPost('challenge', rateProbe, 429);
+    const scopedCases = [];
+    for (const opensFirst of [false, true]) {
+      const target = { keyVersion: '1', installationId: randomUUID() };
+      const newKey = { installationId: target.installationId, publicKey: key.point };
+      const enrollment = await post('enrollment-challenge', newKey, 200, unrelatedSession);
+      await discardCommittedReply('enroll-installation',
+        signed('enroll-installation', { ...newKey, nonce: enrollment.nonce }, key, unrelatedSession), unrelatedSession);
+      const retryKey = await post('enrollment-challenge', newKey, 200, unrelatedSession);
+      await post('enroll-installation', signed('enroll-installation', {
+        ...newKey, nonce: retryKey.nonce,
+      }, key, unrelatedSession), 200, unrelatedSession);
+      const issue = async purpose => (await post('challenge', signed('challenge', {
+        ...target, purpose, nonce: randomBytes(32).toString('base64url'),
+      }, key, unrelatedSession), 200, unrelatedSession)).nonce;
+      const delayedOpen = signed('enroll', { ...target, nonce: await issue('enroll') }, key, unrelatedSession);
+      const expectedGeneration = opensFirst ? (await post('enroll', delayedOpen, 200, unrelatedSession)).result : null;
+      assert.equal((await post('lookup-generation', signed('lookup-generation', {
+        ...target, nonce: await issue('lookup_generation'),
+      }, key, unrelatedSession), 200, unrelatedSession)).result, expectedGeneration);
+      const operationId = randomUUID();
+      const beginScoped = async () => signed('begin-session-logout', {
+        ...target, operationId, nonce: await issue('begin_session_logout'),
+      }, key, unrelatedSession);
+      await discardCommittedReply('begin-session-logout', await beginScoped(), unrelatedSession);
+      const receipt = (await post('begin-session-logout', await beginScoped(), 200, unrelatedSession)).result;
+      assert.equal(receipt.generation, expectedGeneration);
+      const oldOpen = opensFirst ? signed('enroll', { ...target, nonce: await issue('enroll') }, key, unrelatedSession) : delayedOpen;
+      await post('enroll', oldOpen, 403, unrelatedSession);
+      const claims = jwtClaims(unrelatedSession);
+      const scope = { bindingUserId: claims.sub, bindingSessionId: claims.session_id, bindingOperationId: operationId };
+      const scopedProof = async (action, fields) => {
+        const issued = await recoveryPost('challenge', recoveryProof('challenge', {
+          ...target, ...fields, purpose: action, nonce: randomBytes(32).toString('base64url'),
+          issuedAt: String(Math.floor(Date.now() / 1000)),
+        }));
+        return recoveryProof(action, { ...target, ...fields, nonce: issued.nonce });
+      };
+      const discovered = await scopedProof('discover-binding', scope);
+      await recoveryPost('discover-binding', { ...discovered, bindingSessionId: randomUUID() }, 403);
+      assert.deepEqual((await recoveryPost('discover-binding', discovered)).result,
+        { recoveryId: receipt.recoveryId, status: 'pending' });
+      await recoveryPost('discover-binding', discovered, 403);
+      await recoveryPost('ack', await scopedProof('ack', { recoveryId: receipt.recoveryId }), 403);
+      scopedCases.push({ scopedProof, recoveryId: receipt.recoveryId });
+    }
+    assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
+      method: 'POST', headers: { authorization: 'Bearer ' + unrelatedSession },
+    })).status, 204);
+    for (const { scopedProof, recoveryId: id } of scopedCases) {
+      assert.deepEqual((await recoveryPost('confirm', await scopedProof('confirm', { recoveryId: id }))).result,
+        { recoveryId: id, status: 'confirmed' });
+      await discardCommittedReply('recovery/ack', await scopedProof('ack', { recoveryId: id }), null);
+      assert.deepEqual((await recoveryPost('ack', await scopedProof('ack', { recoveryId: id }))).result,
+        { recoveryId: id, status: 'cleared' });
+    }
+
+    // Exercise the actual app state machine against the isolated stack. Only
+    // secure key operations and local persistence are supplied by test adapters.
+    const clientAccount = await signup();
+    const clientUser = jwtClaims(clientAccount.access).sub;
+    let localSession = { user: { id: clientUser }, access_token: clientAccount.access };
+    const clientTarget = { keyVersion: '1', installationId: randomUUID() };
+    const clientChallenge = async purpose => (await post('challenge', signed('challenge', {
+      ...clientTarget, purpose, nonce: randomBytes(32).toString('base64url'),
+    }, key, clientAccount.access), 200, clientAccount.access)).nonce;
+    const localRecords = new Map();
+    let lostAck = false, openCalls = 0;
+    const restartClient = () => createManagedLogout({
+      prefix: 'isolated', enableNew: true,
+      storage: {
+        async getItem(name) { return localRecords.get(name) ?? null; },
+        async setItem(name, value) { localRecords.set(name, value); },
+        async removeItem(name) { localRecords.delete(name); },
+      },
+      session: async () => localSession,
+      async revoke(session) {
+        assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
+          method: 'POST', headers: { authorization: 'Bearer ' + session.access_token },
+        })).status, 204);
+      },
+      async clean(scope) {
+        if (localSession) {
+          assert.equal(scope.userId, localSession.user.id);
+          assert.equal(scope.sessionId, jwtClaims(localSession.access_token).session_id);
+        }
+        localSession = null;
+      },
+      api: {
+        identity: async () => clientTarget.installationId,
+        operationId: randomUUID,
+        async ensureInstallation() {
+          const input = { installationId: clientTarget.installationId, publicKey: key.point };
+          const issued = await post('enrollment-challenge', input, 200, clientAccount.access);
+          await post('enroll-installation', signed('enroll-installation', {
+            ...input, nonce: issued.nonce,
+          }, key, clientAccount.access), 200, clientAccount.access);
+        },
+        async open() {
+          openCalls++;
+          await discardCommittedReply('enroll', signed('enroll', {
+            ...clientTarget, nonce: await clientChallenge('enroll'),
+          }, key, clientAccount.access), clientAccount.access);
+          throw Error('Lost generation response');
+        },
+        async register() { assert.fail('Registration must stay blocked during logout'); },
+        async lookupRegistration() { assert.fail('Unexpected registration lookup'); },
+        async lookupGeneration() { assert.fail('Logout must resolve the generation inside the fence transaction'); },
+        async begin(session, intent) {
+          assert.equal(intent.generation, undefined);
+          const { result } = await post('begin-session-logout', signed('begin-session-logout', {
+            ...clientTarget, operationId: intent.operationId, nonce: await clientChallenge('begin_session_logout'),
+          }, key, session.access_token), 200, session.access_token);
+          assert.ok(result.generation);
+          return result.recoveryId;
+        },
+        async recovery(_installation, action, id, scope) {
+          const input = { ...clientTarget, ...(id ? { recoveryId: id } : {}),
+            ...(scope ? { bindingUserId: scope.userId, bindingSessionId: scope.sessionId,
+              bindingOperationId: scope.operationId } : {}) };
+          const issued = await recoveryPost('challenge', recoveryProof('challenge', {
+            ...input, purpose: action, nonce: randomBytes(32).toString('base64url'),
+            issuedAt: String(Math.floor(Date.now() / 1000)),
+          }));
+          const proof = recoveryProof(action, { ...input, nonce: issued.nonce });
+          if (action === 'ack' && !lostAck) {
+            lostAck = true;
+            await discardCommittedReply('recovery/ack', proof, null);
+            throw Error('Lost acknowledgement');
+          }
+          return (await recoveryPost(action, proof)).result;
+        },
+      },
+    });
+    localRecords.set('isolated:device-v2-clean', clientTarget.installationId);
+    await assert.rejects(restartClient().save(localSession, 'ExpoPushToken[unused]', async () => true, async () => true),
+      /Lost generation response/);
+    await assert.rejects(restartClient().finish(false, async () => {}), /Lost acknowledgement/);
+    const intentKey = 'isolated:logout-v2-intent';
+    const { recoveryId: _lostId, ...intentWithoutId } = JSON.parse(localRecords.get(intentKey));
+    localRecords.set(intentKey, JSON.stringify({ ...intentWithoutId, stage: 'begin' }));
+    localRecords.set('isolated:logout-v2', '{broken');
+    assert.equal(await restartClient().finish(false, async () => {}), true);
+    assert.equal(await restartClient().availability(), 'ready');
+    assert.equal(localSession, null);
+    assert.equal(openCalls, 1);
+
+    const nextClient = await signup();
+    const nextNonce = (await post('challenge', signed('challenge', {
+      ...clientTarget, purpose: 'enroll', nonce: randomBytes(32).toString('base64url'),
+    }, key, nextClient.access), 200, nextClient.access)).nonce;
+    assert.ok((await post('enroll', signed('enroll', {
+      ...clientTarget, nonce: nextNonce,
+    }, key, nextClient.access), 200, nextClient.access)).result);
+
+    const limiter = createApp({}, undefined, undefined, undefined, undefined, undefined,
+      logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
+    try {
+      await once(limiter, 'listening');
+      const limiterOrigin = `http://127.0.0.1:${limiter.address().port}`;
+      const body = JSON.stringify({ installationId: randomUUID(), keyVersion: '0' });
+      const probe = () => localFetch(limiterOrigin)(limiterOrigin + '/device-recovery/recovery/challenge', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body,
+      });
+      for (let index = 0; index < 30; index++) assert.equal((await probe()).status, 400);
+      assert.equal((await probe()).status, 429);
+    } finally {
+      limiter.closeAllConnections();
+      await new Promise((resolve, reject) => limiter.close(error => error ? reject(error) : resolve()));
+    }
   } finally {
     agent.destroy();
     if (server) {

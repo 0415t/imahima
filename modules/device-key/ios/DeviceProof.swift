@@ -7,8 +7,8 @@ enum DeviceKeyFailure: String, Error {
 }
 
 enum DeviceProof {
-  private static let purposes: Set<String> = ["enroll", "register", "fence", "lookup", "confirm_auth_revocation", "begin_logout"]
-  private static let recoveryPurposes: Set<String> = ["discover", "confirm", "ack"]
+  private static let purposes: Set<String> = ["enroll", "register", "fence", "lookup", "confirm_auth_revocation", "begin_logout", "lookup_generation", "begin_session_logout"]
+  private static let recoveryPurposes: Set<String> = ["discover", "discover-binding", "confirm", "ack"]
   static func matches(_ text: String, _ regex: String) -> Bool {
     text.range(of: "\\A(?:\(regex))\\z", options: .regularExpression) != nil
   }
@@ -61,12 +61,14 @@ enum DeviceProof {
     guard bootstrap || challenge || purposes.contains(action) else { throw DeviceKeyFailure.invalidRequest }
     let purpose = challenge ? try field("purpose") : action
     guard !challenge || purposes.contains(purpose) else { throw DeviceKeyFailure.invalidRequest }
-    let generational = purposes.contains(action) && action != "enroll"
+    let generational = purposes.contains(action) && !["enroll", "lookup_generation", "begin_session_logout"].contains(action)
+    let operation = generational || action == "begin_session_logout"
     let registration = action == "register"
     var allowed: Set<String> = ["action", "issuer", "userId", "sessionId", "nonce"]
     if !bootstrap { allowed.insert("keyVersion") }
     if challenge { allowed.insert("purpose") }
-    if generational { allowed.formUnion(["generation", "operationId"]) }
+    if generational { allowed.insert("generation") }
+    if operation { allowed.insert("operationId") }
     if registration { allowed.formUnion(["token", "platform", "deviceName"]) }
     guard Set(request.keys).isSubset(of: allowed) else { throw DeviceKeyFailure.invalidRequest }
     let deviceName = request["deviceName"]
@@ -84,7 +86,7 @@ enum DeviceProof {
     return try frame([
       "imahima-device-proof-v1", issuer(field("issuer")), id("userId"), id("sessionId"), installation, action, purpose,
       bootstrap ? "1" : decimal(field("keyVersion")), generational ? decimal(field("generation")) : nil,
-      generational ? id("operationId") : nil, nonce(field("nonce")), token, platform, deviceName, bootstrap ? publicKey : nil
+      operation ? id("operationId") : nil, nonce(field("nonce")), token, platform, deviceName, bootstrap ? publicKey : nil
     ])
   }
 
@@ -96,13 +98,24 @@ enum DeviceProof {
     guard recoveryPurposes.contains(purpose) else { throw DeviceKeyFailure.invalidRequest }
     var expected: Set<String> = ["action", "issuer", "keyVersion", "nonce"]
     if action == "challenge" { expected.formUnion(["purpose", "issuedAt"]) }
-    if purpose != "discover" { expected.insert("recoveryId") }
+    let scoped = purpose == "discover-binding"
+    if purpose == "confirm" || purpose == "ack" { expected.insert("recoveryId") }
+    let generation = request["bindingGeneration"]
+    let operation = request["bindingOperationId"]
+    if scoped {
+      guard (generation == nil) != (operation == nil), let user = request["bindingUserId"],
+            let session = request["bindingSessionId"], validUuid(user), validUuid(session),
+            operation.map(validUuid) ?? true else { throw DeviceKeyFailure.invalidRequest }
+      expected.formUnion(["bindingUserId", "bindingSessionId", generation == nil ? "bindingOperationId" : "bindingGeneration"])
+    }
     guard Set(request.keys) == expected else { throw DeviceKeyFailure.invalidRequest }
     let recoveryId = request["recoveryId"]
     let issuedAt = request["issuedAt"]
     if let recoveryId, !validUuid(recoveryId) { throw DeviceKeyFailure.invalidRequest }
     if let issuedAt, !matches(issuedAt, "[1-9][0-9]{0,11}") { throw DeviceKeyFailure.invalidRequest }
-    return try frame(["imahima-logout-recovery-v1", issuer(rawIssuer), installation, decimal(keyVersion),
-      action, purpose, recoveryId, nonce(rawNonce), issuedAt])
+    var fields = try ["imahima-logout-recovery-v1", issuer(rawIssuer), installation, decimal(keyVersion),
+      action, purpose, recoveryId, nonce(rawNonce), issuedAt]
+    if scoped { fields += [request["bindingUserId"], request["bindingSessionId"], try generation.map(decimal), operation] }
+    return frame(fields)
   }
 }
