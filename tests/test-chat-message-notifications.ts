@@ -10,7 +10,7 @@ const valid: ChatMessageValidation = { owned: true, stillValid: true, senderName
 const result = (sent: number) => ({ sent, error: sent ? null : new PushSendError({ temporary: 1, permanent: 0, unknown: 0 }), failures: { temporary: sent ? 0 : 1, permanent: 0, unknown: 0 } });
 function fixture(overrides: Partial<ChatMessageNotificationDependencies> = {}) {
   let claimed = false;
-  const sends: Parameters<ChatMessageNotificationDependencies['sendPushNotifications']>[] = [];
+  const sends: Parameters<NonNullable<ChatMessageNotificationDependencies['sendPushNotifications']>>[] = [];
   const completions: Parameters<ChatMessageNotificationDependencies['completeNotification']>[] = [];
   const deps: ChatMessageNotificationDependencies = {
     claimNotifications: async () => { const claims = claimed ? [] : [claim]; claimed = true; return { claims, error: null }; },

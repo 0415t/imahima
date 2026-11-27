@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import type { createApp } from '../server/app';
 import type { GroupDependencies } from '../server/groups';
+import { createAuthorizedNotificationSender } from '../server/services/notification-delivery';
 import { loadSource } from './helpers/load-source';
 
 for (const enabled of [false, true]) {
@@ -33,6 +34,7 @@ for (const enabled of [false, true]) {
         assert.equal(client, sdk); assert.equal(identity, groups); return chat;
       } },
       './services/notifications': { createPushNotificationService: () => push },
+      './services/notification-delivery': { createAuthorizedNotificationSender },
       './app': { createApp: (...received: Parameters<typeof createApp>) => {
         args = received;
         return { listen: (options: { port: number }) => {

@@ -516,6 +516,24 @@
           "Existing device and logout recovery verifier roles and primary Auth session reader are available"
         ]
       }
+    },
+    {
+      "version": "20261201000000",
+      "name": "notification_delivery_authorization",
+      "file": "20261201000000_notification_delivery_authorization.sql",
+      "dependsOn": [
+        "20261130000000"
+      ],
+      "gitBlob": "b85a970caae3286422a6fdee0df84aed8c9eeba6",
+      "sourceSha256": "08844718d0959df5593fe99f3ec13cd9572ccce0f7bc8e4feaef32853b13463c",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Stop old notification workers and the old Express test-send path before applying; deploy the updated server before resuming delivery"
+        ]
+      }
     }
   ]
 }

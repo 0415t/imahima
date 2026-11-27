@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Agent, request as httpRequest } from 'node:http';
@@ -10,7 +11,7 @@ const cwd = new URL('../', import.meta.url);
 const sqlLiteral = text => "'" + text.replaceAll("'", "''") + "'";
 const failureStatuses = [401,403];
 
-test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, async t => {
+test('Real Supabase and Express notification workers to mocked Expo', {timeout:420000}, async t => {
   const interrupt=new AbortController();
   const signal=AbortSignal.any([t.signal,interrupt.signal]);
   const stack = createStack(signal);
@@ -81,7 +82,7 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
       });
       auth[name]={id:user.id,jwt:session.access_token,token};
     }
-    async function startServer(worker, barrierId='') {
+    async function startServer(worker, barrierId='', deliveryKind='chat_message', authorizationId='', invalidToken='') {
       const messages=[];
       // Pass only OS essentials, never parent DB settings, preloads or credentials.
       const child=spawn(process.execPath,['--require','./tests/issue36-chat-push-guard.cjs','--import','tsx','server/index.ts'],{
@@ -91,8 +92,10 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
           ISSUE36_GATEWAY:config.url,ISSUE36_FAKE_TOKENS:JSON.stringify(fakeTokens),ISSUE36_BARRIER_ID:barrierId,
           ISSUE36_SKIP_FINAL_VALIDATE:process.env.ISSUE36_SKIP_FINAL_VALIDATE==='1'?'1':'0',
           ISSUE36_DELAY_MOCK_IPC:process.env.ISSUE36_DELAY_MOCK_IPC==='1'?'1':'0',
-          EXPO_ACCESS_TOKEN:'',EXPO_BASE_URL:'https://exp.host',FREE_END_NOTIFICATIONS_ENABLED:'false',
-          MEMBER_FREE_NOTIFICATIONS_ENABLED:'false',CHAT_MESSAGE_NOTIFICATIONS_ENABLED:String(worker),
+          ISSUE36_DELIVERY_KIND:deliveryKind,ISSUE36_AUTHORIZATION_ID:authorizationId,ISSUE36_INVALID_TOKEN:invalidToken,
+          EXPO_ACCESS_TOKEN:'',EXPO_BASE_URL:'https://exp.host',FREE_END_NOTIFICATIONS_ENABLED:String(deliveryKind==='free_end'),
+          MEMBER_FREE_NOTIFICATIONS_ENABLED:String(deliveryKind==='member_free'),CHAT_MESSAGE_NOTIFICATIONS_ENABLED:String(worker&&deliveryKind==='chat_message'),
+          FREE_END_NOTIFICATIONS_INTERVAL_MS:'1000',MEMBER_FREE_NOTIFICATIONS_INTERVAL_MS:'1000',
           CHAT_MESSAGE_NOTIFICATIONS_INTERVAL_MS:'1000',GROUP_RATE_SECRET:randomBytes(24).toString('hex')},
       });
       let ended=false, error;
@@ -106,7 +109,7 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
         if(message.type==='mock-push') observed.push(...message.messages);
       });
       child.stdout.on('data',chunk=>{
-        sawWorker ||= String(chunk).includes('Chat message notification poller started');
+        sawWorker ||= String(chunk).includes(({chat_message:'Chat message',free_end:'Free-end',member_free:'Member-free'})[deliveryKind]+' notification poller started');
       });
       child.stderr.resume();
       const bound=await waitFor(()=>{
@@ -280,7 +283,7 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
       }
       for(const path of ['/auth/v1/token','/auth/v1/user','/rest/v1/rpc/chat_send_message',
         '/rest/v1/rpc/claim_chat_message_notifications','/rest/v1/rpc/validate_chat_message_notification',
-        '/rest/v1/rpc/complete_chat_message_notification']){
+        '/rest/v1/rpc/authorize_notification_delivery','/rest/v1/rpc/complete_chat_message_notification']){
         assert.ok(config.traffic.get(path+' 200')>0,`Missing real upstream success: ${path}`);
       }
       assert.ok(config.traffic.get('/rest/v1/rpc/validate_chat_message_notification 200') >= good.size*2+2);
@@ -289,6 +292,95 @@ test('Issue #36: real Supabase and Express to mocked Expo', {timeout:240000}, as
         mockedExpoSends:observed.length,externalNetworkAttempts:0,loaderIpcBlocked,guardRejectionProbesPassed:true,
         sharedDatabaseConnections:0,terminalOutboxRows:finalRows.length}));
     });
+    assert.equal((await stopIssue36Server(worker.child,worker.done,worker.ended)).code,0);
+    const managed = (recipient, age) => {
+      const installation=randomUUID(), id=randomUUID(), token=makeToken();
+      fakeTokens.push(token);
+      const session=JSON.parse(Buffer.from(recipient.jwt.split('.')[1],'base64url')).session_id;
+      const generation=stack.query(`INSERT INTO push_private.installations(installation_id,public_key)
+        VALUES ('${installation}',decode('04','hex'));
+        INSERT INTO push_private.installation_bindings(installation_id,user_id,session_id,created_at)
+        VALUES ('${installation}','${recipient.id}','${session}',clock_timestamp()-interval '${age} minutes') RETURNING generation;`);
+      assert.match(generation,/^[0-9]+$/);
+      stack.query(`BEGIN; SET LOCAL ROLE postgres;
+        INSERT INTO public.user_device_tokens(id,user_id,expo_push_token,platform,installation_id,generation,registration_revision)
+        VALUES ('${id}','${recipient.id}',${sqlLiteral(token)},'android','${installation}',${generation},1); COMMIT;`);
+      return {installation,generation,token,session};
+    };
+    for (const kind of ['free_end','member_free','chat_message']) {
+      await runCase(kind+': fence between claim and authorization, then stale Expo ticket',async()=>{
+        const recipient=auth.eligible;
+        const victim=managed(recipient,20);
+        const other=managed(recipient,20);
+        const rotating=managed(recipient,20);
+        const extras=Array.from({length:100},makeToken);
+        fakeTokens.push(...extras);
+        stack.query(`INSERT INTO public.user_device_tokens(id,user_id,expo_push_token,platform) VALUES ${extras.map((token,index)=>
+          `('ffffffff-ffff-4fff-8fff-${String(index).padStart(12,'0')}','${recipient.id}',${sqlLiteral(token)},'android')`).join(',')};`);
+        let id,table,late;
+        if(kind==='free_end') {
+          table='free_end_notification_claims'; id=randomUUID();
+          late=managed(recipient,0);
+          stack.query(`UPDATE public.profiles SET free_until=clock_timestamp()+interval '4 minutes' WHERE id='${recipient.id}';
+            INSERT INTO public.free_end_notification_claims(id,user_id,free_until)
+            SELECT '${id}',p.id,p.free_until FROM public.profiles p WHERE p.id='${recipient.id}';`);
+        } else if(kind==='member_free') {
+          table='member_free_notifications';
+          stack.query(`UPDATE public.member_free_notifications SET status='cancelled' WHERE status IN ('pending','failed','processing');`);
+          await setFree('sender',false); await setFree('sender',true);
+          id=stack.query(`SELECT id FROM public.member_free_notifications WHERE recipient_user_id='${recipient.id}' AND status='pending';`);
+        } else {
+          table='chat_message_notifications';
+          id=forMessage(messageKey(await send(audience,'authorization race'))).find(row=>row.recipient_user_id===recipient.id)?.id;
+        }
+        assert.match(id,/^[0-9a-f-]{36}$/);
+        late ??= managed(recipient,0);
+        const w=await startServer(true,'',kind,id,[recipient.token,rotating.token].join(','));
+        const has=type=>w.messages.find(message=>message.type===type);
+        await waitFor(()=>has('authorization-held'),'claim reached the authorization barrier',signal);
+        const lease=stack.query(`SELECT lease_token FROM public.${table} WHERE id='${id}' AND status='processing';`);
+        assert.match(lease,/^[0-9a-f-]{36}$/);
+        const authorization={p_kind:kind,p_notification:id,p_lease:lease,p_after:null};
+        const rpc=(name,body,jwt,status)=>request(config.url,'/rest/v1/rpc/'+name,{method:'POST',jwt,body,status});
+        await rpc('authorize_notification_delivery',authorization,recipient.jwt,failureStatuses);
+        await request(config.url,'/rest/v1/user_device_tokens?select=expo_push_token',{jwt:config.service,status:403});
+        const {data:earlier}=await rpc('authorize_notification_delivery',authorization,config.service,200);
+        assert.deepEqual((await rpc('authorize_notification_delivery',{...authorization,p_lease:randomUUID()},config.service,200)).data,
+          {eligible:false,targets:[],cursor:null});
+        assert.ok(earlier.targets.some(target=>target.token===victim.token));
+        assert.ok(!earlier.targets.some(target=>target.token===late.token));
+        const digest=randomBytes(32).toString('hex');
+        stack.query(`SELECT push_private.issue_device_challenge('${victim.installation}',1,'begin_session_logout',decode('${digest}','hex'));
+          SELECT push_private.begin_device_session_logout('${victim.installation}','${recipient.id}','${victim.session}',
+            '${randomUUID()}',1,decode('${digest}','hex'));`);
+        w.child.send({type:'release-final-validate'});
+        await waitFor(()=>has('expo-response-held'),'Expo mock has accepted the authorized batch',signal);
+        const sent=w.messages.find(entry=>entry.type==='mock-push'&&entry.messages.some(item=>item.data.notificationId===id));
+        if(!sent) { w.child.send({type:'guard-status'}); }
+        const newVersion=async()=>stack.query(`SELECT delivery_version FROM public.user_device_tokens WHERE expo_push_token=${sqlLiteral(recipient.token)};`);
+        const previous=await newVersion();
+        await rpc('upsert_device_token',{p_token:recipient.token,p_platform:'android'},recipient.jwt,[200,204]);
+        const updated=await newVersion();
+        assert.notEqual(previous,updated);
+        stack.query(`BEGIN; SET LOCAL ROLE postgres;
+          UPDATE public.user_device_tokens SET registration_revision=2 WHERE installation_id='${rotating.installation}'; COMMIT;`);
+        w.child.send({type:'release-final-validate'});
+        await waitFor(()=>stack.query(`SELECT status FROM public.${table} WHERE id='${id}';`)==='sent','completion after Expo reply',signal);
+        assert.equal(await newVersion(),updated);
+        assert.equal(stack.query(`SELECT registration_revision FROM public.user_device_tokens WHERE installation_id='${rotating.installation}';`),'2');
+        const actual=observed.filter(item=>item.data.notificationId===id).map(item=>item.to);
+        assert.ok(actual.includes(other.token));
+        assert.ok(extras.every(token=>actual.includes(token)));
+        assert.equal(new Set(actual).size,103);
+        assert.ok(!actual.includes(victim.token)&&!actual.includes(late.token));
+        w.child.send({type:'guard-status'});
+        assert.equal((await waitFor(()=>has('guard-status'),'delivery network audit',signal)).blocked,0);
+        assert.equal((await stopIssue36Server(w.child,w.done,w.ended)).code,0);
+        stack.query(`BEGIN; SET LOCAL ROLE postgres;
+          DELETE FROM public.user_device_tokens WHERE installation_id IN ('${other.installation}','${late.installation}','${rotating.installation}')
+            OR id::text LIKE 'ffffffff-ffff-4fff-8fff-%'; COMMIT;`);
+      });
+    }
   } finally {
     directAgent.destroy();
     const results=await Promise.all(servers.map(({child,done,ended})=>stopIssue36Server(child,done,ended)));

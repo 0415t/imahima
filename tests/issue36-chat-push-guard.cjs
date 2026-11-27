@@ -11,11 +11,14 @@ assert.equal(origin.hostname, '127.0.0.1');
 assert.equal(origin.protocol, 'http:');
 assert.equal(origin.origin, process.env.ISSUE36_GATEWAY);
 assert.equal(process.env.HOST, '127.0.0.1');
-assert.equal(process.env.FREE_END_NOTIFICATIONS_ENABLED, 'false');
-assert.equal(process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED, 'false');
+const deliveryKind = process.env.ISSUE36_DELIVERY_KIND ?? 'chat_message';
+assert.ok(['chat_message', 'free_end', 'member_free'].includes(deliveryKind));
+assert.equal(process.env.FREE_END_NOTIFICATIONS_ENABLED, String(deliveryKind === 'free_end'));
+assert.equal(process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED, String(deliveryKind === 'member_free'));
 assert.equal(process.env.EXPO_ACCESS_TOKEN, '');
 const expo = 'https://exp.host/--/api/v2/push/send';
 const tokens = new Set(JSON.parse(process.env.ISSUE36_FAKE_TOKENS));
+const invalidTokens = new Set((process.env.ISSUE36_INVALID_TOKEN ?? '').split(','));
 assert.ok(tokens.size && [...tokens].every(t => /^ExpoPushToken\[issue36_[a-f0-9]{32}\]$/.test(t)));
 
 let blocked = 0;
@@ -23,6 +26,7 @@ const blockedKinds = [];
 let blockedLoaderIpc = 0;
 let validates = 0;
 let release;
+let authorizationHeld = false, responseHeld = false;
 function deny(kind) {
   blocked++;
   blockedKinds.push(kind);
@@ -74,15 +78,25 @@ globalThis.fetch = async (input, init) => {
     assert.ok(Array.isArray(messages) && messages.length > 0);
     for (const message of messages) {
       assert.ok(tokens.has(message.to), 'Unexpected Expo destination');
-      assert.equal(message.data.type, 'chat_message');
+      assert.equal(message.data.type, deliveryKind);
     }
     const report = {type:'mock-push',messages};
     if (process.env.ISSUE36_DELAY_MOCK_IPC === '1') heldPushMessages.push(report);
     else process.send?.(report);
-    return Response.json({data:messages.map(()=>({status:'ok',id:'issue36-local-mock-ticket'}))});
+    if (!responseHeld && messages.some(message => message.data.notificationId === process.env.ISSUE36_AUTHORIZATION_ID)) {
+      responseHeld = true;
+      await new Promise(resolve => { release = resolve; process.send?.({type:'expo-response-held'}); });
+    }
+    return Response.json({data:messages.map(message => invalidTokens.has(message.to)
+      ? {status:'error',details:{error:'DeviceNotRegistered'}} : {status:'ok',id:'issue36-local-mock-ticket'})});
   }
   if (url.origin !== origin.origin || !/^\/(auth|rest)\/v1\//.test(url.pathname)) deny(
     url.origin === origin.origin ? 'HTTP other gateway route' : 'HTTP other origin');
+  if (url.pathname === '/rest/v1/rpc/authorize_notification_delivery' &&
+      !authorizationHeld && JSON.parse(init.body).p_notification === process.env.ISSUE36_AUTHORIZATION_ID) {
+    authorizationHeld = true;
+    await new Promise(resolve => { release = resolve; process.send?.({type:'authorization-held'}); });
+  }
   const isValidate = url.pathname === '/rest/v1/rpc/validate_chat_message_notification';
   const notificationId = isValidate ? JSON.parse(init.body).p_notification : undefined;
   if (notificationId && notificationId === process.env.ISSUE36_BARRIER_ID && ++validates === 2) {

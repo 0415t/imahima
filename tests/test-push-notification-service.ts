@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { createPushNotificationService, PushSendError, type PushClient } from '../server/services/notifications';
 import { createFreeEndNotificationPoller, type FreeEndNotificationDependencies } from '../server/jobs/free-end-notifications';
+import { createAuthorizedNotificationSender, type DeliveryTarget } from '../server/services/notification-delivery';
 
 type Ticket = Awaited<ReturnType<PushClient['sendPushNotificationsAsync']>>[number];
 const ok: Ticket = { status: 'ok', id: 'expo-ticket-id' };
@@ -10,6 +11,50 @@ const failure = (error?: Extract<Ticket, { status: 'error' }>['details']): Ticke
   status: 'error', message: 'Expo rejected the message', details: error,
 });
 const tokens = Array.from({ length: 3 }, (_, i) => `ExponentPushToken[device-${i}]`);
+
+it('authorizes each Expo request and deletes only the exact snapshot from its ticket index', async t => {
+  const targets: DeliveryTarget[] = tokens.map((token, index) => ({
+    token, id: String(index), userId: 'user', installationId: 'install', generation: '1', revision: '2', version: 'v',
+  }));
+  const steps: string[] = [];
+  const cleanup: DeliveryTarget[] = [];
+  t.mock.method(globalThis, 'fetch', async (_url: string, init?: RequestInit) => {
+    const outbound = JSON.parse(init?.body as string);
+    steps.push('expo:' + outbound.map((item: { to: string }) => item.to).join(','));
+    return Response.json({ data: [ok, failure({ error: 'DeviceNotRegistered' })] });
+  });
+  const send = createAuthorizedNotificationSender({
+    async authorize(_kind, _id, _lease, after) {
+      steps.push('authorize:' + after);
+      return after === null
+        ? { eligible: true, targets: targets.slice(0, 2), cursor: '1' }
+        : { eligible: false, targets: [], cursor: null };
+    },
+    async deleteInvalid(target) { cleanup.push(target); },
+  })('chat_message');
+  const result = await send('claim', 'lease', { title: 'test', body: 'delivery' });
+  assert.equal(result.sent, 1);
+  assert.deepEqual(cleanup, [targets[1]]);
+  assert.deepEqual(steps, ['authorize:null', 'expo:' + tokens.slice(0, 2).join(','), 'authorize:1']);
+});
+
+it('does not call Expo after unknown authorization and does not retry a 429 within a permit', async t => {
+  const transport = t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 429 }));
+  const sender = (unavailable: boolean) => createAuthorizedNotificationSender({
+    async authorize() {
+      if (unavailable) throw Error('DB response lost');
+      return { eligible: true, cursor: null, targets: [{
+        id: '1', userId: 'user', token: tokens[0], installationId: null, generation: null, revision: null, version: 'v',
+      }] };
+    },
+    async deleteInvalid() { assert.fail('No usable ticket'); },
+  })('free_end');
+  const input = { title: 'test', body: 'delivery' };
+  assert.equal((await sender(true)('claim', 'lease', input)).failures.unknown, 1);
+  assert.equal(transport.mock.callCount(), 0);
+  assert.equal((await sender(false)('claim', 'lease', input)).failures.temporary, 1);
+  assert.equal(transport.mock.callCount(), 1);
+});
 const message = { title: 'imahima', body: 'あと5分です', categoryId: 'free_end', data: { notificationId: 'claim-1' } };
 
 function setup(responses: (Ticket[] | Error)[], chunkSize = 100) {

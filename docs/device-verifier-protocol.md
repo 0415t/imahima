@@ -325,3 +325,17 @@ Apply migration `20261130000000_device_logout_session_fence.sql` before deployin
 - Phase 6 final integration will test loss of the database COMMIT reply itself. The existing tests cover connection loss before COMMIT and loss of the HTTP reply after COMMIT.
 - The cause of the earlier first-run HTTP 503 in the enrollment challenge quota test remains unidentified. Subsequent isolated runs passed.
 - Native compilation and physical-device verification are tracked in Issue #50.
+
+### Notification delivery after device fencing
+
+Migration `20261201000000_notification_delivery_authorization.sql` replaces the worker's direct token reads with a per-page authorization RPC. The RPC derives the recipient and timestamp from the claim, locks candidate installations in UUID order, and rechecks the lease, current notification conditions, and managed binding. A page permits at most 100 Expo messages. Each subsequent page or worker retry requires its own authorization. Expo HTTP 429 does not trigger a hidden SDK retry in this path.
+
+Member-free uses the original event timestamp and chat uses the stored message creation time. Free-end uses the claim's original creation time and also excludes managed generations created after the opening of the five-minute window. This conservative bound prevents a delayed first claim from sending to a generation opened inside that window. Legacy recipients keep their existing eligibility.
+
+The transaction finishes before Expo HTTP starts. A fence blocks authorizations that occur after it commits. Delivery already authorized before the fence can still reach Expo. Expo acceptance does not guarantee delivery, and an interrupted worker may retry with a new lease.
+
+Phase 6 still needs isolated fault injection for all three workers: a lost database authorization reply, lease expiration and reacquisition, and account switching while a delivery is in progress. The existing suite covers fences between claim and authorization, stale lease rejection, multiple pages and stale Expo tickets after registration updates. The first enrollment/logout concurrency and loss of the database COMMIT reply itself also remain open.
+
+The Expo ticket is associated with the exact registration snapshot sent in the request. A DeviceNotRegistered ticket deletes only that user, registration ID, installation, generation, registration revision and delivery version. A replacement registration gets a new delivery version, including legacy registrations with the same token string.
+
+Before deployment, stop old workers and the old Express test-send route, apply migration 30, then deploy the updated Express process before restarting workers. The service role loses direct token reads and deletes. The authenticated manual test route can still send to legacy tokens through a limited RPC, and leaves cleanup to the lease-backed workers. Phase 6 can remove the remaining old registration, test-send and legacy data paths after the rollout. Do not regrant raw service-role token access during a rollback with managed delivery enabled.

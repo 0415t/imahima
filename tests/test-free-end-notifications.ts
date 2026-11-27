@@ -21,7 +21,7 @@ type CallLog = {
   claims: number;
   validations: { claimId: string; leaseToken: string }[];
   tokenFetches: string[];
-  sends: { tokens: string[]; message: Parameters<FreeEndNotificationDependencies['sendPushNotifications']>[1] }[];
+  sends: { tokens: string[]; message: Parameters<NonNullable<FreeEndNotificationDependencies['sendPushNotifications']>>[1] }[];
   completions: { claimId: string; leaseToken: string; status: string; error?: string }[];
 };
 
