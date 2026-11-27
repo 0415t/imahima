@@ -534,6 +534,25 @@
           "Stop old notification workers and the old Express test-send path before applying; deploy the updated server before resuming delivery"
         ]
       }
+    },
+    {
+      "version": "20261202000000",
+      "name": "guard_notification_and_legacy_device_sessions",
+      "file": "20261202000000_guard_notification_and_legacy_device_sessions.sql",
+      "dependsOn": [
+        "20261201000000"
+      ],
+      "gitBlob": "fde34e5b7d0c98fb174c7015f0f992b48ffaa608",
+      "sourceSha256": "00acd2952e6d0a394d6836dc8a5183f62efe1c2880e3852cce2273275d903c18",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Primary Auth session rows are readable and lockable by the function owner",
+          "Deploy Express with the dedicated notification session extension path"
+        ]
+      }
     }
   ]
 }

@@ -26,7 +26,7 @@ for (const enabled of [false, true]) {
     loadSource('server/index.ts', {
       'dotenv/config': {},
       './services/supabase': { serverSupabase: sdk },
-      './device-verifier': {},
+      './device-verifier': { notificationSessionExtender: () => async () => ({ status: 503 }) },
       './services/groups': { groupService: (client: unknown, identity: unknown) => {
         assert.equal(client, sdk); assert.equal(typeof identity, 'function'); return groups;
       } },
@@ -57,8 +57,8 @@ for (const enabled of [false, true]) {
     await args[0].toggleIsFree('actor');
     await args[0].setIsFree('actor', true, 30);
     await args[0].extendIsFree('actor');
-    await args[0].extendIsFreeFromNotification('actor', 'claim');
-    assert.deepEqual(rpcCalls.map(c => c.name), ['toggle_profile_is_free', 'set_profile_is_free', 'extend_profile_is_free', 'extend_profile_is_free_from_notification']);
+    assert.equal((await args[0].extendIsFreeFromNotification('actor', 'claim')).status, 503);
+    assert.deepEqual(rpcCalls.map(c => c.name), ['toggle_profile_is_free', 'set_profile_is_free', 'extend_profile_is_free']);
     assert.deepEqual(JSON.parse(JSON.stringify(rpcCalls[1].args)), { target_profile_id: 'actor', new_is_free: true, duration_minutes: 30 });
     assert.deepEqual(await args[1]?.sendPushNotifications([], { title: 'test', body: 'test' }), { sent: 1, error: null });
     assert.equal(starts, enabled ? 1 : 0);

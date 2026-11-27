@@ -10,7 +10,7 @@ import { createAuthorizedNotificationSender } from './services/notification-deli
 import { groupService } from './services/groups';
 import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
-import { createDeviceVerifierPool, deviceVerifierRouter, logoutRecoveryRouter, notificationSessionAuthenticator } from './device-verifier';
+import { createDeviceVerifierPool, deviceVerifierRouter, logoutRecoveryRouter, notificationSessionAuthenticator, notificationSessionExtender } from './device-verifier';
 import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim } from './jobs/member-free-notifications';
 import { createChatMessageNotificationPoller, parseChatNotificationOptions, type ChatMessageClaim } from './jobs/chat-message-notifications';
 
@@ -84,14 +84,7 @@ const app = createApp({
     const row = Array.isArray(data) ? data[0] : data;
     return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
   },
-  extendIsFreeFromNotification: async (userId, claimId) => {
-    const { data, error } = await serverSupabase.rpc('extend_profile_is_free_from_notification', {
-      target_profile_id: userId,
-      claim_id: claimId,
-    });
-    const row = Array.isArray(data) ? data[0] : data;
-    return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
-  },
+  extendIsFreeFromNotification: notificationSessionExtender(verifierPool),
 }, {
   getDeviceTokens: async (userId) => {
     const { data, error } = await serverSupabase.rpc('list_legacy_test_push_tokens', { p_user: userId });

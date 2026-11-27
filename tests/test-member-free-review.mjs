@@ -21,7 +21,7 @@ test('entrypoint rejects invalid max attempts before listening or claiming', () 
     const modules = {
       'dotenv/config': {}, './app': { createApp: () => ({ listen: () => { listened = true; return {}; } }) },
       './services/supabase': { serverSupabase: {} },
-      './device-verifier': {},
+      './device-verifier': { notificationSessionExtender: () => async () => ({ status: 503 }) },
       './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
       './services/notification-delivery': require('../server/services/notification-delivery.ts'),
       './jobs/free-end-notifications': {},
@@ -43,7 +43,7 @@ function runEntrypoint({ supabase = {}, poller, server = {}, listeners = {}, ...
   const modules = {
     'dotenv/config': {}, './app': { createApp: () => ({ listen: () => server }) },
     './services/supabase': { serverSupabase: supabase },
-    './device-verifier': {},
+    './device-verifier': { notificationSessionExtender: () => async () => ({ status: 503 }) },
     './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
     './services/notification-delivery': require('../server/services/notification-delivery.ts'),
     './jobs/free-end-notifications': {},
@@ -164,7 +164,7 @@ function runChatEntrypoint(env, supabase = {}) {
   const noop = () => {}; let listened = false, deps, options, started = 0;
   const modules = {
     'dotenv/config': {}, './app': { createApp: () => ({ listen: () => { listened = true; return {}; } }) },
-    './device-verifier': {},
+    './device-verifier': { notificationSessionExtender: () => async () => ({ status: 503 }) },
     './services/supabase': { serverSupabase: supabase },
     './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
     './services/notification-delivery': require('../server/services/notification-delivery.ts'),

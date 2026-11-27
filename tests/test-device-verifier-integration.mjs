@@ -140,6 +140,56 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         key: signingKey.privateKey, dsaEncoding: 'ieee-p1363',
       }).toString('base64url') };
     }
+    if (process.env.IMAHIMA_ENROLLMENT_RACE_ONLY === '1') {
+      const input = { installationId, publicKey: key.point };
+      const enrollment = await post('enrollment-challenge', input);
+      stack.query(`CREATE FUNCTION push_private.test_pause_first_enrollment() RETURNS trigger
+        LANGUAGE plpgsql AS $$BEGIN
+          IF NEW.installation_id='${installationId}' THEN
+            PERFORM pg_advisory_xact_lock(61202,1);
+          END IF;
+          RETURN NEW;
+        END$$;
+        CREATE TRIGGER test_pause_first_enrollment AFTER INSERT ON push_private.installations
+        FOR EACH ROW EXECUTE FUNCTION push_private.test_pause_first_enrollment();`);
+      const holder = stack.openSqlSession();
+      const closed = once(holder, 'close');
+      let output = '', pending;
+      holder.stdout.on('data', chunk => { output += chunk; });
+      holder.stdin.write('BEGIN; SELECT pg_advisory_xact_lock(61202,1);\n\\echo held\n');
+      const operationId = randomUUID();
+      try {
+        await waitFor(() => output.includes('held'), 'enrollment barrier held', t.signal);
+        pending = post('enroll-installation', signed('enroll-installation', { ...input, nonce: enrollment.nonce }));
+        await waitFor(() => stack.query(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+          WHERE application_name='device-proof-test' AND cardinality(pg_blocking_pids(pid))>0);`) === 't',
+        'signed enrollment waiting before commit', t.signal);
+        await post('begin-session-logout', signed('begin-session-logout', {
+          ...base, operationId, nonce: randomBytes(32).toString('base64url'),
+        }), 403);
+        assert.equal(stack.query(`SELECT count(*) FROM push_private.logout_recoveries WHERE installation_id='${installationId}';`), '0');
+      } finally {
+        holder.stdin.end('COMMIT;\n');
+        await closed;
+        await pending;
+      }
+      const sameKey = await post('enrollment-challenge', input);
+      await post('enroll-installation', signed('enroll-installation', { ...input, nonce: sameKey.nonce }));
+      const begin = async () => {
+        const purpose = 'begin_session_logout';
+        const issued = await post('challenge', signed('challenge', {
+          ...base, purpose, nonce: randomBytes(32).toString('base64url'),
+        }));
+        return (await post('begin-session-logout', signed('begin-session-logout', {
+          ...base, operationId, nonce: issued.nonce,
+        }))).result;
+      };
+      const receipt = await begin();
+      assert.equal(receipt.generation, null);
+      assert.deepEqual(await begin(), receipt);
+      assert.equal(stack.query(`SELECT count(*) FROM push_private.installation_bindings WHERE installation_id='${installationId}';`), '0');
+      return;
+    }
     const enroll = { installationId, publicKey: key.point };
     const { nonce } = await post('enrollment-challenge', enroll);
     const initial = signed('enroll-installation', { ...enroll, nonce });

@@ -152,9 +152,27 @@ export function notificationSessionAuthenticator(pool: Pool, issuer: string, cla
     try {
       const identity = await getIdentity(`Bearer ${token}`, issuer, claimsLookup);
       await transaction(pool, db => requireLiveSession(db, identity));
-      return { userId: identity.user, status: 200 as const };
+      return { userId: identity.user, sessionId: identity.session, status: 200 as const };
     } catch (error) {
       return { userId: null, status: error instanceof Rejected && error.status === 401 ? 401 as const : 503 as const };
+    }
+  };
+}
+
+export function notificationSessionExtender(pool?: Pool) {
+  return async (userId: string, claimId: string, sessionId?: string) => {
+    const unavailable = { isFree: null, freeUntil: null, error: null };
+    if (!pool || !sessionId) return { ...unavailable, status: 503 as const };
+    try {
+      const row = await transaction(pool, async db => (await db.query(
+        'SELECT * FROM push_private.extend_free_for_live_notification_session($1,$2,$3)',
+        [userId, sessionId, claimId])).rows[0]);
+      return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error: null };
+    } catch (error) {
+      const code = (error as { code?: string } | null)?.code;
+      if (code === '28000') return { ...unavailable, status: 401 as const };
+      if (code === 'P0001') return { ...unavailable, error };
+      return { ...unavailable, status: 503 as const };
     }
   };
 }

@@ -95,6 +95,14 @@ globalThis.fetch = async (input, init) => {
   if (url.pathname === '/rest/v1/rpc/authorize_notification_delivery' &&
       !authorizationHeld && JSON.parse(init.body).p_notification === process.env.ISSUE36_AUTHORIZATION_ID) {
     authorizationHeld = true;
+    if (process.env.ISSUE36_DROP_AUTHORIZATION === '1') {
+      const response = await realFetch(input,{...init,redirect:'error'});
+      const result = await response.json();
+      assert.equal(response.status,200);
+      assert.ok(result.eligible && result.targets.length>0);
+      process.send?.({type:'authorization-reply-dropped',lease:JSON.parse(init.body).p_lease});
+      throw new Error('Simulated lost PostgREST authorization reply');
+    }
     await new Promise(resolve => { release = resolve; process.send?.({type:'authorization-held'}); });
   }
   const isValidate = url.pathname === '/rest/v1/rpc/validate_chat_message_notification';

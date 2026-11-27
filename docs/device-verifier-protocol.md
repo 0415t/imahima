@@ -321,8 +321,8 @@ Apply migration `20261130000000_device_logout_session_fence.sql` before deployin
 
 ### Remaining verification
 
-- Phase 6 final integration will inject simultaneous first public-key registration and logout requests.
-- Phase 6 final integration will test loss of the database COMMIT reply itself. The existing tests cover connection loss before COMMIT and loss of the HTTP reply after COMMIT.
+- A database-level test checks that an uncommitted first public-key registration cannot issue a logout case and that the retry after enrollment issues a case without a generation. The simultaneous signed Express requests still need end-to-end fault injection.
+- The isolated legacy-session test discards PostgreSQL's COMMIT completion frame for a session logout transaction and verifies that the same operation ID recovers the committed receipt. Separate tests cover connection loss before COMMIT and loss of the HTTP reply after COMMIT.
 - The cause of the earlier first-run HTTP 503 in the enrollment challenge quota test remains unidentified. Subsequent isolated runs passed.
 - Native compilation and physical-device verification are tracked in Issue #50.
 
@@ -334,8 +334,15 @@ Member-free uses the original event timestamp and chat uses the stored message c
 
 The transaction finishes before Expo HTTP starts. A fence blocks authorizations that occur after it commits. Delivery already authorized before the fence can still reach Expo. Expo acceptance does not guarantee delivery, and an interrupted worker may retry with a new lease.
 
-Phase 6 still needs isolated fault injection for all three workers: a lost database authorization reply, lease expiration and reacquisition, and account switching while a delivery is in progress. The existing suite covers fences between claim and authorization, stale lease rejection, multiple pages and stale Expo tickets after registration updates. The first enrollment/logout concurrency and loss of the database COMMIT reply itself also remain open.
+Phase 6 still needs isolated fault injection for all three workers: a lost database authorization reply, lease expiration and reacquisition, and account switching while a delivery is in progress. The existing suite covers fences between claim and authorization, stale lease rejection, multiple pages and stale Expo tickets after registration updates.
 
 The Expo ticket is associated with the exact registration snapshot sent in the request. A DeviceNotRegistered ticket deletes only that user, registration ID, installation, generation, registration revision and delivery version. A replacement registration gets a new delivery version, including legacy registrations with the same token string.
 
 Before deployment, stop old workers and the old Express test-send route, apply migration 30, then deploy the updated Express process before restarting workers. The service role loses direct token reads and deletes. The authenticated manual test route can still send to legacy tokens through a limited RPC, and leaves cleanup to the lease-backed workers. Phase 6 can remove the remaining old registration, test-send and legacy data paths after the rollout. Do not regrant raw service-role token access during a rollback with managed delivery enabled.
+### Legacy registration and notification extensions
+
+Migration `20261202000000_guard_notification_and_legacy_device_sessions.sql` preserves legacy registration for live legacy sessions. A transaction-scoped session lock orders legacy writes against managed generation creation and logout. New legacy writes record their session. A managed transition is held if that session still owns a recorded legacy row. Rows already present at migration time are left intact without inferring their session.
+
+Authenticated direct token reads and deletes are limited to the user's legacy rows and require a live JWT session. Managed tokens are only available to authorized worker delivery. Direct legacy deletes already authorized in the statement's snapshot can finish even if Auth subsequently revokes the session.
+
+Notification extension takes a primary Auth row lock and updates availability in the same dedicated verifier transaction. If extension wins, GoTrue deletion waits for the transaction. If deletion or the logout fence wins, extension is rejected. The old service-role RPC grant is removed. Deploy compatible Express code with this migration and keep notification extension unavailable when the verifier connection cannot be used.

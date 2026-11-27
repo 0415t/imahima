@@ -6,7 +6,7 @@ import { requestDeadline } from './timeouts';
 export type AvailabilityDependencies = {
   getUserId: (accessToken: string) => Promise<{ userId: string | null; error: unknown | null }>;
   authenticateNotificationSession?: (accessToken: string) => Promise<{
-    userId: string | null; status: 200 | 401 | 503;
+    userId: string | null; sessionId?: string; status: 200 | 401 | 503;
   }>;
   toggleIsFree: (userId: string) => Promise<{ isFree: boolean | null; error: unknown | null }>;
   setIsFree: (
@@ -19,8 +19,9 @@ export type AvailabilityDependencies = {
   ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
   extendIsFreeFromNotification: (
     userId: string,
-    claimId: string
-  ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
+    claimId: string,
+    sessionId?: string
+  ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null; status?: 401 | 503 }>;
 };
 
 export type NotificationDependencies = {
@@ -232,10 +233,16 @@ export function createApp(
         return;
       }
 
-      const { isFree, freeUntil, error: extendError } = await dependencies.extendIsFreeFromNotification(
+      const { isFree, freeUntil, error: extendError, status: extendStatus } = await dependencies.extendIsFreeFromNotification(
         identity.userId,
-        claimId
+        claimId,
+        identity.sessionId
       );
+      if (extendStatus) {
+        response.status(extendStatus).json({ error: extendStatus === 401
+          ? 'Invalid or expired access token' : 'Session verification unavailable' });
+        return;
+      }
 
       if (extendError) {
         let errorMessage: string;
