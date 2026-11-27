@@ -39,11 +39,15 @@ export function createApp(
   groups?: GroupDependencies,
   chat?: ChatDependencies,
   requestTimeoutMs?: number,
-  deviceVerifier?: Router
+  deviceVerifier?: Router,
+  logoutRecovery?: Router
 ) {
   const app = express();
 
   app.use(requestDeadline(requestTimeoutMs));
+  app.use('/device-recovery/recovery', logoutRecovery ?? ((_request, response) => {
+    response.set('Cache-Control', 'no-store').status(503).json({ error: 'Logout recovery request failed' });
+  }));
   if (deviceVerifier) app.use('/device-recovery', deviceVerifier);
   app.use(express.json());
   app.use((_request, response, next) => { if (!response.headersSent && !response.destroyed) next(); });

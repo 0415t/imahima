@@ -9,7 +9,7 @@ import { createPushNotificationService } from './services/notifications';
 import { groupService } from './services/groups';
 import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
-import { createDeviceVerifierPool, deviceVerifierRouter, notificationSessionAuthenticator } from './device-verifier';
+import { createDeviceVerifierPool, deviceVerifierRouter, logoutRecoveryRouter, notificationSessionAuthenticator } from './device-verifier';
 import { createMemberFreeNotificationPoller, parseMemberFreeMaxAttempts, type MemberFreeClaim } from './jobs/member-free-notifications';
 import { createChatMessageNotificationPoller, parseChatNotificationOptions, type ChatMessageClaim } from './jobs/chat-message-notifications';
 
@@ -39,7 +39,13 @@ const verifierDatabaseUrl = process.env.DEVICE_VERIFIER_DATABASE_URL;
 const verifierPool = verifierDatabaseUrl ? createDeviceVerifierPool(verifierDatabaseUrl) : undefined;
 const issuer = verifierPool ? new URL('/auth/v1', process.env.SUPABASE_URL).href : '';
 const claimsLookup = (token: string) => serverSupabase.auth.getClaims(token);
-const deviceVerifier = verifierPool ? deviceVerifierRouter(verifierPool, issuer, claimsLookup) : undefined;
+const recoveryDatabaseUrl = process.env.DEVICE_RECOVERY_DATABASE_URL;
+const challengeHex = process.env.DEVICE_RECOVERY_CHALLENGE_SECRET;
+const recoverySecret = challengeHex && /^[a-f0-9]{64}$/i.test(challengeHex) ? Buffer.from(challengeHex, 'hex') : undefined;
+const recoveryPool = verifierPool && recoveryDatabaseUrl && recoverySecret
+  ? createDeviceVerifierPool(recoveryDatabaseUrl) : undefined;
+const deviceVerifier = verifierPool ? deviceVerifierRouter(verifierPool, issuer, claimsLookup, Boolean(recoveryPool)) : undefined;
+const recoveryRouter = recoveryPool ? logoutRecoveryRouter(recoveryPool, issuer, recoverySecret) : undefined;
 const app = createApp({
   getUserId,
   authenticateNotificationSession: verifierPool ? notificationSessionAuthenticator(verifierPool, issuer, claimsLookup) : undefined,
@@ -83,7 +89,7 @@ const app = createApp({
   },
   sendPushNotifications: (tokens, message) =>
     pushNotifications.sendPushNotifications(tokens, message),
-}, groups, chatService(serverSupabase, groups), undefined, deviceVerifier);
+}, groups, chatService(serverSupabase, groups), undefined, deviceVerifier, recoveryRouter);
 const port = Number(process.env.PORT ?? 3000);
 
 const server = app.listen({ port, ...(process.env.HOST ? { host: process.env.HOST } : {}) }, () => {

@@ -141,8 +141,8 @@ to the old server-side registration.
 
 ## Logout recovery database contract
 
-Migration 28 adds the following private functions. The Express and native
-protocol changes required to call them are separate work.
+Migration 28 adds the following private functions. The Express routes below
+implement this contract. Native recovery signing is the next phase.
 
 1. For `begin_device_logout`, use the existing device-verifier role. Verify a
    live JWT and the installation signature, then consume a `begin_logout`
@@ -185,3 +185,81 @@ recovery writes. Recovery records keep the original key version. They do not
 support automatic key replacement. Recovery rows have no time-based cleanup.
 The existing binding is their lifecycle parent and retains the user/session
 association. Discovery failure alone cannot establish successful logout.
+
+### Recovery HTTP API
+
+All routes use POST and JSON. `/device-recovery/begin-logout` uses the normal
+Bearer JWT and existing v1 signature encoding. The signed action and purpose
+are both `begin_logout`. Its body is `installationId`, `keyVersion`,
+`generation`, `operationId`, `nonce`, and `signature`. Obtain the nonce from
+`/device-recovery/challenge` with purpose `begin_logout`. It returns
+`{"result":{"recoveryId":"<uuid>"}}`.
+
+| Path under `/device-recovery/recovery` | Additional fields | 200 response |
+| --- | --- | --- |
+| `/challenge` | `purpose` (`discover`, `confirm` or `ack`), signed `issuedAt` in Unix seconds as a decimal string, and `recoveryId` for confirm/ack | `nonce` and UTC `expiresAt` |
+| `/discover` | No additional fields | `result` with `status` and `recoveryId` |
+| `/confirm`, `/ack` | `recoveryId` | `result` with `status` and `recoveryId` |
+
+All four limited routes require `installationId`, `keyVersion`, `nonce` and
+`signature`. Omit `recoveryId` for discovery and omit `purpose` and
+`issuedAt` when consuming. The issuance nonce is 32 bytes from the client's
+CSPRNG. The remaining routes use the returned server nonce. No bearer token,
+user ID or session ID is needed on this path. Request limits are 2 KiB for
+the recovery-only routes and 4 KiB for the JWT routes. Success and errors use
+`Cache-Control: no-store`. Errors on the recovery-only path have the same
+message and use 400/413 for format/size, 403 for rejected proof/target,
+429 for limits, and 503 for unavailable database or configuration.
+
+Sign the same UTF-8 byte-length framing described above using these fields,
+in order. Nullable fields use `-:`. UUIDs are canonical lowercase. Sign with
+P-256/SHA-256 and encode the 64-byte P1363 signature as unpadded base64url.
+
+1. Domain `imahima-logout-recovery-v1`
+2. Exact issuer (`SUPABASE_URL` origin plus `/auth/v1`)
+3. Installation ID and key version
+4. Action (`challenge`, `discover`, `confirm`, or `ack`) and purpose
+5. Recovery ID, or null for discovery
+6. Canonical base64url nonce
+7. `issuedAt`, or null when consuming
+
+After locking and verifying the key, issuance accepts at most 30 seconds
+of age and five seconds of future skew. Each signed issuance body derives
+one server nonce by HMAC-SHA-256. The migration's digest uniqueness prevents
+duplicate issuance while the proof is fresh, even across Express instances
+sharing the secret. A replay does not charge the verified installation
+issuance quota. Generate a fresh client nonce after lost issuance responses.
+Consumption checks the expiry and one-time use under the installation lock.
+
+### Recovery deployment and limits
+
+Provision `imahima_logout_recovery_api_login` separately with NOINHERIT, no
+elevated attributes, and only the recovery verifier role with SET TRUE,
+INHERIT FALSE and ADMIN FALSE. Inject `DEVICE_RECOVERY_DATABASE_URL` with
+verified TLS and a separate `DEVICE_RECOVERY_CHALLENGE_SECRET` (32 random
+bytes encoded as 64 hex digits, the same on all instances). Keep the challenge
+secret stable during the issuance window across deployments. Both verifier
+connections and the challenge secret must be configured before using
+`begin-logout`. Confirm the limited connection is functional before rollout.
+Connection errors and uncertain commits map to an error response. The next
+proof can query the durable outcome after connectivity returns.
+
+Per Express process and fixed 60-second window, the limited routes admit
+120 requests total, 60 per socket source IP, and 30 per source/installation
+pair. The server ignores forwarded IP headers in this limiter. After
+verification, challenge issuance allows eight successful writes per
+installation per process/window. Typical discovery, confirmation and
+acknowledgement use three issued proofs, leaving space for retries beneath
+the DB cap of 16 unexpired rows per installation. Unverified traffic cannot
+reserve a DB challenge or spend the installation's verified issuance budget.
+The dedicated pool and concurrent DB admission are each capped at four.
+
+For missing keys and wrong key versions the verifier runs a dummy P-256
+check. Denied proofs, missing targets and lock timeouts share a generic 403
+with a minimum response time of 1.6 seconds, covering the 1.5-second lock
+timeout in ordinary conditions. Network delays, scheduling and database
+outages can still affect elapsed time. At a reverse proxy, socket IPs can
+aggregate clients. Deployment needs ingress limits by verified client
+address, body/read deadlines, and aggregate limits across replicas. DB
+issuance prunes expired rows for the installation it touches. Expired rows
+on dormant installations can persist up to that installation's row bound.

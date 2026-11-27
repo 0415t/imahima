@@ -6,7 +6,8 @@ import { Agent, request } from 'node:http';
 import { test } from 'node:test';
 import { createClient } from '@supabase/supabase-js';
 import { createApp } from '../server/app.ts';
-import { createDeviceVerifierPool, deviceSigningBytes, deviceVerifierRouter, notificationSessionAuthenticator } from '../server/device-verifier.ts';
+import { createDeviceVerifierPool, deviceSigningBytes, deviceVerifierRouter, logoutRecoveryRouter,
+  logoutRecoverySigningBytes, notificationSessionAuthenticator } from '../server/device-verifier.ts';
 import { createStack, waitFor } from './helpers/issue36-stack.mjs';
 
 function makeKey() {
@@ -43,18 +44,22 @@ function isolatedFetch(origin, agent) {
 }
 
 test('isolated GoTrue, Express and PostgreSQL verify device ownership without exposing RPCs to PostgREST', {
-  timeout: 180000,
+  timeout: 360000,
 }, async t => {
   const stack = createStack(t.signal, { allowSignup: true });
   const agent = new Agent({ proxyEnv: {} });
-  let server, pool;
+  let server, pool, recoveryPool;
   try {
     const gateway = await stack.start();
     const password = randomBytes(24).toString('hex');
+    const recoveryPassword = randomBytes(24).toString('hex');
     stack.query(`CREATE ROLE imahima_device_api_login LOGIN NOINHERIT PASSWORD '${password}';
-      GRANT imahima_device_verifier TO imahima_device_api_login WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;`);
+      GRANT imahima_device_verifier TO imahima_device_api_login WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+      CREATE ROLE imahima_logout_recovery_api_login LOGIN NOINHERIT PASSWORD '${recoveryPassword}';
+      GRANT imahima_logout_recovery_verifier TO imahima_logout_recovery_api_login WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;`);
     const relay = await stack.openPostgresRelay();
     pool = createDeviceVerifierPool(`postgresql://imahima_device_api_login:${password}@127.0.0.1:${relay.port}/postgres?sslmode=disable&application_name=device-proof-test`);
+    recoveryPool = createDeviceVerifierPool(`postgresql://imahima_logout_recovery_api_login:${recoveryPassword}@127.0.0.1:${relay.port}/postgres?sslmode=disable&application_name=logout-recovery-test`);
     const preflight = await pool.query('SELECT session_user').catch(error => {
       throw new Error(`Dedicated DB relay connection failed (${error.code ?? 'no SQLSTATE'})`);
     });
@@ -79,7 +84,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     let cachedOldClaims;
     const claimsLookup = token => token === first.access && cachedOldClaims
       ? Promise.resolve(cachedOldClaims) : auth.auth.getClaims(token);
-    const router = deviceVerifierRouter(pool, issuer, claimsLookup);
+    const router = deviceVerifierRouter(pool, issuer, claimsLookup, true);
     let notificationExtensions = 0;
     server = createApp({
       authenticateNotificationSession: notificationSessionAuthenticator(pool, issuer, claimsLookup),
@@ -87,12 +92,13 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         notificationExtensions++;
         return { isFree: true, freeUntil: null, error: null };
       },
-    }, undefined, undefined, undefined, undefined, router).listen(0, '127.0.0.1');
+    }, undefined, undefined, undefined, undefined, router,
+    logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`;
     async function post(action, body, status = 200, access = first.access) {
       const response = await localFetch(origin)(origin + '/device-recovery/' + action, {
-        method: 'POST', headers: { authorization: 'Bearer ' + access, 'content-type': 'application/json' },
+        method: 'POST', headers: { ...(access ? { authorization: 'Bearer ' + access } : {}), 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
       const result = await response.json();
@@ -105,7 +111,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       await new Promise((resolve, reject) => {
         const req = request(origin + '/device-recovery/' + action, {
           method: 'POST', agent,
-          headers: { authorization: 'Bearer ' + access, 'content-type': 'application/json' },
+          headers: { ...(access ? { authorization: 'Bearer ' + access } : {}), 'content-type': 'application/json' },
         }, response => {
           response.destroy();
           if (response.statusCode === 200) resolve();
@@ -121,6 +127,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     const base = { installationId, keyVersion: '1' };
     function signed(action, body, signingKey = key, access = first.access) {
       if (action === 'confirm-auth-revocation') action = 'confirm_auth_revocation';
+      if (action === 'begin-logout') action = 'begin_logout';
       const jwt = JSON.parse(Buffer.from(access.split('.')[1], 'base64url'));
       const bytes = deviceSigningBytes([issuer, jwt.sub, jwt.session_id, body.installationId, action,
         action === 'challenge' ? body.purpose : action, body.keyVersion ?? '1', body.generation ?? null,
@@ -515,6 +522,132 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     assert.equal(stack.query(`SELECT count(*) FROM public.user_device_tokens
       WHERE installation_id='${installationId}' AND generation=${nextGeneration}
         AND user_id='${nextOwner}' AND expo_push_token='ExpoPushToken[isolated_test]';`), '1');
+
+    // The recovery-only path starts while B has a live JWT. Every call after
+    // GoTrue local revocation deliberately sends no Authorization header.
+    stack.query(`DELETE FROM push_private.device_challenges WHERE installation_id='${installationId}';`);
+    const startInput = { ...base, generation: nextGeneration, operationId: randomUUID() };
+    const firstStart = signed('begin-logout', {
+      ...startInput, nonce: await challenge('begin_logout', second.access),
+    }, key, second.access);
+    await post('begin-logout', firstStart, 401, null);
+    await post('begin-logout', recoveryProof('begin_logout', firstStart), 403, second.access);
+    await discardCommittedReply('begin-logout', firstStart, second.access);
+    const { recoveryId } = (await post('begin-logout', signed('begin-logout', {
+      ...startInput, nonce: await challenge('begin_logout', second.access),
+    }, key, second.access), 200, second.access)).result;
+    assert.match(recoveryId, /^[0-9a-f-]{36}$/);
+
+    function recoveryProof(action, fields, signingKey = key, encoder = logoutRecoverySigningBytes) {
+      const bytes = encoder([issuer, fields.installationId, fields.keyVersion, action,
+        fields.purpose ?? action, fields.recoveryId ?? null, fields.nonce, fields.issuedAt ?? null]);
+      return { ...fields, signature: sign('sha256', bytes, {
+        key: signingKey.privateKey, dsaEncoding: 'ieee-p1363',
+      }).toString('base64url') };
+    }
+    const recoveryRequest = (purpose, id) => recoveryProof('challenge', {
+      ...base, purpose, ...(id ? { recoveryId: id } : {}), nonce: randomBytes(32).toString('base64url'),
+      issuedAt: String(Math.floor(Date.now() / 1000)),
+    });
+    const recoveryPost = (action, fields, status = 200) => post('recovery/' + action, fields, status, null);
+    async function recoveryAction(action, id) {
+      const issued = await recoveryPost('challenge', recoveryRequest(action, id));
+      return recoveryProof(action, { ...base, ...(id ? { recoveryId: id } : {}), nonce: issued.nonce });
+    }
+    const issueDiscover = recoveryRequest('discover');
+    const firstDiscovery = await recoveryPost('challenge', issueDiscover);
+    const repeatedChallenge = await recoveryPost('challenge', issueDiscover, 403);
+    const unknown = recoveryProof('challenge', { ...issueDiscover, installationId: randomUUID() });
+    const wrongKey = recoveryProof('challenge', issueDiscover, foreignKey);
+    assert.deepEqual(await recoveryPost('challenge', unknown, 403), repeatedChallenge);
+    assert.deepEqual(await recoveryPost('challenge', wrongKey, 403), repeatedChallenge);
+    await recoveryPost('challenge', recoveryProof('challenge', { ...issueDiscover, issuedAt: '1' }), 403);
+    await recoveryPost('challenge', recoveryProof('challenge', {
+      ...issueDiscover, purpose: 'confirm', recoveryId: randomUUID(),
+    }), 403);
+    const discoveryInput = { ...base, nonce: firstDiscovery.nonce };
+    await recoveryPost('discover', recoveryProof('discover', discoveryInput, key, deviceSigningBytes), 403);
+    const discovery = recoveryProof('discover', discoveryInput);
+    await recoveryPost('discover', { ...discovery, recoveryId }, 400);
+    const simultaneous = await Promise.all([recoveryPost('discover', discovery, null), recoveryPost('discover', discovery, null)]);
+    assert.deepEqual(simultaneous.map(reply => reply.status).sort(), [200, 403]);
+    assert.deepEqual(simultaneous.find(reply => reply.status === 200).result, { recoveryId, status: 'pending' });
+
+    const expires = await recoveryAction('discover');
+    const digest = createHash('sha256').update(Buffer.from(expires.nonce, 'base64url')).digest('hex');
+    function whileRecoveryBlocks(sql) {
+      return `DO $$ DECLARE target integer; deadline timestamptz := clock_timestamp()+interval '10 seconds';
+        BEGIN LOOP
+          PERFORM pg_stat_clear_snapshot();
+          SELECT pid INTO target FROM pg_stat_activity
+          WHERE application_name='logout-recovery-test' AND usename='imahima_logout_recovery_api_login'
+            AND pg_backend_pid() = ANY(pg_blocking_pids(pid));
+          EXIT WHEN FOUND;
+          IF clock_timestamp()>deadline THEN RAISE EXCEPTION 'Recovery request did not reach lock'; END IF;
+          PERFORM pg_sleep(0.02);
+        END LOOP;
+        ${sql}
+        END $$;`;
+    }
+    const expiryHolder = stack.openSqlSession();
+    expiryHolder.stdin.on('error', () => {});
+    let expiryReady = '';
+    expiryHolder.stdout.on('data', chunk => { expiryReady += chunk; });
+    const expiryDone = once(expiryHolder, 'close');
+    expiryHolder.stdin.end(`BEGIN; SELECT 1 FROM push_private.installations
+      WHERE installation_id='${installationId}' FOR UPDATE;\n\\echo expiry-ready\n
+      ${whileRecoveryBlocks(`UPDATE push_private.logout_recovery_challenges
+        SET expires_at=clock_timestamp()-interval '1 microsecond' WHERE digest=decode('${digest}','hex');`)}
+      COMMIT;\n`);
+    await waitFor(() => expiryReady.includes('expiry-ready'), 'recovery key locked', t.signal);
+    const expiringRequest = recoveryPost('discover', expires, null);
+    assert.equal((await expiryDone)[0], 0);
+    assert.equal((await expiringRequest).status, 403);
+
+    const pendingRecovery = await recoveryAction('confirm', recoveryId);
+    await recoveryPost('confirm', { ...pendingRecovery, recoveryId: randomUUID() }, 403);
+    stack.query(`ALTER FUNCTION push_private.auth_session_present(uuid,uuid) OWNER TO device_proof_no_auth;
+      GRANT EXECUTE ON FUNCTION push_private.auth_session_present(uuid,uuid) TO postgres;`);
+    try {
+      await recoveryPost('confirm', pendingRecovery, 503);
+    } finally {
+      stack.query('ALTER FUNCTION push_private.auth_session_present(uuid,uuid) OWNER TO postgres;');
+    }
+    const recoveryLock = stack.openSqlSession();
+    recoveryLock.stdin.on('error', () => {});
+    let recoveryOutput = '';
+    recoveryLock.stdout.on('data', chunk => { recoveryOutput += chunk; });
+    const recoveryClosed = once(recoveryLock, 'close');
+    recoveryLock.stdin.end(`BEGIN; LOCK TABLE push_private.logout_recovery_challenges IN ACCESS EXCLUSIVE MODE;
+      \n\\echo recovery-lock\n
+      ${whileRecoveryBlocks("IF NOT pg_terminate_backend(target) THEN RAISE EXCEPTION 'Failed to end recovery connection'; END IF;")}
+      ROLLBACK;\n`);
+    await waitFor(() => recoveryOutput.includes('recovery-lock'), 'recovery challenge lock held', t.signal);
+    const cutOff = recoveryPost('confirm', pendingRecovery, null);
+    assert.equal((await recoveryClosed)[0], 0);
+    assert.equal((await cutOff).status, 503);
+    assert.deepEqual((await recoveryPost('confirm', pendingRecovery)).result, { recoveryId, status: 'pending' });
+    assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
+      method: 'POST', headers: { authorization: 'Bearer ' + second.access },
+    })).status, 204);
+    const afterSignout = await recoveryAction('confirm', recoveryId);
+    await discardCommittedReply('recovery/confirm', afterSignout, null);
+    assert.deepEqual((await recoveryPost('discover', await recoveryAction('discover'))).result, { recoveryId, status: 'confirmed' });
+    await discardCommittedReply('recovery/ack', await recoveryAction('ack', recoveryId), null);
+    assert.deepEqual((await recoveryPost('ack', await recoveryAction('ack', recoveryId))).result, { recoveryId, status: 'cleared' });
+    const followingGeneration = (await openAs(unrelatedSession, 200)).result;
+    assert.ok(BigInt(followingGeneration) > BigInt(nextGeneration));
+    assert.deepEqual((await recoveryPost('ack', await recoveryAction('ack', recoveryId))).result, { recoveryId, status: 'cleared' });
+    assert.equal(stack.query(`SELECT fenced_at IS NULL FROM push_private.installation_bindings
+      WHERE installation_id='${installationId}' AND generation=${followingGeneration};`), 't');
+    const direct = await localFetch(gateway.url)(gateway.url + '/rest/v1/rpc/apply_logout_recovery', {
+      method: 'POST', headers: { authorization: 'Bearer ' + unrelatedSession, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(direct.status, 404);
+    const rateProbe = { installationId: randomUUID(), keyVersion: '0' };
+    for (let index = 0; index < 30; index++) await recoveryPost('challenge', rateProbe, 400);
+    await recoveryPost('challenge', rateProbe, 429);
   } finally {
     agent.destroy();
     if (server) {
@@ -522,6 +655,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       await new Promise(resolve => server.close(resolve));
     }
     await pool?.end();
+    await recoveryPool?.end();
     await stack.stop();
   }
 });
