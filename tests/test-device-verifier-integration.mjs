@@ -17,13 +17,13 @@ function makeKey() {
   return { ...pair, point };
 }
 
-function isolatedFetch(origin, agent, deadline) {
+function isolatedFetch(origin, agent, deadline, localAddress) {
   return (input, init) => {
     const endpoint = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     if (endpoint.origin !== origin || endpoint.hostname !== '127.0.0.1') throw Error('Unexpected network origin');
     return new Promise((resolve, reject) => {
       const req = request(endpoint, {
-        agent, method: init?.method,
+        agent, localAddress, method: init?.method,
         headers: Object.fromEntries(new Headers(init?.headers)),
         signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
       }, res => {
@@ -144,6 +144,98 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     }
     const jwtClaims = token => JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
     const recoveryPost = (action, fields, status = 200) => post('recovery/' + action, fields, status, null);
+    async function addClearedRecovery(target, access) {
+      const id = randomUUID();
+      const {sub,session_id: sessionId} = jwtClaims(access);
+      const scope = { bindingUserId: sub, bindingSessionId: sessionId, bindingOperationId: randomUUID() };
+      stack.query(`INSERT INTO push_private.logout_recoveries(
+        recovery_id,installation_id,key_version,binding_digest,issued_at,cleared_at,
+        scope_user,scope_session,scope_operation,scope_generation_floor,scopeless_auth_confirmed_at)
+        VALUES ('${id}','${target.installationId}',1,sha256(convert_to(jsonb_build_array(
+          '${scope.bindingUserId}'::uuid,'${scope.bindingSessionId}'::uuid)::text,'UTF8')),
+          statement_timestamp(),statement_timestamp(),'${scope.bindingUserId}','${scope.bindingSessionId}',
+          '${scope.bindingOperationId}',0,statement_timestamp());`);
+      assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
+        method: 'POST', headers: { authorization: 'Bearer ' + access },
+      })).status, 204);
+      return { id, scope };
+    }
+    function recoveryTarget() {
+      const target = { installationId: randomUUID(), keyVersion: '1' };
+      stack.query(`INSERT INTO push_private.installations(installation_id,public_key)
+        VALUES ('${target.installationId}',decode('${Buffer.from(key.point, 'base64url').toString('hex')}','hex'));`);
+      return target;
+    }
+    function issueProof(target, purpose, scope = {}) {
+      return recoveryProof('challenge', { ...target, ...scope, purpose,
+        nonce: randomBytes(32).toString('base64url'), issuedAt: String(Math.floor(Date.now() / 1000)) });
+    }
+    async function exerciseRecoveryReview() {
+      await t.test('invalid proofs leave the shared quota available and source limits still apply', async subtest => {
+        subtest.mock.method(performance, 'now', () => 0);
+        const target = recoveryTarget();
+        await addClearedRecovery(target, (await signup()).access);
+        const limiter = createApp({}, undefined, undefined, undefined, undefined,
+          logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
+        try {
+          await once(limiter, 'listening');
+          const limiterOrigin = `http://127.0.0.1:${limiter.address().port}`;
+          const probe = (source, body) => isolatedFetch(limiterOrigin, agent, subtest.signal, source)(
+            limiterOrigin + '/device-recovery/recovery/challenge', {
+              method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+            });
+          for (const source of ['127.0.0.1', '127.0.0.2']) {
+            const malformed = () => ({ installationId: randomUUID(), keyVersion: '0' });
+            const sameTarget = malformed();
+            for (let index = 0; index < 30; index++) assert.equal((await probe(source, sameTarget)).status, 400);
+            assert.equal((await probe(source, sameTarget)).status, 429);
+            const otherTarget = malformed();
+            for (let index = 0; index < 30; index++) assert.equal((await probe(source, otherTarget)).status, 400);
+            assert.equal((await probe(source, malformed())).status, 429);
+          }
+          const signedProof = issueProof(target, 'discover');
+          assert.equal((await probe('127.0.0.3', signedProof)).status, 200);
+          const unverified = recoveryProof('challenge', { ...target, purpose: 'discover',
+            nonce: randomBytes(32).toString('base64url'), issuedAt: String(Math.floor(Date.now() / 1000)) }, foreignKey);
+          assert.equal((await probe('127.0.0.3', unverified)).status, 403);
+        } finally {
+          limiter.closeAllConnections();
+          await new Promise((resolve, reject) => limiter.close(error => error ? reject(error) : resolve()));
+        }
+      });
+
+      await t.test('scoped discovery finds the same matching case during challenge issuance and consumption', async () => {
+        const target = recoveryTarget();
+        const older = await addClearedRecovery(target, (await signup()).access);
+        const original = await recoveryPost('challenge', issueProof(target, 'discover-binding', older.scope));
+        const newer = await addClearedRecovery(target, (await signup()).access);
+        const consume = (scope, nonce, status = 200) => recoveryPost('discover-binding',
+          recoveryProof('discover-binding', { ...target, ...scope, nonce }), status);
+        const earlierProof = await consume(older.scope, original.nonce, null);
+        const afterNewCase = await recoveryPost('challenge', issueProof(target, 'discover-binding', older.scope), null);
+        assert.deepEqual([earlierProof.status, afterNewCase.status], [200, 200]);
+        assert.deepEqual(earlierProof.result, { status: 'cleared', recoveryId: older.id });
+        await consume(newer.scope, afterNewCase.nonce, 403);
+        assert.equal((await consume(older.scope, afterNewCase.nonce)).result.recoveryId, older.id);
+        await consume(older.scope, afterNewCase.nonce, 403);
+
+        const unscoped = await recoveryPost('challenge', issueProof(target, 'discover'));
+        assert.equal((await recoveryPost('discover', recoveryProof('discover', {
+          ...target, nonce: unscoped.nonce,
+        }))).result.recoveryId, newer.id);
+        const issuedBeforeNextGeneration = await recoveryPost('challenge', issueProof(target, 'discover-binding', older.scope));
+        const next = await signup();
+        const requested = await post('challenge', signed('challenge', { ...target, purpose: 'enroll',
+          nonce: randomBytes(32).toString('base64url') }, key, next.access), 200, next.access);
+        await post('enroll', signed('enroll', { ...target, nonce: requested.nonce }, key, next.access), 200, next.access);
+        await consume(older.scope, issuedBeforeNextGeneration.nonce, 403);
+        await recoveryPost('challenge', issueProof(target, 'discover-binding', older.scope), 403);
+      });
+    }
+    if (process.env.IMAHIMA_RECOVERY_REVIEW_ONLY === '1') {
+      await exerciseRecoveryReview();
+      return;
+    }
     async function exerciseManagedClient() {
       // Exercise the actual app state machine against the isolated stack. Only
       // secure key operations and local persistence are supplied by test adapters.
@@ -942,22 +1034,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     }
 
     await exerciseManagedClient();
-
-    const limiter = createApp({}, undefined, undefined, undefined, undefined,
-      logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
-    try {
-      await once(limiter, 'listening');
-      const limiterOrigin = `http://127.0.0.1:${limiter.address().port}`;
-      const body = JSON.stringify({ installationId: randomUUID(), keyVersion: '0' });
-      const probe = () => localFetch(limiterOrigin)(limiterOrigin + '/device-recovery/recovery/challenge', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body,
-      });
-      for (let index = 0; index < 30; index++) assert.equal((await probe()).status, 400);
-      assert.equal((await probe()).status, 429);
-    } finally {
-      limiter.closeAllConnections();
-      await new Promise((resolve, reject) => limiter.close(error => error ? reject(error) : resolve()));
-    }
+    await exerciseRecoveryReview();
   } finally {
     agent.destroy();
     if (server) {

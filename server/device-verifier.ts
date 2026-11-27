@@ -339,7 +339,7 @@ export function logoutRecoveryRouter(pool?: Pool, issuer?: string, challengeSecr
         if (!request.is('application/json') || !body || Array.isArray(body) ||
             Object.keys(body).some(field => !recoveryFields.has(field))) throw new Rejected(400);
         const installation = string(body.installationId, uuidPattern, 36);
-        limits.consume(['global', 120], ['source:' + source, 60], ['pair:' + source + ':' + installation, 30]);
+        limits.consume(['source:' + source, 60], ['pair:' + source + ':' + installation, 30]);
         const keyVersion = positiveBigint(body.keyVersion);
         const issuance = action === 'challenge';
         const purpose = issuance ? body.purpose : action;
@@ -381,11 +381,12 @@ export function logoutRecoveryRouter(pool?: Pool, issuer?: string, challengeSecr
             const challenge = createHmac('sha256', challengeSecret).update(signed).digest();
             const issued = await db.query('SELECT push_private.issue_scoped_logout_recovery_challenge($1,$2,$3,$4,$5,$6) AS expires',
               [installation, keyVersion, dbPurpose, recoveryId, hash(challenge), scopeDigest]);
-            limits.consume(['verified-installation:' + installation, 8]);
+            limits.consume(['verified-global', 120], ['verified-installation:' + installation, 8]);
             return { nonce: challenge.toString('base64url'), expiresAt: issued.rows[0].expires };
           }
           const applied = await db.query('SELECT push_private.apply_scoped_logout_recovery($1,$2,$3,$4,$5,$6) AS result',
             [installation, keyVersion, dbPurpose, recoveryId, hash(nonce), scopeDigest]);
+          limits.consume(['verified-global', 120]);
           return { result: applied.rows[0].result };
         }, true);
         response.json(result);

@@ -246,9 +246,10 @@ Connection errors and uncertain commits map to an error response. The next
 proof can query the durable outcome after connectivity returns.
 
 Per Express process and fixed 60-second window, the limited routes admit
-120 requests total, 60 per socket source IP, and 30 per source/installation
-pair. The server ignores forwarded IP headers in this limiter. After
-verification, challenge issuance allows eight successful writes per
+60 requests per socket source IP and 30 per source/installation pair. The
+server ignores forwarded IP headers in this limiter. After signature and
+database validation, a shared limit of 120 applies to recovery operations.
+Challenge issuance also allows eight successful writes per
 installation per process/window. Typical discovery, confirmation and
 acknowledgement use three issued proofs, leaving space for retries beneath
 the DB cap of 16 unexpired rows per installation. Unverified traffic cannot

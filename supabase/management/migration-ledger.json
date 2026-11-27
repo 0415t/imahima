@@ -607,6 +607,24 @@
           "Apply after migration 33; preserve the existing device verifier function owner and execute grants"
         ]
       }
+    },
+    {
+      "version": "20261206000000",
+      "name": "match_logout_recovery_scope_before_ranking",
+      "file": "20261206000000_match_logout_recovery_scope_before_ranking.sql",
+      "dependsOn": [
+        "20261205000000"
+      ],
+      "gitBlob": "0e68eb3ceb5d19edf99bfb392858f6b648ce6fd6",
+      "sourceSha256": "f03f08c86520971919e3d595ef3ebb9f2c57fcc0f5aae0bbb9d0d8d5917ba031",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Preserve the existing scoped recovery function owners and execute grants"
+        ]
+      }
     }
   ]
 }
