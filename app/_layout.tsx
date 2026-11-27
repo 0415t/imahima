@@ -58,7 +58,7 @@ export default function RootLayout() {
     let active = true;
     void logoutFlow.sessionAvailability().then(async availability => {
       if (!active) return;
-      if (availability === 'ready' && sessionUser) await logoutFlow.prepareSession();
+      if (availability === 'ready' && session) await logoutFlow.prepareSession(session);
       if (!active) return;
       setStorageReadFailed(availability === 'read-failed');
       setCheckedSession(availability === 'ready' ? { identity, revision } : null);
@@ -69,7 +69,7 @@ export default function RootLayout() {
       setStorageReadFailed(true);
     });
     return () => { active = false; };
-  }, [authenticating, blocked, isLoading, revision, identity, sessionUser, storageRetry]);
+  }, [authenticating, blocked, isLoading, revision, identity, session, storageRetry]);
 
   useEffect(() => {
     void registerNotificationCategories().catch((error: unknown) => {

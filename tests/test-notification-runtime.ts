@@ -90,12 +90,18 @@ for (const timing of ['simultaneous', 'after-completion']) {
   });
 }
 
-it('keeps sign-in mounted while authentication runs and gates the authenticated session', () => {
+it('keeps sign-in mounted and gates authenticated screens until preparation succeeds', () => {
   const session = { user: { id: 'self' } };
-  for (const current of [null, session]) {
+  for (const [current, authenticating, prepared, expected] of [
+    [null, true, false, true],
+    [session, true, false, false],
+    [session, false, false, false],
+    [session, false, true, true],
+  ] as const) {
     let slot = 0;
     let stackMounted = false;
-    const states = [current, false, { identity: null, revision: 0 }, false, 0];
+    const checked = prepared ? { identity: 'self:test-session', revision: 1 } : { identity: null, revision: 0 };
+    const states = [current, false, checked, false, 0];
     const Stack = { Protected: 'protected', Screen: 'screen' };
     const react = {
       useState: () => [states[slot++], () => {}],
@@ -109,12 +115,12 @@ it('keeps sign-in mounted while authentication runs and gates the authenticated 
       '@/lib/push-notifications': {}, '@/lib/supabase': { supabase: {} }, '@/lib/notification-task': {},
       '@/lib/session-identity': { jwtSessionId: () => 'test-session' },
       '@/lib/logout': { logoutFlow: { revision: () => 1, isBlocked: () => false,
-        isAuthenticating: () => true, getError: () => null } },
+        isAuthenticating: () => authenticating, getError: () => null } },
       '@/components/themed-text': {}, '@/components/themed-view': {},
       '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
     }, { React: react });
     root.default();
-    assert.equal(stackMounted, current === null);
+    assert.equal(stackMounted, expected);
   }
 });
 

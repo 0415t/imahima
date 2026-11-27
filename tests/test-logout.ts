@@ -414,6 +414,8 @@ test('a managed session without Push permission initializes its key and logs out
     replaceSession(null);
     const flow = restart();
     await flow.authenticate(async () => { replaceSession(a); });
+    assert.equal(events.length, 0);
+    await flow.prepareSession(a);
     assert.deepEqual(events, ['ensure-key']);
     assert.equal((await flow.signOut()).error, null);
     assert.equal(events.includes('open'), false);
@@ -427,6 +429,80 @@ test('unavailable hardware is rejected before invoking authentication', async ()
     loseKey();
     await assert.rejects(restart().authenticate(async () => assert.fail('Auth must not start')));
 });
+
+test('sign-in reports Auth success and retries device setup for the same restored session', async () => {
+    const { restart, events, a, replaceSession, failAt } = managedFixture(true);
+    replaceSession(null);
+    const flow = restart();
+    let authCalls = 0;
+    const { signInUser } = loadSource<{
+        signInUser(email: string, password: string): Promise<{ session: LogoutSession | null; error: Error | null }>;
+    }>('lib/auth.ts', {
+        './logout': { logoutFlow: flow },
+        './supabase': { supabase: { auth: { async signInWithPassword() {
+            authCalls++;
+            replaceSession(a);
+            return { data: { session: a }, error: null };
+        } } } },
+    });
+    failAt('ensure-key');
+    const result = await signInUser('user@example.test', 'test-password');
+    assert.equal(result.session, a);
+    assert.equal(result.error, null);
+    await assert.rejects(flow.prepareSession(a), /interrupted ensure-key/);
+    await restart().prepareSession(a);
+    assert.equal(authCalls, 1);
+    assert.deepEqual(events, ['ensure-key', 'ensure-key']);
+});
+
+const notificationBlockKey = 'test:notification-auth-pending';
+test('Auth never starts when the durable notification block cannot be written', async () => {
+    const { restart, failAt, replaceSession } = managedFixture(true);
+    replaceSession(null);
+    failAt('write:' + notificationBlockKey);
+    await assert.rejects(restart().authenticate(() => assert.fail('Auth ran')), /notification-auth-pending/);
+});
+
+test('a restarted notification runtime blocks even a registered session while cutoff is pending', async () => {
+    const { restart, a, stored } = managedFixture();
+    await restart().save(a.user.id, 'test-push');
+    assert.equal(await restart().canUseNotification(Date.now()), true);
+    stored.set(notificationBlockKey, 'pending');
+    assert.equal(await restart().canUseNotification(Date.now()), false);
+});
+
+for (const fault of [null, 'write:test:notification-cutoff', 'remove:' + notificationBlockKey]) {
+    test(`old notifications stay blocked across account switch and restart after ${fault ?? 'Auth'}`, async t => {
+        t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+        const { restart, stored, a, replaceSession, failAt } = managedFixture();
+        const flow = restart();
+        await flow.save(a.user.id, 'test-push');
+        assert.equal((await flow.signOut()).error, null);
+        const b = { user: { id: randomUUID() }, access_token: sessionToken(randomUUID()) };
+        await flow.authenticate(async () => {
+            assert.equal(stored.get(notificationBlockKey), 'pending');
+            replaceSession(b);
+        });
+        t.mock.timers.setTime(2000);
+        if (fault) {
+            failAt(fault);
+            await assert.rejects(flow.prepareSession(b), /interrupted/);
+        }
+        assert.equal(stored.get(notificationBlockKey), 'pending');
+        const resumed = restart();
+        assert.equal(await resumed.canUseNotification(1500), false);
+        assert.equal(await resumed.canUseNotification(2500), false);
+        await assert.rejects(resumed.prepareSession(a), /Device session changed/);
+        assert.equal(stored.get(notificationBlockKey), 'pending');
+        t.mock.timers.setTime(3000);
+        await resumed.prepareSession(b);
+        await resumed.save(b.user.id, 'test-push');
+        assert.equal(stored.has(notificationBlockKey), false);
+        assert.equal(await resumed.canUseNotification(1500), false);
+        assert.equal(await resumed.canUseNotification(3000), false);
+        assert.equal(await resumed.canUseNotification(3001), true);
+    });
+}
 
 test('an existing session without a key cannot re-enroll as a new installation', async () => {
     const { restart, api, a, events } = managedFixture(true);
@@ -443,9 +519,9 @@ test('an existing session without a key cannot re-enroll as a new installation',
 });
 
 test('storage read failure does not revoke the signed-in session', async () => {
-    const { restart, events, failAt } = managedFixture();
+    const { restart, events, failAt, a } = managedFixture();
     const flow = restart();
-    await flow.prepareSession();
+    await flow.prepareSession(a);
     failAt('read:test:logout-v2');
     assert.equal(await flow.sessionAvailability(), 'read-failed');
     assert.deepEqual(events, ['ensure-key']);

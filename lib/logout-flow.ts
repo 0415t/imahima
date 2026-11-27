@@ -16,6 +16,7 @@ export function createLogoutFlow(deps: {
     managed: ReturnType<typeof createManagedLogout>;
 }) {
     const cutoffKey = deps.prefix + ':notification-cutoff';
+    const notificationBlockKey = deps.prefix + ':notification-auth-pending';
     const listeners = new Set<() => void>();
     let blocked = false;
     let logoutError: Error | null = null;
@@ -23,7 +24,7 @@ export function createLogoutFlow(deps: {
     let logout: Promise<{ error: Error | null }> | undefined;
     let registration: Promise<void> | undefined;
     let authenticating = false;
-    let provisioning: Promise<void> | undefined;
+    let provisioning: { session: LogoutSession; promise: Promise<void> } | undefined;
 
     function setBlocked(value: boolean) {
         if (blocked === value) return;
@@ -52,17 +53,23 @@ export function createLogoutFlow(deps: {
         try {
             const started = revision;
             if (authenticating || !await canUseSession() || !await deps.managed.notificationReady()) return false;
+            if (await deps.storage.getItem(notificationBlockKey) !== null) return false;
             const raw = await deps.storage.getItem(cutoffKey);
             return (raw === null || (receivedAt !== undefined && receivedAt > Number(raw)))
+                && await deps.storage.getItem(notificationBlockKey) === null
                 && await canUseSession() && !authenticating && started === revision;
         } catch {
             return false;
         }
     }
 
-    async function advanceCutoff(previous?: string | null) {
-        const raw = previous === undefined ? await deps.storage.getItem(cutoffKey) : previous;
-        const time = Math.max(Date.now(), Number(raw) || 0);
+    async function advanceCutoff() {
+        const raw = await deps.storage.getItem(cutoffKey);
+        const previous = raw === null ? 0 : Number(raw);
+        if (raw !== null && (!Number.isSafeInteger(previous) || previous <= 0)) {
+            throw new Error('Invalid notification cutoff');
+        }
+        const time = Math.max(Date.now(), previous);
         await deps.storage.setItem(cutoffKey, String(time));
     }
 
@@ -73,18 +80,12 @@ export function createLogoutFlow(deps: {
         for (const listener of listeners) listener();
         try {
             if (!await canUseSession()) throw new Error('ログアウト処理が完了していません');
-            const cutoff = await deps.storage.getItem(cutoffKey);
-            // Cover notifications delivered while durable logout cleanup was finishing.
-            if (cutoff !== null) await advanceCutoff(cutoff);
-            if (!await canUseSession()) throw new Error('ログアウト処理が完了していません');
-            if (await deps.session()) throw new Error('Sign out before starting another session');
+            if (provisioning || await deps.session()) throw new Error('Sign out before starting another session');
             await deps.managed.prepareAuthentication();
-            try {
-                const result = await operation();
-                await prepareSession();
-                return result;
-            }
-            finally { if (cutoff !== null) await advanceCutoff(); }
+            const pending = await deps.storage.getItem(notificationBlockKey);
+            if (pending !== null && pending !== 'pending') throw new Error('Invalid notification block');
+            if (pending === null) await deps.storage.setItem(notificationBlockKey, 'pending');
+            return await operation();
         } finally {
             authenticating = false;
             revision++;
@@ -92,21 +93,37 @@ export function createLogoutFlow(deps: {
         }
     }
 
-    function prepareSession(): Promise<void> {
-        if (provisioning) return provisioning;
-        provisioning = (async () => {
-            const session = await deps.session();
-            if (!session) return;
+    function sameSession(current: LogoutSession | null, expected: LogoutSession) {
+        const id = jwtSessionId(expected.access_token);
+        return Boolean(id && current?.user.id === expected.user.id && jwtSessionId(current.access_token) === id);
+    }
+
+    async function prepareSession(session: LogoutSession): Promise<void> {
+        if (authenticating) throw new Error('Authentication in progress');
+        if (provisioning) {
+            if (!sameSession(provisioning.session, session)) throw new Error('Device session changed');
+            return provisioning.promise;
+        }
+        const promise = (async () => {
+            if (!await stillCurrent(session)) throw new Error('Device session changed');
             await deps.managed.initialize(session, () => stillCurrent(session));
+            const pending = await deps.storage.getItem(notificationBlockKey);
+            if (pending !== null) {
+                if (pending !== 'pending') throw new Error('Invalid notification block');
+                if (!await stillCurrent(session)) throw new Error('Device session changed');
+                await advanceCutoff();
+                if (!await stillCurrent(session)) throw new Error('Device session changed');
+                await deps.storage.removeItem(notificationBlockKey);
+            }
+            if (!await stillCurrent(session)) throw new Error('Device session changed');
         })().finally(() => { provisioning = undefined; });
-        return provisioning;
+        provisioning = { session, promise };
+        return promise;
     }
 
     async function stillCurrent(session: LogoutSession) {
         if (!await canUseSession()) return false;
-        const current = await deps.session();
-        return current?.user.id === session.user.id && jwtSessionId(current.access_token) === jwtSessionId(session.access_token)
-            && await canUseSession();
+        return sameSession(await deps.session(), session) && await canUseSession();
     }
 
     function save(userId: string, token: string): Promise<void> {
@@ -118,7 +135,7 @@ export function createLogoutFlow(deps: {
             if (authenticating || !await canUseSession()) return;
             const session = await deps.session();
             if (session?.user.id !== userId || !await stillCurrent(session)) return;
-            await prepareSession();
+            await prepareSession(session);
             if (!await stillCurrent(session)) return;
             await deps.managed.save(session, token, () => stillCurrent(session));
         })().finally(() => { registration = undefined; });
@@ -130,7 +147,7 @@ export function createLogoutFlow(deps: {
         if (authenticating) return Promise.resolve({ error: new Error('認証処理を実行中です') });
         logout = Promise.resolve().then(async () => {
             await registration?.catch(() => {});
-            await provisioning?.catch(() => {});
+            await provisioning?.promise.catch(() => {});
             await deps.managed.finish(advanceCutoff);
         }).then(() => {
             setBlocked(false);
