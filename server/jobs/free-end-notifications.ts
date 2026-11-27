@@ -128,10 +128,16 @@ export function createFreeEndNotificationPoller(
       return;
     }
 
+    const expiration = Math.floor(Date.parse(claim.freeUntil) / 1000);
+    if (dependencies.sendAuthorized && (!Number.isSafeInteger(expiration) || expiration <= 0)) {
+      await dependencies.completeNotification(claim.claimId, claim.leaseToken, 'cancelled', 'Invalid notification deadline');
+      return;
+    }
     const outbound = {
       title: message.title,
       body: message.body,
       categoryId: 'free_end',
+      ...(dependencies.sendAuthorized ? { expiration } : {}),
       data: {
         type: 'free_end',
         expectedFreeUntil: claim.freeUntil,

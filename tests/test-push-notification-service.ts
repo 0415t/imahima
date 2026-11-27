@@ -12,30 +12,44 @@ const failure = (error?: Extract<Ticket, { status: 'error' }>['details']): Ticke
 });
 const tokens = Array.from({ length: 3 }, (_, i) => `ExponentPushToken[device-${i}]`);
 
-it('authorizes each Expo request and deletes only the exact snapshot from its ticket index', async t => {
+it('sends every authorized page before waiting on cleanup of the exact ticket snapshot', async t => {
   const targets: DeliveryTarget[] = tokens.map((token, index) => ({
     token, id: String(index), userId: 'user', installationId: 'install', generation: '1', revision: '2', version: 'v',
   }));
   const steps: string[] = [];
   const cleanup: DeliveryTarget[] = [];
+  const cleaning = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
   t.mock.method(globalThis, 'fetch', async (_url: string, init?: RequestInit) => {
     const outbound = JSON.parse(init?.body as string);
     steps.push('expo:' + outbound.map((item: { to: string }) => item.to).join(','));
-    return Response.json({ data: [ok, failure({ error: 'DeviceNotRegistered' })] });
+    return Response.json({ data: outbound.length === 2 ? [ok, failure({ error: 'DeviceNotRegistered' })] : [ok] });
   });
   const send = createAuthorizedNotificationSender({
     async authorize(_kind, _id, _lease, after) {
       steps.push('authorize:' + after);
       return after === null
         ? { eligible: true, targets: targets.slice(0, 2), cursor: '1' }
-        : { eligible: false, targets: [], cursor: null };
+        : { eligible: true, targets: targets.slice(2), cursor: null };
     },
-    async deleteInvalid(target) { cleanup.push(target); },
+    async deleteInvalid(target) {
+      cleanup.push(target);
+      cleaning.resolve();
+      await release.promise;
+    },
   })('chat_message');
-  const result = await send('claim', 'lease', { title: 'test', body: 'delivery' });
-  assert.equal(result.sent, 1);
-  assert.deepEqual(cleanup, [targets[1]]);
-  assert.deepEqual(steps, ['authorize:null', 'expo:' + tokens.slice(0, 2).join(','), 'authorize:1']);
+  const accepted: number[] = [];
+  const delivery = send('claim', 'lease', { title: 'test', body: 'delivery' }, undefined, count => accepted.push(count));
+  try {
+    await Promise.race([cleaning.promise, delivery.then(() => assert.fail('Expected cleanup'))]);
+    assert.deepEqual(steps.slice(), ['authorize:null', 'expo:' + tokens.slice(0, 2).join(','), 'authorize:1', 'expo:' + tokens[2]]);
+    assert.deepEqual(accepted.slice(), [1, 2]);
+    assert.deepEqual(cleanup, [targets[1]]);
+  } finally {
+    release.resolve();
+    await delivery;
+  }
+  assert.equal((await delivery).sent, 2);
 });
 
 it('does not call Expo after unknown authorization and does not retry a 429 within a permit', async t => {

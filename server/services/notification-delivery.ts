@@ -19,6 +19,7 @@ export function createAuthorizedNotificationSender(options: {
     const timeout = AbortSignal.timeout(30_000);
     const active = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const failures = { temporary: 0, permanent: 0, unknown: 0 };
+    const invalid: DeliveryTarget[] = [];
     let sent = 0;
     let cursor: string | null = null;
     do {
@@ -33,16 +34,17 @@ export function createAuthorizedNotificationSender(options: {
       const targets = page.targets.filter(target => Expo.isExpoPushToken(target.token));
       failures.permanent += page.targets.length - targets.length;
       if (!targets.length) continue;
-      if (message.expiration !== undefined && Date.now() >= message.expiration * 1000) break;
       let tickets: ExpoPushTicket[];
       try {
+        const payload = JSON.stringify(targets.map(target => ({ ...message, to: target.token, sound: 'default' })));
+        if (message.expiration !== undefined && Date.now() >= message.expiration * 1000) break;
         // Expo's SDK retries HTTP 429 internally. Each transport attempt here
         // must be authorized by the DB, so use one request per authorized page.
         const response = await fetch('https://exp.host/--/api/v2/push/send', {
           method: 'POST', redirect: 'error', signal: active,
           headers: { 'content-type': 'application/json',
             ...(options.accessToken ? { authorization: 'Bearer ' + options.accessToken } : {}) },
-          body: JSON.stringify(targets.map(target => ({ ...message, to: target.token, sound: 'default' }))),
+          body: payload,
         });
         if (response.status === 429) { failures.temporary += targets.length; continue; }
         if (!response.ok) throw new Error('Expo delivery request failed');
@@ -55,7 +57,6 @@ export function createAuthorizedNotificationSender(options: {
         continue;
       }
       active.throwIfAborted();
-      const invalid: DeliveryTarget[] = [];
       tickets.forEach((ticket, index) => {
         if (ticket?.status === 'ok') { sent++; onAccepted?.(sent); return; }
         const code = ticket?.status === 'error' ? ticket.details?.error : undefined;
@@ -64,12 +65,13 @@ export function createAuthorizedNotificationSender(options: {
         else if (code === 'MessageTooBig' || code === 'InvalidCredentials' || code === 'DeveloperError') failures.permanent++;
         else failures.unknown++;
       });
-      for (const target of invalid) {
-        active.throwIfAborted();
-        try { await options.deleteInvalid(target, active); }
-        catch { console.warn('[push] Registration cleanup unavailable'); }
-      }
     } while (cursor !== null);
+    // Keep best-effort cleanup out of the remaining pages' send budget.
+    for (const target of invalid) {
+      if (active.aborted) break;
+      try { await options.deleteInvalid(target, active); }
+      catch { console.warn('[push] Registration cleanup unavailable'); }
+    }
     if (!sent && !Object.values(failures).some(Boolean)) failures.permanent++;
     return { sent, failures, error: sent ? null : new PushSendError(failures) };
   };
