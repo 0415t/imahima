@@ -126,6 +126,8 @@ async function transaction<T>(pool: Pool, run: (db: PoolClient) => Promise<T>, r
   }
 }
 
+class RegistrationRejected extends Rejected {}
+
 const operations = {
   enroll: 'SELECT push_private.open_device_generation($1,$2,$3,$4,$5) AS result',
   register: 'SELECT push_private.register_device_v2($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) AS result',
@@ -239,11 +241,21 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
           if (action === 'register') args.push(token!, platform!, deviceName);
         }
         if (action === 'lookup' || action === 'confirm_auth_revocation') args = [installation, identity.user, generation!, operation!, ...proof];
-        const executed = await db.query(operations[action as keyof typeof operations], args);
+        const executed = await db.query(operations[action as keyof typeof operations], args).catch(error => {
+          // A PostgreSQL rejection of this statement occurs before COMMIT is attempted.
+          if (action === 'register' && ['42501', '22023', '23505'].includes(error?.code)) {
+            throw new RegistrationRejected(error.code === '42501' ? 403 : 409);
+          }
+          throw error;
+        });
         return { result: executed.rows[0].result };
       });
       response.json(result);
     } catch (error) {
+      if (error instanceof RegistrationRejected) {
+        response.status(error.status).json({ error: 'Device verification request failed', registrationOutcome: 'rejected' });
+        return;
+      }
       const code = (error as { code?: string } | null)?.code;
       const status = error instanceof Rejected ? error.status : code === '42501' ? 403 :
         code === '53000' ? 429 : code === '22023' || code === '23505' ? 409 : 503;

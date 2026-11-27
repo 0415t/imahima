@@ -89,7 +89,15 @@ function managedFixture() {
         },
         operationId: () => `05000000-0000-0000-0000-${String(++operations).padStart(12, '0')}`,
         open: async () => { events.push('open'); failOnce('open'); return '1'; },
-        async register() { events.push('register'); failOnce('register'); },
+        async register() {
+            events.push('register');
+            if (fail === 'reject-register') { fail = ''; return 'rejected'; }
+            failOnce('register');
+        },
+        async lookupRegistration() {
+            if (fail === 'found-registration') { fail = ''; return true; }
+            return false;
+        },
         async begin(session, entry) {
             assert.equal(session, a);
             assert.equal(entry.installationId, installationId);
@@ -179,6 +187,25 @@ test('managed logout confirms after a lost Auth reply and fences an unknown regi
     assert.deepEqual(await flow.signOut(), { error: null });
     assert.equal(events.filter(event => event === 'register').length, 1);
     assert.ok(events.includes('confirm'));
+});
+
+test('a definitive rejection releases only a fresh managed registration', async () => {
+    const { a, stored, events, restart, failAt } = managedFixture();
+    failAt('reject-register');
+    await assert.rejects(restart().save(a.user.id, 'first'));
+    assert.equal(JSON.parse(stored.get('test:device-v2')!).registration, undefined);
+    failAt('register');
+    await assert.rejects(restart().save(a.user.id, 'second'));
+    const pending = stored.get('test:device-v2');
+    failAt('reject-register');
+    await assert.rejects(restart().save(a.user.id, 'second'));
+    assert.equal(stored.get('test:device-v2'), pending);
+    const beforeLookup = events.filter(event => event === 'register').length;
+    failAt('found-registration');
+    await restart().save(a.user.id, 'second');
+    assert.equal(events.filter(event => event === 'register').length, beforeLookup);
+    await restart().save(a.user.id, 'third');
+    assert.equal(JSON.parse(stored.get('test:device-v2')!).registration.done, true);
 });
 
 test('logout never creates a generation to resolve a lost generation-opening reply', async () => {
@@ -408,31 +435,38 @@ test(`real Auth SDK retries until remote revocation is ${alreadyRevoked ? 'confi
 test('the PostgREST adapter sends a DELETE with both exact filters and the original session bearer', async () => {
     const token = 'ExponentPushToken[test]';
     let requests = 0;
+    const transport: typeof fetch = async (input, init) => {
+        requests++;
+        assert.equal(init?.method, 'DELETE');
+        assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer a-here');
+        const url = new URL(String(input));
+        assert.equal(url.pathname, '/rest/v1/user_device_tokens');
+        assert.equal(url.searchParams.get('user_id'), 'eq.A');
+        const filter = url.searchParams.get('expo_push_token');
+        if (filter === 'eq.empty404') return new Response(null, { status: 404 });
+        if (filter === 'eq.array404') return new Response('[]', { status: 404 });
+        assert.equal(filter, 'eq.' + token);
+        return new Response(null, { status: 204 });
+    };
     const { removeDeviceToken } = loadSource<{ removeDeviceToken(session: LogoutSession, token: string): Promise<void> }>(
         'lib/push-notifications.ts', {
             'expo-constants': {}, 'expo-device': {}, 'expo-notifications': { setNotificationHandler() {} },
             'react-native': {}, './free-end-action': {},
             './supabase': {
-                createSessionDataClient: (bearer: string) => createClient('https://data.example.test', 'test-key', {
+                createSessionDataClient: (bearer: string, requestFetch?: typeof fetch) => createClient('https://data.example.test', 'test-key', {
                     accessToken: async () => bearer,
-                    global: { fetch: async (input, init) => {
-                        requests++;
-                        try {
-                            assert.equal(init?.method, 'DELETE');
-                            assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer a-here');
-                            const url = new URL(String(input));
-                            assert.equal(url.pathname, '/rest/v1/user_device_tokens');
-                            assert.equal(url.searchParams.get('user_id'), 'eq.A');
-                            assert.equal(url.searchParams.get('expo_push_token'), 'eq.' + token);
-                            return new Response(null, { status: 204 });
-                        } catch (error) { return Response.json({ message: String(error) }, { status: 400 }); }
-                    } },
+                    global: { fetch: requestFetch ?? transport },
                 }),
             },
-        },
+        }, { fetch: transport },
     );
-    await removeDeviceToken({ user: { id: 'A' }, access_token: 'a-here' }, token);
-    assert.equal(requests, 1);
+    const session = { user: { id: 'A' }, access_token: 'a-here' };
+    await Promise.all([
+        removeDeviceToken(session, token),
+        assert.rejects(removeDeviceToken(session, 'empty404'), /outcome is unknown/),
+        assert.rejects(removeDeviceToken(session, 'array404'), /outcome is unknown/),
+    ]);
+    assert.equal(requests, 3);
 });
 
 test('duplicate logout shares the promise and drains an in-flight registration', async () => {

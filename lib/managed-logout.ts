@@ -14,7 +14,8 @@ export type ManagedDeviceApi = {
     identity(create: boolean): Promise<string | null>;
     operationId(): string;
     open(session: LogoutSession, installationId: string): Promise<string>;
-    register(session: LogoutSession, installationId: string, generation: string, operationId: string, token: string): Promise<void>;
+    register(session: LogoutSession, installationId: string, generation: string, operationId: string, token: string): Promise<void | 'rejected'>;
+    lookupRegistration(session: LogoutSession, installationId: string, generation: string, operationId: string): Promise<boolean>;
     begin(session: LogoutSession, intent: Intent): Promise<string>;
     recovery(installationId: string, action: 'discover' | 'confirm' | 'ack', recoveryId?: string): Promise<Receipt>;
 };
@@ -128,14 +129,24 @@ export function createManagedLogout(options: {
         if (binding.registration?.token === token && binding.registration.done) return true;
         // Settle a possibly committed operation before changing its payload.
         const pending = binding.registration && !binding.registration.done ? binding.registration : null;
-        if (pending && pending.token !== token) {
-            await api.register(session, installationId, binding.generation!, pending.operationId, pending.token);
+        if (pending) {
+            const found = await api.lookupRegistration(session, installationId, binding.generation!, pending.operationId);
             if (!await stillCurrent()) return true;
+            if (!found && await api.register(session, installationId, binding.generation!, pending.operationId, pending.token) === 'rejected') {
+                throw new Error('Prior push registration outcome is unknown');
+            }
+            if (!await stillCurrent()) return true;
+            binding = { ...binding, registration: { ...pending, done: true } };
+            await put(bindingKey, binding);
+            if (pending.token === token) return true;
         }
-        const operationId = pending?.token === token ? pending.operationId : api.operationId();
+        const operationId = api.operationId();
         await put(bindingKey, { ...binding, registration: { token, operationId, done: false } });
         if (!await stillCurrent()) return true;
-        await api.register(session, installationId, binding.generation!, operationId, token);
+        if (await api.register(session, installationId, binding.generation!, operationId, token) === 'rejected') {
+            await put(bindingKey, binding);
+            throw new Error('Push registration rejected');
+        }
         if (await stillCurrent()) await put(bindingKey, { ...binding, registration: { token, operationId, done: true } });
         return true;
     }

@@ -48,6 +48,8 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
                     ...(accessToken ? { authorization: 'Bearer ' + accessToken } : {}) },
                 body: JSON.stringify(body), signal: controller.signal, redirect: 'error',
             });
+            if (action === 'register' && (response.status === 403 || response.status === 409)
+                && (await response.json())?.registrationOutcome === 'rejected') return { rejected: true };
             if (response.status !== 200) throw new Error('Device recovery request failed');
             return await response.json();
         } finally { clearTimeout(timer); }
@@ -60,7 +62,7 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
     }
 
     async function operation(session: LogoutSession, installationId: string,
-        action: 'enroll' | 'register' | 'begin_logout', data?: { generation: string; operationId: string; token?: string }) {
+        action: 'enroll' | 'register' | 'begin_logout' | 'lookup', data?: { generation: string; operationId: string; token?: string }) {
         const sessionId = jwtSessionId(session.access_token);
         if (!sessionId) throw new Error('Device session identity unavailable');
         const context = { issuer: issuer(), keyVersion: '1', userId: session.user.id, sessionId };
@@ -81,10 +83,11 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
         const push = action === 'register' ? { token: data.token!, platform: platform as 'ios' | 'android' } : undefined;
         const signature = await signDevice(push
             ? { ...context, ...scope, ...push, action: 'register', nonce }
-            : { ...context, ...scope, action: 'begin_logout', nonce });
-        return (await post(action === 'begin_logout' ? 'begin-logout' : action, {
+            : { ...context, ...scope, action: action === 'lookup' ? 'lookup' : 'begin_logout', nonce });
+        const response = await post(action === 'begin_logout' ? 'begin-logout' : action, {
             installationId, keyVersion: '1', ...scope, ...push, nonce, signature,
-        }, session.access_token)).result;
+        }, session.access_token);
+        return action === 'register' && response?.rejected === true ? 'rejected' : response?.result;
     }
 
     return {
@@ -118,7 +121,14 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
         },
         async register(session, installationId, generation, operationId, token) {
             const result = await operation(session, installationId, 'register', { generation, operationId, token });
+            if (result === 'rejected') return 'rejected';
             if (result?.registered !== true || result?.generation !== generation) throw new Error('Push registration not confirmed');
+        },
+        async lookupRegistration(session, installationId, generation, operationId) {
+            const result = await operation(session, installationId, 'lookup', { generation, operationId });
+            if (result === null) return false;
+            if (result?.registered === true && result?.generation === generation) return true;
+            throw new Error('Invalid push registration lookup result');
         },
         async begin(session, intent) {
             const result = await operation(session, intent.installationId, 'begin_logout', intent);

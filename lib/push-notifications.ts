@@ -82,13 +82,25 @@ export async function getCurrentDeviceToken(): Promise<string | null> {
     return token;
 }
 
+function observeLegacyTokenRequest(session: LogoutSession) {
+    let ambiguous404 = false;
+    const client = createSessionDataClient(session.access_token, async (input, init) => {
+        const response = await fetch(input, init);
+        ambiguous404 = response.status === 404;
+        return response;
+    });
+    return { client, hadAmbiguous404: () => ambiguous404 };
+}
+
 export async function registerDeviceToken(session: LogoutSession, token: string) {
-    const { error, status } = await createSessionDataClient(session.access_token).rpc('upsert_device_token', {
+    const { client, hadAmbiguous404 } = observeLegacyTokenRequest(session);
+    const { error, status } = await client.rpc('upsert_device_token', {
         p_token: token,
         p_platform: Platform.OS,
         p_device_name: Device.deviceName,
     }).retry(false);
 
+    if (!error && hadAmbiguous404()) throw new Error('Push registration outcome is unknown');
     if (!error) return { rejected: null };
     // PostgREST maps some transaction aborts, including query cancellation, to 5xx.
     const structured = typeof error.message === 'string'
@@ -106,11 +118,13 @@ export async function registerDeviceToken(session: LogoutSession, token: string)
 }
 
 export async function removeDeviceToken(session: LogoutSession, token: string): Promise<void> {
-    const { error } = await createSessionDataClient(session.access_token)
+    const { client, hadAmbiguous404 } = observeLegacyTokenRequest(session);
+    const { error } = await client
         .from('user_device_tokens')
         .delete()
         .eq('user_id', session.user.id)
         .eq('expo_push_token', token)
         .retry(false);
+    if (hadAmbiguous404()) throw new Error('Push removal outcome is unknown');
     if (error) throw new Error(error.message);
 }

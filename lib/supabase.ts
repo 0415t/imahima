@@ -17,10 +17,11 @@ export function createSupabaseClient(url: string, anonKey: string) {
     });
 }
 
-export function createSessionDataClient(accessToken: string) {
+export function createSessionDataClient(accessToken: string, requestFetch?: typeof fetch) {
     if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase is not configured');
     return createClient(supabaseUrl, supabaseAnonKey, {
         accessToken: async () => accessToken,
+        ...(requestFetch ? { global: { fetch: requestFetch } } : {}),
         db: { timeout: 15_000 },
     });
 }
