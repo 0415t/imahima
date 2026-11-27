@@ -309,7 +309,8 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       assert.ok(sameUser.data.session);
       await lookup(operation, sameUser.data.session.access_token, 403);
       await lookup(operation, second.access, 403);
-      stack.query(`DELETE FROM public.user_device_tokens WHERE expo_push_token='${token}';`);
+      assert.equal(stack.query(`BEGIN; SET LOCAL ROLE postgres;
+        DELETE FROM public.user_device_tokens WHERE expo_push_token='${token}' RETURNING 1; COMMIT;`), '1');
       assert.equal((await post('register', await registration(), 403)).registrationOutcome, 'rejected');
       assert.equal(stack.query(`SELECT count(*) FROM public.user_device_tokens WHERE expo_push_token='${token}';`), '0');
       const fresh = { ...operation, operationId: randomUUID(), token, platform: 'ios', nonce: await issue('register') };

@@ -589,6 +589,24 @@
           "Stop old clients and workers; review legacy registration inventory and confirm it is empty before applying"
         ]
       }
+    },
+    {
+      "version": "20261205000000",
+      "name": "serialize_managed_registration_with_auth_revocation",
+      "file": "20261205000000_serialize_managed_registration_with_auth_revocation.sql",
+      "dependsOn": [
+        "20261204000000"
+      ],
+      "gitBlob": "5f92f72afc113b6bfb6c4c9e1e1088df571103b8",
+      "sourceSha256": "f94343554d4729d2162122c220dbe34b3218d225203e52e3b7b4136506066055",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Apply after migration 33; preserve the existing device verifier function owner and execute grants"
+        ]
+      }
     }
   ]
 }
