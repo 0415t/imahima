@@ -348,3 +348,10 @@ Migration `20261202000000_guard_notification_and_legacy_device_sessions.sql` pre
 Authenticated direct token reads and deletes are limited to the user's legacy rows and require a live JWT session. Managed tokens are only available to authorized worker delivery. Direct legacy deletes already authorized in the statement's snapshot can finish even if Auth subsequently revokes the session.
 
 Notification extension takes a primary Auth row lock and updates availability in the same dedicated verifier transaction. If extension wins, GoTrue deletion waits for the transaction. If deletion or the logout fence wins, extension is rejected. The old service-role RPC grant is removed. Deploy compatible Express code with this migration and keep notification extension unavailable when the verifier connection cannot be used.
+### Registration rejection recovery
+
+Migration `20261203000000_persist_managed_registration_rejections.sql` records a definitive token conflict in the existing operation table. Token and reservation changes are rolled back before the rejection record is inserted. Replaying the same operation and payload returns its committed result. A different payload with that operation ID is rejected.
+
+The existing signed `lookup` endpoint returns the registration result for the bound session. A committed rejection can clear the matching pending registration after an app restart. A missing record, a failed lookup, or a rejection of a replay alone cannot clear an unknown prior outcome. Rejections from before migration 32 without a durable record cannot be recovered retroactively. The signature format and HTTP endpoint remain unchanged.
+
+Pause device recovery traffic, apply migration 32, deploy the updated Express server, and then resume traffic. The private lookup function now requires the verified session ID.

@@ -107,7 +107,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       if (status !== null) assert.equal(response.status, status, action);
       return { status: response.status, ...result };
     }
-    async function discardCommittedReply(action, body, access = first.access) {
+    async function discardCommittedReply(action, body, access = first.access, expectedStatus = 200) {
       // Express sends the headers after COMMIT. The caller never reads the
       // response body and must recover the result through the normal API.
       await new Promise((resolve, reject) => {
@@ -116,7 +116,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
           headers: { ...(access ? { authorization: 'Bearer ' + access } : {}), 'content-type': 'application/json' },
         }, response => {
           response.destroy();
-          if (response.statusCode === 200) resolve();
+          if (response.statusCode === expectedStatus) resolve();
           else reject(new Error(`${action} response status ${response.statusCode}`));
         });
         req.on('error', reject);
@@ -140,6 +140,52 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       return { ...body, signature: sign('sha256', bytes, {
         key: signingKey.privateKey, dsaEncoding: 'ieee-p1363',
       }).toString('base64url') };
+    }
+    if (process.env.IMAHIMA_REGISTRATION_REJECTION_ONLY === '1') {
+      const input = { installationId, publicKey: key.point };
+      const enrollment = await post('enrollment-challenge', input);
+      await post('enroll-installation', signed('enroll-installation', { ...input, nonce: enrollment.nonce }));
+      async function issue(purpose, access = first.access) {
+        return (await post('challenge', signed('challenge', { ...base, purpose,
+          nonce: randomBytes(32).toString('base64url') }, key, access), 200, access)).nonce;
+      }
+      const generation = (await post('enroll', signed('enroll', { ...base, nonce: await issue('enroll') }))).result;
+      const originalOwner = JSON.parse(Buffer.from(second.access.split('.')[1], 'base64url')).sub;
+      const token = 'ExpoPushToken[legacy_registration_conflict]';
+      const operationId = randomUUID();
+      const operation = { ...base, generation, operationId };
+      const lookup = async (scope = operation, access = first.access, status = 200) =>
+        post('lookup', signed('lookup', { ...scope, nonce: await issue('lookup', access) }, key, access), status, access);
+      const registration = async (value = token) =>
+        signed('register', { ...operation, token: value, platform: 'ios', nonce: await issue('register') });
+      assert.equal((await lookup()).result, null);
+      stack.query(`INSERT INTO public.user_device_tokens(user_id,expo_push_token,platform)
+        VALUES ('${originalOwner}','${token}','ios');`);
+      const one = await registration(), two = await registration();
+      const [, retry] = await Promise.all([
+        discardCommittedReply('register', one, first.access, 403),
+        post('register', two, 403),
+      ]);
+      assert.equal(retry.registrationOutcome, 'rejected');
+      assert.deepEqual((await lookup()).result, { registered: false, generation, reason: 'device_token_unavailable' });
+      assert.equal(stack.query(`SELECT count(*) FROM push_private.operations WHERE
+        installation_id='${installationId}' AND operation_id='${operationId}';`), '1');
+      assert.equal(stack.query(`SELECT count(*) FROM push_private.managed_token_reservations
+        WHERE token_digest=sha256(convert_to('${token}','UTF8'));`), '0');
+      assert.equal(stack.query(`SELECT user_id FROM public.user_device_tokens WHERE expo_push_token='${token}';`), originalOwner);
+      const conflicting = await post('register', await registration('ExpoPushToken[different_request]'), 409);
+      assert.equal(conflicting.registrationOutcome, undefined);
+      await lookup({ ...operation, generation: '999999' }, first.access, 403);
+      const sameUser = await auth.auth.signInWithPassword({ email: first.email, password: first.userPassword });
+      assert.ok(sameUser.data.session);
+      await lookup(operation, sameUser.data.session.access_token, 403);
+      await lookup(operation, second.access, 403);
+      stack.query(`DELETE FROM public.user_device_tokens WHERE expo_push_token='${token}';`);
+      assert.equal((await post('register', await registration(), 403)).registrationOutcome, 'rejected');
+      assert.equal(stack.query(`SELECT count(*) FROM public.user_device_tokens WHERE expo_push_token='${token}';`), '0');
+      const fresh = { ...operation, operationId: randomUUID(), token, platform: 'ios', nonce: await issue('register') };
+      assert.deepEqual((await post('register', signed('register', fresh))).result, { registered: true, generation, revision: '1' });
+      return;
     }
     if (process.env.IMAHIMA_ENROLLMENT_RACE_ONLY === '1') {
       const input = { installationId, publicKey: key.point };

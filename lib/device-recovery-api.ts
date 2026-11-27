@@ -137,8 +137,11 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
         },
         async lookupRegistration(session, installationId, generation, operationId) {
             const result = await operation(session, installationId, 'lookup', { generation, operationId });
-            if (result === null) return false;
-            if (result?.registered === true && result?.generation === generation) return true;
+            if (result === null) return 'unknown';
+            if (result?.generation === generation) {
+                if (result.registered === true) return 'registered';
+                if (result.registered === false && result.reason === 'device_token_unavailable') return 'rejected';
+            }
             throw new Error('Invalid push registration lookup result');
         },
         async begin(session, intent) {

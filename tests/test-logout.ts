@@ -110,8 +110,10 @@ function managedFixture() {
             failOnce('register');
         },
         async lookupRegistration() {
-            if (fail === 'found-registration') { fail = ''; return true; }
-            return false;
+            failOnce('lookup');
+            if (fail === 'found-registration') { fail = ''; return 'registered'; }
+            if (fail === 'found-rejection') { fail = ''; return 'rejected'; }
+            return 'unknown';
         },
         async begin(session, entry) {
             assert.equal(session, a);
@@ -220,6 +222,9 @@ test('a definitive rejection releases only a fresh managed registration', async 
     failAt('reject-register');
     await assert.rejects(restart().save(a.user.id, 'second'));
     assert.equal(stored.get('test:device-v2'), pending);
+    failAt('lookup');
+    await assert.rejects(restart().save(a.user.id, 'third'), /interrupted lookup/);
+    assert.equal(stored.get('test:device-v2'), pending);
     const beforeLookup = events.filter(event => event === 'register').length;
     failAt('found-registration');
     await restart().save(a.user.id, 'second');
@@ -234,6 +239,17 @@ test('a known managed rejection repairs a failed checkpoint in the same process'
     failAt('reject-restore');
     await assert.rejects(flow.save(a.user.id, 'rejected'), /interrupted write/);
     await flow.save(a.user.id, 'fresh');
+    assert.equal(JSON.parse(stored.get('test:device-v2')!).registration.token, 'fresh');
+});
+
+test('a server-recorded registration rejection repairs a failed checkpoint after restart', async () => {
+    const { a, stored, events, restart, failAt } = managedFixture();
+    failAt('reject-restore');
+    await assert.rejects(restart().save(a.user.id, 'rejected'), /interrupted write/);
+    const attempts = events.filter(event => event === 'register').length;
+    failAt('found-rejection');
+    await restart().save(a.user.id, 'fresh');
+    assert.equal(events.filter(event => event === 'register').length, attempts + 1);
     assert.equal(JSON.parse(stored.get('test:device-v2')!).registration.token, 'fresh');
 });
 
@@ -356,6 +372,7 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
     const requests: { url: string; body: Record<string, string>; headers: Record<string, string> }[] = [];
     const proofs: Record<string, string>[] = [];
     let initializationCalls = 0;
+    let lookupResult: unknown = null;
     const { createDeviceRecoveryApi } = loadSource<{
         createDeviceRecoveryApi(api: string, auth: string): ManagedDeviceApi;
     }>('lib/device-recovery-api.ts', {
@@ -377,7 +394,7 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
         fetch: async (url: string, init: { body: string; headers: Record<string, string> }) => {
             requests.push({ url, body: JSON.parse(init.body), headers: init.headers });
             return { status: 200, json: async () => url.endsWith('/challenge') ? { nonce: 'A'.repeat(43) } :
-                { result: { status: 'confirmed', recoveryId } } };
+                { result: url.endsWith('/lookup') ? lookupResult : { status: 'confirmed', recoveryId } } };
         },
     });
     const api = createDeviceRecoveryApi('https://express.example.test', 'https://auth.example.test');
@@ -398,6 +415,12 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
     assert.ok(proofs.slice(2).every(p => !('userId' in p || 'sessionId' in p)));
     assert.ok(!('recoveryId' in requests[3].body));
     assert.equal(requests[5].body.recoveryId, recoveryId);
+    assert.equal(await api.lookupRegistration(session, id, '1', id), 'unknown');
+    lookupResult = { registered: false, generation: '1', reason: 'device_token_unavailable' };
+    assert.equal(await api.lookupRegistration(session, id, '1', id), 'rejected');
+    await assert.rejects(api.lookupRegistration(session, id, '2', id), /Invalid push registration lookup/);
+    lookupResult = { registered: false, generation: '1', reason: 'unrecognized' };
+    await assert.rejects(api.lookupRegistration(session, id, '1', id), /Invalid push registration lookup/);
 });
 
 test('logs out when push is unsupported, the resolved token is absent, or the account has no token rows', async () => {

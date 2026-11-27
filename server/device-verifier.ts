@@ -136,7 +136,7 @@ const operations = {
   begin_logout: 'SELECT push_private.begin_device_logout($1,$2,$3,$4,$5,$6,$7) AS result',
   lookup_generation: 'SELECT push_private.lookup_device_generation($1,$2,$3,$4,$5) AS result',
   begin_session_logout: 'SELECT push_private.begin_device_session_logout($1,$2,$3,$4,$5,$6) AS result',
-  lookup: 'SELECT push_private.get_device_operation($1,$2,$3,$4,$5,$6) AS result',
+  lookup: 'SELECT push_private.get_device_operation($1,$2,$3,$4,$5,$6,$7) AS result',
   confirm_auth_revocation: 'SELECT push_private.confirm_auth_revocation($1,$2,$3,$4,$5,$6) AS result',
 } as const;
 
@@ -265,16 +265,14 @@ export function deviceVerifierRouter(pool: Pool, issuer: string, claimsLookup: C
           args = [...actor, generation!, operation!, ...proof];
           if (action === 'register') args.push(token!, platform!, deviceName);
         }
-        if (action === 'lookup' || action === 'confirm_auth_revocation') args = [installation, identity.user, generation!, operation!, ...proof];
-        const executed = await db.query(operations[action as keyof typeof operations], args).catch(error => {
-          // A PostgreSQL rejection of this statement occurs before COMMIT is attempted.
-          if (action === 'register' && ['42501', '22023', '23505'].includes(error?.code)) {
-            throw new RegistrationRejected(error.code === '42501' ? 403 : 409);
-          }
-          throw error;
-        });
+        if (action === 'lookup') args = [...actor, generation!, operation!, ...proof];
+        if (action === 'confirm_auth_revocation') args = [installation, identity.user, generation!, operation!, ...proof];
+        const executed = await db.query(operations[action as keyof typeof operations], args);
         return { result: executed.rows[0].result };
       });
+      // Only acknowledge the terminal outcome once its transaction commits.
+      if (action === 'register' && result.result?.registered === false
+          && result.result?.reason === 'device_token_unavailable') throw new RegistrationRejected(403);
       response.json(result);
     } catch (error) {
       if (error instanceof RegistrationRejected) {

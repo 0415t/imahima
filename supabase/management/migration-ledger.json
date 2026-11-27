@@ -553,6 +553,24 @@
           "Deploy Express with the dedicated notification session extension path"
         ]
       }
+    },
+    {
+      "version": "20261203000000",
+      "name": "persist_managed_registration_rejections",
+      "file": "20261203000000_persist_managed_registration_rejections.sql",
+      "dependsOn": [
+        "20261202000000"
+      ],
+      "gitBlob": "1d0845abce96235c28434acf93f9c2cd5a047e03",
+      "sourceSha256": "46986f400da19edd003733e7bc1e37ce87e8e3bfee599c0c735c11d71919f245",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Coordinate Express deployment with the session-bound operation lookup signature"
+        ]
+      }
     }
   ]
 }

@@ -17,7 +17,8 @@ export type ManagedDeviceApi = {
     open(session: LogoutSession, installationId: string): Promise<string>;
     lookupGeneration(session: LogoutSession, installationId: string): Promise<string | null>;
     register(session: LogoutSession, installationId: string, generation: string, operationId: string, token: string): Promise<void | 'rejected'>;
-    lookupRegistration(session: LogoutSession, installationId: string, generation: string, operationId: string): Promise<boolean>;
+    lookupRegistration(session: LogoutSession, installationId: string, generation: string, operationId: string):
+        Promise<'registered' | 'rejected' | 'unknown'>;
     begin(session: LogoutSession, intent: Intent): Promise<string>;
     recovery(installationId: string, action: 'discover' | 'discover-binding' | 'confirm' | 'ack', recoveryId?: string,
         binding?: Scope & { generation?: string; operationId?: string }): Promise<Receipt>;
@@ -150,16 +151,24 @@ export function createManagedLogout(options: {
         // Settle a possibly committed operation before changing its payload.
         const pending = binding.registration && !binding.registration.done ? binding.registration : null;
         if (pending) {
-            const found = await api.lookupRegistration(session, installationId, binding.generation!, pending.operationId);
+            const outcome = await api.lookupRegistration(session, installationId, binding.generation!, pending.operationId);
             if (!await stillCurrent()) return true;
-            if (!found && await api.register(session, installationId, binding.generation!, pending.operationId, pending.token) === 'rejected') {
-                throw new Error('Prior push registration outcome is unknown');
+            if (outcome === 'rejected') {
+                binding = { ...binding, registration: undefined };
+                await put(bindingKey, binding);
+                if (pending.token === token) throw new Error('Push registration rejected');
+            } else {
+                if (outcome === 'unknown'
+                    && await api.register(session, installationId, binding.generation!, pending.operationId, pending.token) === 'rejected') {
+                    throw new Error('Prior push registration outcome is unknown');
+                }
+                if (!await stillCurrent()) return true;
+                binding = { ...binding, registration: { ...pending, done: true } };
+                await put(bindingKey, binding);
+                if (pending.token === token) return true;
             }
-            if (!await stillCurrent()) return true;
-            binding = { ...binding, registration: { ...pending, done: true } };
-            await put(bindingKey, binding);
-            if (pending.token === token) return true;
         }
+        if (!await stillCurrent()) return true;
         const operationId = api.operationId();
         await put(bindingKey, { ...binding, registration: { token, operationId, done: false } });
         if (!await stillCurrent()) return true;
