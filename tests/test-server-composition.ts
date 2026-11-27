@@ -50,8 +50,8 @@ for (const enabled of [false, true]) {
     }, { process: { env: { FREE_END_NOTIFICATIONS_ENABLED: enabled ? 'true' : undefined },
       on: (signal: string, callback: () => void) => handlers.set(signal, callback), exit: () => {} },
     console: { log: () => {} }, setTimeout, clearTimeout });
-    assert.equal(args[2], groups); assert.equal(args[3], chat);
-    assert.equal(args[5], undefined);
+    assert.equal(args[1], groups); assert.equal(args[2], chat);
+    assert.equal(args[4], undefined);
     const identity = await args[0].getUserId('mock');
     assert.equal(identity.userId, 'actor'); assert.equal(identity.error, null);
     await args[0].toggleIsFree('actor');
@@ -60,7 +60,6 @@ for (const enabled of [false, true]) {
     assert.equal((await args[0].extendIsFreeFromNotification('actor', 'claim')).status, 503);
     assert.deepEqual(rpcCalls.map(c => c.name), ['toggle_profile_is_free', 'set_profile_is_free', 'extend_profile_is_free']);
     assert.deepEqual(JSON.parse(JSON.stringify(rpcCalls[1].args)), { target_profile_id: 'actor', new_is_free: true, duration_minutes: 30 });
-    assert.deepEqual(await args[1]?.sendPushNotifications([], { title: 'test', body: 'test' }), { sent: 1, error: null });
     assert.equal(starts, enabled ? 1 : 0);
     assert.equal(handlers.size, enabled ? 2 : 0);
     if (enabled) {

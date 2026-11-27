@@ -27,7 +27,7 @@ export async function waitFor(check, label, signal, timeout = 15000, interval = 
   throw new Error(`Timed out: ${label}`);
 }
 
-export function createStack(signal, { allowSignup = false } = {}) {
+export function createStack(signal, { allowSignup = false, migrationThrough } = {}) {
   const label = 'imahima.issue36.run';
   const run = randomUUID();
   const networkName = 'imahima-issue36-' + run;
@@ -179,7 +179,7 @@ export function createStack(signal, { allowSignup = false } = {}) {
     });
   }
   async function start() {
-    const migrations = loadMigrationLedger();
+    const migrations = loadMigrationLedger().filter(entry => !migrationThrough || entry.version <= migrationThrough);
     console.log(`Issue #36 Docker run UUID: ${run} (socket: ${host})`);
     network = docker(['network','create','--internal','--label',`${label}=${run}`,networkName]);
     assert.match(network,/^[a-f0-9]{64}$/);

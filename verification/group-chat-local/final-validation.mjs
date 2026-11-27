@@ -87,7 +87,7 @@ async function main() {
     return { userId: data.user?.id ?? null, error };
   };
   const groups = groupService(admin, getUserId); groups.rateSecret = randomUUID();
-  const app = createApp({ ...disabledTimerDependencies, getUserId, toggleIsFree: async id => { const { data, error } = await admin.rpc('toggle_profile_is_free', { target_profile_id: id }); return { isFree: data, error }; } }, undefined, groups, chatService(admin, groups));
+  const app = createApp({ ...disabledTimerDependencies, getUserId, toggleIsFree: async id => { const { data, error } = await admin.rpc('toggle_profile_is_free', { target_profile_id: id }); return { isFree: data, error }; } }, groups, chatService(admin, groups));
   server = createServer(app); server.listen(0, '127.0.0.1'); await once(server, 'listening'); const base = `http://127.0.0.1:${server.address().port}`;
   async function api(label, route, method = 'GET', body) {
     const response = await fetch(base + route, { method, headers: { Authorization: `Bearer ${sessions[label].access_token}`, 'Content-Type': 'application/json' },

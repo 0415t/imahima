@@ -19,7 +19,6 @@ const files = [
   'tests/test-member-free-transport.ts',
   'tests/test-migration-ledger.mjs',
   'tests/test-notification-runtime.ts',
-  'tests/test-notifications.ts',
   'tests/test-profile-toggle.ts',
   'tests/test-push-notification-service.ts',
   'tests/test-review13.ts',

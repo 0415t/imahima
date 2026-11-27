@@ -56,7 +56,7 @@ function readJournal(raw: string): Journal {
 }
 
 export function createManagedLogout(options: {
-    storage: Storage; prefix: string; api: ManagedDeviceApi; enableNew: boolean;
+    storage: Storage; prefix: string; api: ManagedDeviceApi;
     session(): Promise<LogoutSession | null>;
     revoke(session: LogoutSession): Promise<void>;
     clean(scope: Scope): Promise<void>;
@@ -81,9 +81,11 @@ export function createManagedLogout(options: {
             const session = await options.session();
             if (!session || !owns(session, record)) return 'logout-pending' as const;
             if (await api.identity(false) !== record.installationId) return 'logout-pending' as const;
-        } else if (options.enableNew) {
+        } else {
             const installation = await api.identity(false);
-            if (installation && await storage.getItem(cleanKey) !== installation) {
+            const clean = await storage.getItem(cleanKey);
+            if (!installation && await options.session()) throw new Error('Managed device key is unavailable');
+            if (installation && clean !== installation && !(clean === 'preflight' && !await options.session())) {
                 const bootstrap = await storage.getItem(bootstrapKey);
                 const session = await options.session();
                 if (!session || !bootstrap || !owns(session, readBinding(bootstrap))) return 'logout-pending' as const;
@@ -92,34 +94,61 @@ export function createManagedLogout(options: {
         return 'ready' as const;
     }
 
-    async function save(session: LogoutSession, token: string, allowNew: () => Promise<boolean>, stillCurrent: () => Promise<boolean>) {
+    async function prepareAuthentication() {
+        const installation = await api.identity(false);
+        const clean = await storage.getItem(cleanKey);
+        if (installation && clean === installation) return;
+        if ((installation && clean !== 'preflight') || (!installation && clean !== null && clean !== 'preflight')) throw new Error('Managed installation has no local binding');
+        // No server write is possible while the unauthenticated reservation exists.
+        if (!installation) await storage.setItem(cleanKey, 'preflight');
+        const ready = installation ?? await api.identity(true);
+        if (!ready) throw new Error('Hardware-backed device key unavailable');
+        await storage.setItem(cleanKey, ready);
+    }
+
+    async function initialize(session: LogoutSession, stillCurrent: () => Promise<boolean>) {
         const raw = await storage.getItem(bindingKey);
         const sessionId = jwtSessionId(session.access_token);
-        if (raw === null && (!options.enableNew || !sessionId || !isUuid(session.user.id) || !await allowNew())) return false;
-        let installationId = await api.identity(false);
+        if (!sessionId || !isUuid(session.user.id)) throw new Error('Invalid device session');
+        const installationId = await api.identity(false);
+        if (!installationId) throw new Error('Managed device key is unavailable');
         if (raw === null) {
             const bootstrap = await storage.getItem(bootstrapKey);
             if (bootstrap !== null && !owns(session, readBinding(bootstrap))) throw new Error('Device bootstrap session changed');
-            if (installationId && bootstrap === null && await storage.getItem(cleanKey) !== installationId) {
+            if (bootstrap === null && await storage.getItem(cleanKey) !== installationId) {
                 throw new Error('Managed installation has no local binding');
             }
-            if (!installationId) {
-                // No request can reach the server until the real binding has
-                // been stored and this bootstrap marker has been removed.
-                await put(bootstrapKey, { installationId: '00000000-0000-0000-0000-000000000000',
-                    userId: session.user.id, sessionId });
-                installationId = await api.identity(true);
-                if (!installationId) {
-                    await storage.removeItem(bootstrapKey);
-                    return false;
-                }
-            }
         }
-        if (!installationId || !sessionId) throw new Error('Managed device key is unavailable');
         let binding = raw === null
             ? { installationId, userId: session.user.id, sessionId } as Binding : readBinding(raw);
         if (!owns(session, binding) || binding.installationId !== installationId) throw new Error('Managed session changed');
-        if (!await stillCurrent()) return true;
+        if (!await stillCurrent()) return;
+        if (raw === null) await put(bindingKey, binding);
+        if (await storage.getItem(cleanKey) !== null) await storage.removeItem(cleanKey);
+        if (await storage.getItem(bootstrapKey) !== null) await storage.removeItem(bootstrapKey);
+        if (!binding.keyRegistered && !binding.generation && await stillCurrent()) {
+            await api.ensureInstallation(session, installationId);
+            binding = { ...binding, keyRegistered: true };
+            await put(bindingKey, binding);
+        }
+    }
+
+    async function notificationReady() {
+        const raw = await storage.getItem(bindingKey);
+        const session = await options.session();
+        if (!raw || !session) return false;
+        const binding = readBinding(raw);
+        return owns(session, binding) && Boolean(binding.generation && binding.registration?.done);
+    }
+
+    async function save(session: LogoutSession, token: string, stillCurrent: () => Promise<boolean>) {
+        const raw = await storage.getItem(bindingKey);
+        if (raw === null || !await stillCurrent()) return;
+        let binding = readBinding(raw);
+        const installationId = await api.identity(false);
+        if (!installationId || binding.installationId !== installationId || !owns(session, binding)) {
+            throw new Error('Managed session changed');
+        }
         if (rejectedRegistration && binding.registration?.operationId === rejectedRegistration.operationId
             && !binding.registration.done && sameScope(binding, rejectedRegistration.previous)
             && binding.generation === rejectedRegistration.previous.generation) {
@@ -127,9 +156,6 @@ export function createManagedLogout(options: {
             await put(bindingKey, binding);
             rejectedRegistration = undefined;
         }
-        if (raw === null) await put(bindingKey, binding);
-        if (await storage.getItem(cleanKey) !== null) await storage.removeItem(cleanKey);
-        if (await storage.getItem(bootstrapKey) !== null) await storage.removeItem(bootstrapKey);
         if (!binding.generation) {
             if (!await stillCurrent()) return true;
             if (!binding.keyRegistered) {
@@ -182,25 +208,27 @@ export function createManagedLogout(options: {
         return true;
     }
 
-    async function finish(legacyPending: boolean, beforeAcknowledgement: () => Promise<void>): Promise<boolean> {
+    async function finish(beforeAcknowledgement: () => Promise<void>): Promise<void> {
         const [raw, anchor, storedBinding] = await Promise.all([
             storage.getItem(journalKey), storage.getItem(intentKey), storage.getItem(bindingKey),
         ]);
         if (raw === null && anchor === null && storedBinding === null) {
-            if (!options.enableNew) return false;
             const installation = await api.identity(false);
             const bootstrap = await storage.getItem(bootstrapKey);
-            if (bootstrap !== null) {
-                const session = await options.session();
-                if (!session || !owns(session, readBinding(bootstrap))) throw new Error('Device bootstrap session changed');
-                if (installation) await storage.setItem(cleanKey, installation);
-                await storage.removeItem(bootstrapKey);
-                return false;
+            const session = await options.session();
+            if (session) {
+                await initialize(session, async () => {
+                    const current = await options.session();
+                    return Boolean(current && current.user.id === session.user.id
+                        && jwtSessionId(current.access_token) === jwtSessionId(session.access_token));
+                });
+                if (await storage.getItem(bindingKey) === null) throw new Error('Device session changed during logout');
+                return finish(beforeAcknowledgement);
             }
-            if (!installation || await storage.getItem(cleanKey) === installation) return false;
+            const clean = await storage.getItem(cleanKey);
+            if (!bootstrap && (!installation || clean === installation || clean === 'preflight')) return;
             throw new Error('Discovered logout has no verified local scope');
         }
-        if (legacyPending) throw new Error('Conflicting logout records');
         const installationId = await api.identity(false);
         if (!installationId) throw new Error('Managed device key is unavailable');
         const parse = <T,>(value: string | null, decode: (s: string) => T): T | undefined => {
@@ -302,8 +330,7 @@ export function createManagedLogout(options: {
         await storage.removeItem(bindingKey);
         await storage.removeItem(intentKey);
         await storage.removeItem(journalKey);
-        return true;
     }
 
-    return { save, finish, availability };
+    return { save, finish, availability, initialize, prepareAuthentication, notificationReady };
 }

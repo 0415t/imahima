@@ -22,7 +22,7 @@ describe('Chat HTTP contracts', () => {
       isMember: async () => true,
       execute: async (op, actor, args) => { calls.push({ op, actor, args }); return { status: op === 'send' ? 201 : 200, data: { ok: true } }; },
     };
-    server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, undefined, deps));
+    server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, deps));
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     base = `http://127.0.0.1:${address.port}/groups/${room}`;

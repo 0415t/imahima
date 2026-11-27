@@ -62,7 +62,7 @@ it('HTTP send reaches a real PostgreSQL room lock and expires in the RPC stage',
   try {
     await waitForBarrier(held, holding, 'room lock held');
     const pid = Number(sql(`select pid from pg_stat_activity where application_name='${holderName}';`)); assert.ok(pid > 0);
-    server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity.getUserId, toggleIsFree: async () => { throw Error('Disabled'); } }, undefined, undefined, chatService({ rpc }, identity)));
+    server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity.getUserId, toggleIsFree: async () => { throw Error('Disabled'); } }, undefined, chatService({ rpc }, identity)));
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const first = fetch(`http://127.0.0.1:${server.address().port}/groups/${room}/messages`, {
       method: 'POST', headers: { Authorization: 'Bearer fixture', 'Content-Type': 'application/json' },

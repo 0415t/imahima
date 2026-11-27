@@ -571,6 +571,24 @@
           "Coordinate Express deployment with the session-bound operation lookup signature"
         ]
       }
+    },
+    {
+      "version": "20261204000000",
+      "name": "retire_legacy_device_registration",
+      "file": "20261204000000_retire_legacy_device_registration.sql",
+      "dependsOn": [
+        "20261203000000"
+      ],
+      "gitBlob": "feb6cab4b7f6c3a6af37f5723c3e617764d9c5fd",
+      "sourceSha256": "19425ae266e3f6a5310f2e9387fda07c53195af9b6f9aa2f4d0041b389ae40e4",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Stop old clients and workers; review legacy registration inventory and confirm it is empty before applying"
+        ]
+      }
     }
   ]
 }

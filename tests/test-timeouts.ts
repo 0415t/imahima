@@ -18,7 +18,7 @@ it('mixed-case group paths receive the deadline and cancel stalled authenticatio
     getUserId: async () => pending(), isMember: async () => { throw Error('Must not reach membership'); },
     execute: async () => { throw Error('Must not reach RPC'); },
   };
-  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, undefined, deps, 30));
+  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, deps, 30));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   try {
@@ -72,7 +72,7 @@ for (const stage of ['auth', 'membership', 'rpc'] as const) {
       execute: async () => { rpc++; return pending(); },
     };
     const groups = { ...deps, execute: async () => deps.execute('history', 'actor', {}), rateSecret: 'mock', consumeRate: async () => true };
-    const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, groups, deps, 40));
+    const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, groups, deps, 40));
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     const routes = [['POST', `/groups/${room}/messages`], ['GET', `/groups/${room}/messages`],
@@ -105,7 +105,7 @@ it('late Auth success and client disconnect cannot start membership or RPC', asy
     getUserId: async () => { await delay(120); return { userId: 'actor', error: null }; },
     isMember: async () => { member++; return true; }, execute: async () => ({ status: 200, data: {} }),
   };
-  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, undefined, deps, 40));
+  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, deps, 40));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}/groups/${room}/messages`;
@@ -127,7 +127,7 @@ it('late RPC completion cannot send twice or cancel another request', async () =
       return { status: 200, data: { ok: true } };
     },
   };
-  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, undefined, deps, 40));
+  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: deps.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, deps, 40));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const url = `http://127.0.0.1:${address.port}/groups/${room}/messages`;

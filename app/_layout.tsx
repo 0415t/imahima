@@ -32,9 +32,10 @@ export default function RootLayout() {
   const sessionUser = session?.user.id;
   const sessionId = session ? jwtSessionId(session.access_token) : undefined;
   const identity = sessionId ? `${sessionUser}:${sessionId}` : session;
-  const revision = logoutFlow.revision();
+  const revision = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.revision, logoutFlow.revision);
+  const authenticating = logoutFlow.isAuthenticating();
   const authorized = !supabase || (!blocked && !storageReadFailed
-    && checkedSession?.identity === identity && checkedSession?.revision === revision);
+    && checkedSession?.identity === identity && (!session || (!authenticating && checkedSession.revision === revision)));
   const userId = authorized ? sessionUser : undefined;
 
   useEffect(() => {
@@ -53,16 +54,22 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (isLoading || blocked || !supabase) return;
+    if (isLoading || blocked || authenticating || !supabase) return;
     let active = true;
-    void logoutFlow.sessionAvailability().then(availability => {
+    void logoutFlow.sessionAvailability().then(async availability => {
+      if (!active) return;
+      if (availability === 'ready' && sessionUser) await logoutFlow.prepareSession();
       if (!active) return;
       setStorageReadFailed(availability === 'read-failed');
       setCheckedSession(availability === 'ready' ? { identity, revision } : null);
       if (availability === 'logout-pending') void logoutFlow.signOut();
+    }).catch(() => {
+      if (!active) return;
+      setCheckedSession(null);
+      setStorageReadFailed(true);
     });
     return () => { active = false; };
-  }, [blocked, isLoading, revision, identity, storageRetry]);
+  }, [authenticating, blocked, isLoading, revision, identity, sessionUser, storageRetry]);
 
   useEffect(() => {
     void registerNotificationCategories().catch((error: unknown) => {

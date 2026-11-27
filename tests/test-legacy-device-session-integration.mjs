@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -8,8 +9,8 @@ import { Client } from 'pg';
 import { createStack, waitFor } from './helpers/issue36-stack.mjs';
 import { test } from 'node:test';
 
-test('legacy registration and token access require a current non-managed session', { timeout: 240000 }, async t => {
-  const stack=createStack(t.signal);
+test('migration 32 legacy session controls and atomic upgrade to migration 33', { timeout: 240000 }, async t => {
+  const stack=createStack(t.signal,{migrationThrough:"20261203000000"});
   const agent=new Agent({proxyEnv:{}});
   try {
     const cfg=await stack.start(); stack.verifyIdentity();
@@ -66,6 +67,9 @@ test('legacy registration and token access require a current non-managed session
       SELECT push_private.issue_device_challenge('${newDevice}',1,'enroll',decode('${nonce}','hex'));`);
     assert.throws(()=>stack.query(`SELECT push_private.open_device_generation('${newDevice}','${legacyClaims.sub}',
       '${legacyClaims.session_id}',1,decode('${nonce}','hex'));`),/Legacy registration must be cleared first/);
+    const retirement = readFileSync(new URL('../supabase/migrations/20261204000000_retire_legacy_device_registration.sql',import.meta.url),'utf8');
+    assert.throws(()=>stack.query(retirement),/legacy/i);
+    assert.deepEqual((await call(readPath,legacyClient)).data,[{expo_push_token:token}]);
     const tokenPath='/rest/v1/user_device_tokens?expo_push_token=eq.'+encodeURIComponent(token);
     assert.equal((await call(tokenPath,old,undefined,'DELETE')).status,204);
     assert.deepEqual((await call(readPath,legacyClient)).data,[{expo_push_token:token}]);
@@ -185,5 +189,15 @@ test('legacy registration and token access require a current non-managed session
       await new Promise((resolve,reject)=>proxy.close(error=>error?reject(error):resolve()));
       await upstream.close();
     }
+    stack.query(retirement);
+    assert.equal(stack.query("SELECT to_regprocedure('public.upsert_device_token(text,text,text)') IS NULL;"),'t');
+    assert.equal(stack.query("SELECT to_regclass('push_private.legacy_registration_sessions') IS NULL;"),'t');
+    for(const role of ['anon','authenticated','service_role']) {
+      assert.equal(stack.query(`SELECT has_any_column_privilege('${role}','public.user_device_tokens','SELECT')
+        OR has_any_column_privilege('${role}','public.user_device_tokens','INSERT')
+        OR has_any_column_privilege('${role}','public.user_device_tokens','UPDATE')
+        OR has_table_privilege('${role}','public.user_device_tokens','DELETE');`),'f');
+    }
+    assert.equal(stack.query(`SELECT count(*) FROM public.user_device_tokens WHERE expo_push_token='${siblingToken}';`),'1');
   } finally { agent.destroy(); await stack.stop(); }
 });

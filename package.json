@@ -7,10 +7,9 @@
     "server": "tsx server/index.ts",
     "test": "node scripts/test-offline.mjs",
     "test:db": "node scripts/test-db.mjs",
-    "test:login": "tsx integration/test-login.ts",
+    "test:login": "node --import tsx --test tests/test-device-verifier-integration.mjs",
     "test:persistence": "tsx integration/test-session-persistence.ts",
     "test:profile-toggle": "tsx --test tests/test-profile-toggle.ts",
-    "test:notifications": "tsx --test tests/test-notifications.ts",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
@@ -18,8 +17,7 @@
     "lint": "node scripts/lint.mjs",
     "typecheck": "tsc --noEmit",
     "test:integration:extend": "node --env-file=.env.test --import tsx integration/test-extend-integration.ts",
-    "test:integration:free-end": "node --env-file=.env.test --import tsx integration/test-free-end-notifications-integration.ts",
-    "test:integration:push": "node --env-file=.env.test --import tsx integration/test-push-send.ts"
+    "test:integration:free-end": "node --test tests/test-chat-push-integration.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

@@ -55,7 +55,7 @@ for (const timing of ['simultaneous', 'after-completion']) {
     let stateIndex = 0;
     const state = [{ user: { id: 'self' } }, false, { userId: 'self', revision: 0 }];
     const react = { useState: () => [state[stateIndex++], () => {}],
-      useSyncExternalStore: () => false,
+      useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useEffect(effect: typeof effects[number]) { effects.push(effect); }, createElement() { return null; } };
     const root = loadSource<{ default(): void }>('app/_layout.tsx', {
       '@/lib/push-notifications': {}, '@supabase/supabase-js': {},
@@ -71,7 +71,8 @@ for (const timing of ['simultaneous', 'after-completion']) {
       'react-native-reanimated': {}, '@/components/themed-text': {}, '@/components/themed-view': {},
       '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
       '@/lib/notification-task': { handleFreeEndAction }, '@/lib/supabase': {},
-      '@/lib/logout': { logoutFlow: { revision: () => 0 } },
+      '@/lib/logout': { logoutFlow: { revision: () => 0, isBlocked: () => false,
+        isAuthenticating: () => false, getError: () => null } },
       '@/lib/session-identity': { jwtSessionId: () => 'test-session' },
     }, { React: react });
     root.default();
@@ -88,6 +89,34 @@ for (const timing of ['simultaneous', 'after-completion']) {
     } finally { if (typeof cleanup === 'function') cleanup(); }
   });
 }
+
+it('keeps sign-in mounted while authentication runs and gates the authenticated session', () => {
+  const session = { user: { id: 'self' } };
+  for (const current of [null, session]) {
+    let slot = 0;
+    let stackMounted = false;
+    const states = [current, false, { identity: null, revision: 0 }, false, 0];
+    const Stack = { Protected: 'protected', Screen: 'screen' };
+    const react = {
+      useState: () => [states[slot++], () => {}],
+      useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+      useEffect() {},
+      createElement(type: unknown) { stackMounted ||= type === Stack; },
+    };
+    const root = loadSource<{ default(): void }>('app/_layout.tsx', {
+      react, 'expo-router': { Stack }, 'expo-notifications': {}, 'expo-status-bar': {},
+      'react-native': { StyleSheet: { create: (value: unknown) => value } }, 'react-native-reanimated': {},
+      '@/lib/push-notifications': {}, '@/lib/supabase': { supabase: {} }, '@/lib/notification-task': {},
+      '@/lib/session-identity': { jwtSessionId: () => 'test-session' },
+      '@/lib/logout': { logoutFlow: { revision: () => 1, isBlocked: () => false,
+        isAuthenticating: () => true, getError: () => null } },
+      '@/components/themed-text': {}, '@/components/themed-view': {},
+      '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
+    }, { React: react });
+    root.default();
+    assert.equal(stackMounted, current === null);
+  }
+});
 
 for (const result of [
   { ok: true, freeUntil: '2026-11-17T12:00:00.000Z' },

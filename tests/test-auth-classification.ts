@@ -41,7 +41,7 @@ for (const [label, error, status] of cases) {
         execute: async () => { operations++; return { status: 200, data: {} }; },
         consumeRate: async () => { operations++; return true; }, rateSecret: 'test-only',
       };
-      const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: lookup, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, deps, deps));
+      const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: lookup, toggleIsFree: async () => ({ isFree: false, error: null }) }, deps, deps));
       server.listen(0, '127.0.0.1'); await once(server, 'listening');
       const address = server.address(); assert.ok(address && typeof address !== 'string');
       const routes = [

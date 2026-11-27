@@ -83,7 +83,7 @@ async function main() {
   const groups = groupService(admin, identity);
   groups.rateSecret = randomUUID(); // Dedicated test only; never load application .env.
   stage = 'express-start';
-  const app = createApp({ ...disabledTimerDependencies, getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, undefined, groups, chatService(admin, groups));
+  const app = createApp({ ...disabledTimerDependencies, getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, groups, chatService(admin, groups));
   server = createServer((req, res) => {
     const start = performance.now(); const row = { request_id: req.headers['x-verification-id'], received_at: new Date().toISOString() }; httpServer.push(row);
     res.once('finish', () => { row.status = res.statusCode; row.finish_ms = Math.round(performance.now() - start); });

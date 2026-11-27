@@ -108,7 +108,7 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | INT-CHAT-PUSH | 実JWT送信→通常起動ワーカー→模擬Expo | 4／Integration | 部分実装。Offline配線と実DB・実ワーカー試験あり。全経路の一体検証は未実装 |
 | DB-MIGRATIONS | 全23本の空DB適用、既存データ付き更新、権限 | 2／DB | 部分実装。Issue #35の `verify:migrations` 等とSQL監査は対象版・専用環境に依存。現行の全適用とアップグレードのCI証跡が未整備 |
 | UI-E2E | 実ExpoアプリとAPI／Authの結合、セッションの復元 | 5／Integration | 未実装。モックによる表示・ストレージ検証あり |
-| DEVICE-PUSH | Expo受付、端末受信、表示・操作 | 4/6／Device | 部分実装。送信入口は `npm run test:integration:push`。登録端末での結果は手動。実送信のためCI対象外 |
+| DEVICE-PUSH | Expo受付、端末受信、表示・操作 | 4/6／Device | 隔離統合テストでは Expo への最終送信を模擬。実機での受信と通知操作は Issue #50 で管理 |
 
 ## 実行証跡と更新
 

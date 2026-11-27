@@ -99,6 +99,7 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
 
     return {
         async identity(create) {
+            if (!apiUrl || !supabaseUrl) throw new Error('Device recovery API is not configured');
             if (Platform.OS !== 'ios' && Platform.OS !== 'android') return null;
             const native = await import('../modules/device-key');
             if (!native.supportsLogoutRecoverySigning()) return null;

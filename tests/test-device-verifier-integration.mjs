@@ -67,6 +67,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     });
     assert.equal(preflight.rows[0].session_user, 'imahima_device_api_login');
     const localFetch = origin => isolatedFetch(origin, agent, t.signal);
+    const localAuth = localFetch(gateway.url);
     const auth = createClient(gateway.url, gateway.anon, {
       global: { fetch: localFetch(gateway.url) }, auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -94,7 +95,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         notificationExtensions++;
         return { isFree: true, freeUntil: null, error: null };
       },
-    }, undefined, undefined, undefined, undefined, router,
+    }, undefined, undefined, undefined, router,
     logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`;
@@ -141,6 +142,129 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         key: signingKey.privateKey, dsaEncoding: 'ieee-p1363',
       }).toString('base64url') };
     }
+    const jwtClaims = token => JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
+    const recoveryPost = (action, fields, status = 200) => post('recovery/' + action, fields, status, null);
+    async function exerciseManagedClient() {
+      // Exercise the actual app state machine against the isolated stack. Only
+      // secure key operations and local persistence are supplied by test adapters.
+      let clientAccount = await signup();
+      const clientUser = jwtClaims(clientAccount.access).sub;
+      let localSession = { user: { id: clientUser }, access_token: clientAccount.access };
+      const clientTarget = { keyVersion: '1', installationId: randomUUID() };
+      const clientChallenge = async purpose => (await post('challenge', signed('challenge', {
+        ...clientTarget, purpose, nonce: randomBytes(32).toString('base64url'),
+      }, key, clientAccount.access), 200, clientAccount.access)).nonce;
+      const localRecords = new Map();
+      let lostAck = false, openCalls = 0;
+      const restartClient = () => createManagedLogout({
+        prefix: 'isolated',
+        storage: {
+          async getItem(name) { return localRecords.get(name) ?? null; },
+          async setItem(name, value) { localRecords.set(name, value); },
+          async removeItem(name) { localRecords.delete(name); },
+        },
+        session: async () => localSession,
+        async revoke(session) {
+          assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
+            method: 'POST', headers: { authorization: 'Bearer ' + session.access_token },
+          })).status, 204);
+        },
+        async clean(scope) {
+          if (localSession) {
+            assert.equal(scope.userId, localSession.user.id);
+            assert.equal(scope.sessionId, jwtClaims(localSession.access_token).session_id);
+          }
+          localSession = null;
+        },
+        api: {
+          identity: async () => clientTarget.installationId,
+          operationId: randomUUID,
+          async ensureInstallation() {
+            const input = { installationId: clientTarget.installationId, publicKey: key.point };
+            const issued = await post('enrollment-challenge', input, 200, clientAccount.access);
+            await post('enroll-installation', signed('enroll-installation', {
+              ...input, nonce: issued.nonce,
+            }, key, clientAccount.access), 200, clientAccount.access);
+          },
+          async open() {
+            openCalls++;
+            await discardCommittedReply('enroll', signed('enroll', {
+              ...clientTarget, nonce: await clientChallenge('enroll'),
+            }, key, clientAccount.access), clientAccount.access);
+            throw Error('Lost generation response');
+          },
+          async register() { assert.fail('Registration must stay blocked during logout'); },
+          async lookupRegistration() { assert.fail('Unexpected registration lookup'); },
+          async lookupGeneration() { assert.fail('Logout must resolve the generation inside the fence transaction'); },
+          async begin(session, intent) {
+            assert.equal(intent.generation, undefined);
+            const { result } = await post('begin-session-logout', signed('begin-session-logout', {
+              ...clientTarget, operationId: intent.operationId, nonce: await clientChallenge('begin_session_logout'),
+            }, key, session.access_token), 200, session.access_token);
+            if (openCalls === 0) assert.equal(result.generation, null);
+            else assert.ok(result.generation);
+            return result.recoveryId;
+          },
+          async recovery(_installation, action, id, scope) {
+            const input = { ...clientTarget, ...(id ? { recoveryId: id } : {}),
+              ...(scope ? { bindingUserId: scope.userId, bindingSessionId: scope.sessionId,
+                bindingOperationId: scope.operationId } : {}) };
+            const issued = await recoveryPost('challenge', recoveryProof('challenge', {
+              ...input, purpose: action, nonce: randomBytes(32).toString('base64url'),
+              issuedAt: String(Math.floor(Date.now() / 1000)),
+            }));
+            const proof = recoveryProof(action, { ...input, nonce: issued.nonce });
+            if (action === 'ack' && !lostAck) {
+              lostAck = true;
+              await discardCommittedReply('recovery/ack', proof, null);
+              throw Error('Lost acknowledgement');
+            }
+            return (await recoveryPost(action, proof)).result;
+          },
+        },
+      });
+      localRecords.set('isolated:device-v2-clean', clientTarget.installationId);
+
+      // Simulate a native installation that never grants Push permission.
+      await restartClient().initialize(localSession, async () => true);
+      assert.equal(await restartClient().notificationReady(), false);
+      await assert.rejects(restartClient().finish(async () => {}), /Lost acknowledgement/);
+      await restartClient().finish(async () => {});
+      assert.equal(await restartClient().availability(), 'ready');
+      assert.equal(localSession, null);
+      assert.equal(openCalls, 0);
+      assert.equal(stack.query(`SELECT count(*) FROM push_private.installation_bindings
+        WHERE installation_id='${clientTarget.installationId}';`), '0');
+
+      clientAccount = await signup();
+      localSession = { user: { id: jwtClaims(clientAccount.access).sub }, access_token: clientAccount.access };
+      lostAck = false;
+      await restartClient().initialize(localSession, async () => true);
+      await assert.rejects(restartClient().save(localSession, 'ExpoPushToken[unused]', async () => true),
+        /Lost generation response/);
+      await assert.rejects(restartClient().finish(async () => {}), /Lost acknowledgement/);
+      const intentKey = 'isolated:logout-v2-intent';
+      const { recoveryId: _lostId, ...intentWithoutId } = JSON.parse(localRecords.get(intentKey));
+      localRecords.set(intentKey, JSON.stringify({ ...intentWithoutId, stage: 'begin' }));
+      localRecords.set('isolated:logout-v2', '{broken');
+      await restartClient().finish(async () => {});
+      assert.equal(await restartClient().availability(), 'ready');
+      assert.equal(localSession, null);
+      assert.equal(openCalls, 1);
+
+      const nextClient = await signup();
+      const nextNonce = (await post('challenge', signed('challenge', {
+        ...clientTarget, purpose: 'enroll', nonce: randomBytes(32).toString('base64url'),
+      }, key, nextClient.access), 200, nextClient.access)).nonce;
+      assert.ok((await post('enroll', signed('enroll', {
+        ...clientTarget, nonce: nextNonce,
+      }, key, nextClient.access), 200, nextClient.access)).result);
+    }
+
+    if (process.env.IMAHIMA_MANAGED_CLIENT_ONLY === '1') {
+      await exerciseManagedClient();
+      return;
+    }
     if (process.env.IMAHIMA_REGISTRATION_REJECTION_ONLY === '1') {
       const input = { installationId, publicKey: key.point };
       const enrollment = await post('enrollment-challenge', input);
@@ -150,7 +274,8 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
           nonce: randomBytes(32).toString('base64url') }, key, access), 200, access)).nonce;
       }
       const generation = (await post('enroll', signed('enroll', { ...base, nonce: await issue('enroll') }))).result;
-      const originalOwner = JSON.parse(Buffer.from(second.access.split('.')[1], 'base64url')).sub;
+      const {sub: originalOwner,session_id: ownerSession} = JSON.parse(Buffer.from(second.access.split('.')[1], 'base64url'));
+      const ownerInstallation = randomUUID();
       const token = 'ExpoPushToken[legacy_registration_conflict]';
       const operationId = randomUUID();
       const operation = { ...base, generation, operationId };
@@ -159,8 +284,12 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       const registration = async (value = token) =>
         signed('register', { ...operation, token: value, platform: 'ios', nonce: await issue('register') });
       assert.equal((await lookup()).result, null);
-      stack.query(`INSERT INTO public.user_device_tokens(user_id,expo_push_token,platform)
-        VALUES ('${originalOwner}','${token}','ios');`);
+      stack.query(`BEGIN; SET LOCAL ROLE postgres;
+        INSERT INTO push_private.installations(installation_id,public_key) VALUES ('${ownerInstallation}',decode('04','hex'));
+        WITH binding AS (INSERT INTO push_private.installation_bindings(installation_id,user_id,session_id)
+          VALUES ('${ownerInstallation}','${originalOwner}','${ownerSession}') RETURNING generation)
+        INSERT INTO public.user_device_tokens(user_id,expo_push_token,platform,installation_id,generation,registration_revision)
+          SELECT '${originalOwner}','${token}','ios','${ownerInstallation}',generation,1 FROM binding; COMMIT;`);
       const one = await registration(), two = await registration();
       const [, retry] = await Promise.all([
         discardCommittedReply('register', one, first.access, 403),
@@ -387,15 +516,20 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     let versionOutput = '';
     lockedVersion.stdout.on('data', chunk => { versionOutput += chunk; });
     const versionClosed = once(lockedVersion, 'close');
-    const blocked = () => stack.query(`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-      WHERE application_name='device-proof-test' AND cardinality(pg_blocking_pids(pid))>0);`) === 't';
+    // Observe the lock through the existing isolated relay. Spawning Docker and
+    // psql to sample can miss the verifier's 1500ms lock wait on Windows.
+    const blocked = async () => (await pool.query(`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+      WHERE application_name='device-proof-test' AND cardinality(pg_blocking_pids(pid))>0) AS waiting`)).rows[0].waiting;
     lockedVersion.stdin.write(`BEGIN; UPDATE push_private.installations SET key_version=2
       WHERE installation_id='${installationId}';\n\\echo changed\n`);
     let staleRequest;
     try {
       await waitFor(() => versionOutput.includes('changed'), 'key version updated in concurrent session', t.signal);
       staleRequest = post('challenge', signed('challenge', { ...base, purpose: 'lookup', nonce }), null);
-      await waitFor(blocked, 'request waits for the key update', t.signal);
+      await Promise.race([
+        waitFor(blocked, 'request waits for the key update', t.signal),
+        staleRequest.then(result => assert.fail('Key update request returned before lock observation: ' + result.status)),
+      ]);
     } finally {
       lockedVersion.stdin.end('COMMIT;\n');
       await versionClosed;
@@ -491,7 +625,6 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     confirmation.keyVersion = '2';
     // Start this independent recovery scenario below the bounded issuance quota.
     stack.query(`DELETE FROM push_private.device_challenges WHERE installation_id='${installationId}';`);
-    const jwtClaims = token => JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
     const oldSession = jwtClaims(first.access).session_id;
     const survivingSession = jwtClaims(unrelatedSession).session_id;
     const boundWhere = `installation_id='${installationId}' AND generation=${generation}`;
@@ -510,7 +643,6 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     // with a locally verified asymmetric token after its session was removed.
     cachedOldClaims = await auth.auth.getClaims(first.access);
     assert.ok(cachedOldClaims.data?.claims && !cachedOldClaims.error);
-    const localAuth = localFetch(gateway.url);
     const headers = { authorization: 'Bearer ' + first.access, 'content-type': 'application/json' };
     const [logout, refresh] = await Promise.all([
       localAuth(gateway.url + '/auth/v1/logout?scope=local', { method: 'POST', headers }),
@@ -657,7 +789,6 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       ...base, purpose, ...(id ? { recoveryId: id } : {}), nonce: randomBytes(32).toString('base64url'),
       issuedAt: String(Math.floor(Date.now() / 1000)),
     });
-    const recoveryPost = (action, fields, status = 200) => post('recovery/' + action, fields, status, null);
     async function recoveryAction(action, id) {
       const issued = await recoveryPost('challenge', recoveryRequest(action, id));
       return recoveryProof(action, { ...base, ...(id ? { recoveryId: id } : {}), nonce: issued.nonce });
@@ -809,105 +940,9 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         { recoveryId: id, status: 'cleared' });
     }
 
-    // Exercise the actual app state machine against the isolated stack. Only
-    // secure key operations and local persistence are supplied by test adapters.
-    const clientAccount = await signup();
-    const clientUser = jwtClaims(clientAccount.access).sub;
-    let localSession = { user: { id: clientUser }, access_token: clientAccount.access };
-    const clientTarget = { keyVersion: '1', installationId: randomUUID() };
-    const clientChallenge = async purpose => (await post('challenge', signed('challenge', {
-      ...clientTarget, purpose, nonce: randomBytes(32).toString('base64url'),
-    }, key, clientAccount.access), 200, clientAccount.access)).nonce;
-    const localRecords = new Map();
-    let lostAck = false, openCalls = 0;
-    const restartClient = () => createManagedLogout({
-      prefix: 'isolated', enableNew: true,
-      storage: {
-        async getItem(name) { return localRecords.get(name) ?? null; },
-        async setItem(name, value) { localRecords.set(name, value); },
-        async removeItem(name) { localRecords.delete(name); },
-      },
-      session: async () => localSession,
-      async revoke(session) {
-        assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
-          method: 'POST', headers: { authorization: 'Bearer ' + session.access_token },
-        })).status, 204);
-      },
-      async clean(scope) {
-        if (localSession) {
-          assert.equal(scope.userId, localSession.user.id);
-          assert.equal(scope.sessionId, jwtClaims(localSession.access_token).session_id);
-        }
-        localSession = null;
-      },
-      api: {
-        identity: async () => clientTarget.installationId,
-        operationId: randomUUID,
-        async ensureInstallation() {
-          const input = { installationId: clientTarget.installationId, publicKey: key.point };
-          const issued = await post('enrollment-challenge', input, 200, clientAccount.access);
-          await post('enroll-installation', signed('enroll-installation', {
-            ...input, nonce: issued.nonce,
-          }, key, clientAccount.access), 200, clientAccount.access);
-        },
-        async open() {
-          openCalls++;
-          await discardCommittedReply('enroll', signed('enroll', {
-            ...clientTarget, nonce: await clientChallenge('enroll'),
-          }, key, clientAccount.access), clientAccount.access);
-          throw Error('Lost generation response');
-        },
-        async register() { assert.fail('Registration must stay blocked during logout'); },
-        async lookupRegistration() { assert.fail('Unexpected registration lookup'); },
-        async lookupGeneration() { assert.fail('Logout must resolve the generation inside the fence transaction'); },
-        async begin(session, intent) {
-          assert.equal(intent.generation, undefined);
-          const { result } = await post('begin-session-logout', signed('begin-session-logout', {
-            ...clientTarget, operationId: intent.operationId, nonce: await clientChallenge('begin_session_logout'),
-          }, key, session.access_token), 200, session.access_token);
-          assert.ok(result.generation);
-          return result.recoveryId;
-        },
-        async recovery(_installation, action, id, scope) {
-          const input = { ...clientTarget, ...(id ? { recoveryId: id } : {}),
-            ...(scope ? { bindingUserId: scope.userId, bindingSessionId: scope.sessionId,
-              bindingOperationId: scope.operationId } : {}) };
-          const issued = await recoveryPost('challenge', recoveryProof('challenge', {
-            ...input, purpose: action, nonce: randomBytes(32).toString('base64url'),
-            issuedAt: String(Math.floor(Date.now() / 1000)),
-          }));
-          const proof = recoveryProof(action, { ...input, nonce: issued.nonce });
-          if (action === 'ack' && !lostAck) {
-            lostAck = true;
-            await discardCommittedReply('recovery/ack', proof, null);
-            throw Error('Lost acknowledgement');
-          }
-          return (await recoveryPost(action, proof)).result;
-        },
-      },
-    });
-    localRecords.set('isolated:device-v2-clean', clientTarget.installationId);
-    await assert.rejects(restartClient().save(localSession, 'ExpoPushToken[unused]', async () => true, async () => true),
-      /Lost generation response/);
-    await assert.rejects(restartClient().finish(false, async () => {}), /Lost acknowledgement/);
-    const intentKey = 'isolated:logout-v2-intent';
-    const { recoveryId: _lostId, ...intentWithoutId } = JSON.parse(localRecords.get(intentKey));
-    localRecords.set(intentKey, JSON.stringify({ ...intentWithoutId, stage: 'begin' }));
-    localRecords.set('isolated:logout-v2', '{broken');
-    assert.equal(await restartClient().finish(false, async () => {}), true);
-    assert.equal(await restartClient().availability(), 'ready');
-    assert.equal(localSession, null);
-    assert.equal(openCalls, 1);
+    await exerciseManagedClient();
 
-    const nextClient = await signup();
-    const nextNonce = (await post('challenge', signed('challenge', {
-      ...clientTarget, purpose: 'enroll', nonce: randomBytes(32).toString('base64url'),
-    }, key, nextClient.access), 200, nextClient.access)).nonce;
-    assert.ok((await post('enroll', signed('enroll', {
-      ...clientTarget, nonce: nextNonce,
-    }, key, nextClient.access), 200, nextClient.access)).result);
-
-    const limiter = createApp({}, undefined, undefined, undefined, undefined, undefined,
+    const limiter = createApp({}, undefined, undefined, undefined, undefined,
       logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
     try {
       await once(limiter, 'listening');

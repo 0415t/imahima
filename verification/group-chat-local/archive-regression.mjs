@@ -100,7 +100,7 @@ async function main() {
   }
   const identity = async token => { const { data, error } = await admin.auth.getUser(token); return { userId: data.user?.id ?? null, error }; };
   const groups = groupService(admin, identity); groups.rateSecret = randomUUID();
-  server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, undefined, groups, chatService(admin, groups)));
+  server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity, toggleIsFree: async () => { throw Error('Disabled'); } }, groups, chatService(admin, groups)));
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); base = `http://127.0.0.1:${server.address().port}`;
 
   await test('trigger owner, search_path, RLS visibility and no public execution', async () => {

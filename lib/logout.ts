@@ -3,7 +3,7 @@ import authStorage from './auth-storage';
 import { createLogoutFlow } from './logout-flow';
 import { createManagedLogout } from './managed-logout';
 import { createDeviceRecoveryApi } from './device-recovery-api';
-import { createSessionDataClient, supabase } from './supabase';
+import { supabase } from './supabase';
 import { jwtSessionId } from './session-identity';
 
 const project = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -36,7 +36,6 @@ export const logoutFlow = createLogoutFlow({
     session,
     managed: createManagedLogout({
         storage: authStorage, prefix, session, revoke, api: createDeviceRecoveryApi(apiUrl, project),
-        enableNew: Boolean(apiUrl && project && process.env.EXPO_PUBLIC_DEVICE_RECOVERY_ENABLED === 'true'),
         async clean(scope) {
             const current = await session();
             if (current) {
@@ -47,15 +46,4 @@ export const logoutFlow = createLogoutFlow({
             }
         },
     }),
-    resolveToken: async () => (await import('./push-notifications')).getCurrentDeviceToken(),
-    async hasRegistrations(session) {
-        const { data, error } = await createSessionDataClient(session.access_token)
-            .from('user_device_tokens').select('id').eq('user_id', session.user.id).limit(1);
-        if (error) throw error;
-        return data.length > 0;
-    },
-    register: async (session, token) => (await import('./push-notifications')).registerDeviceToken(session, token),
-    remove: async (session, token) => (await import('./push-notifications')).removeDeviceToken(session, token),
-    revoke,
-    signOut,
 });

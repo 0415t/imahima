@@ -69,6 +69,21 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
         `${method} ${path.split('?')[0]}: expected ${status}, received ${statusCode}`);
       return {status:statusCode,data:text?JSON.parse(text):null};
     }
+    const managed = async (recipient, age, token = makeToken()) => {
+      const installation=randomUUID(), id=randomUUID();
+      fakeTokens.push(token);
+      const jwt=await recipient.newSession();
+      const session=JSON.parse(Buffer.from(jwt.split('.')[1],'base64url')).session_id;
+      const generation=stack.query(`INSERT INTO push_private.installations(installation_id,public_key)
+        VALUES ('${installation}',decode('04','hex'));
+        INSERT INTO push_private.installation_bindings(installation_id,user_id,session_id,created_at)
+        VALUES ('${installation}','${recipient.id}','${session}',clock_timestamp()-interval '${age} minutes') RETURNING generation;`);
+      assert.match(generation,/^[0-9]+$/);
+      stack.query(`BEGIN; SET LOCAL ROLE postgres;
+        INSERT INTO public.user_device_tokens(id,user_id,expo_push_token,platform,installation_id,generation,registration_revision)
+        VALUES ('${id}','${recipient.id}',${sqlLiteral(token)},'android','${installation}',${generation},1); COMMIT;`);
+      return {installation,generation,token,session,jwt};
+    };
     async function actor(name) {
       const email=`issue36-${randomUUID()}@example.invalid`;
       const password=randomBytes(24).toString('hex');
@@ -78,11 +93,8 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
         {method:'POST',body:{email,password},status:200});
       assert.equal(session.user.id,user.id);
       const token=makeToken();
-      fakeTokens.push(token);
-      await request(config.url,'/rest/v1/rpc/upsert_device_token',{
-        method:'POST',jwt:session.access_token,body:{p_token:token,p_platform:'android'},status:[200,204],
-      });
-      auth[name]={id:user.id,jwt:session.access_token,token,
+      const binding = await managed({id:user.id,newSession:async()=>session.access_token},20,token);
+      auth[name]={id:user.id,jwt:session.access_token,...binding,
         async newSession() {
           const {data}=await request(config.url,'/auth/v1/token?grant_type=password',
             {method:'POST',body:{email,password},status:200});
@@ -143,8 +155,8 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
     const names=['sender','eligible','off','expired','outsider','rejoin','reon'];
     for(const name of names) await actor(name);
     await runCase('relay passes an at-prefixed body verbatim to PostgREST',async()=>{
-      const invalid=await request(config.url,'/rest/v1/rpc/upsert_device_token',{
-        method:'POST',jwt:auth.eligible.jwt,rawBody:`@/issue36-nonexistent-${randomUUID()}`,status:400,
+      const invalid=await request(config.url,'/rest/v1/rpc/authorize_notification_delivery',{
+        method:'POST',jwt:config.service,rawBody:`@/issue36-nonexistent-${randomUUID()}`,status:400,
       });
       assert.equal(invalid.data.code,'PGRST102');
     });
@@ -312,21 +324,6 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
         sharedDatabaseConnections:0,terminalOutboxRows:finalRows.length}));
     });
     if(worker) assert.equal((await stopIssue36Server(worker.child,worker.done,worker.ended)).code,0);
-    const managed = async (recipient, age) => {
-      const installation=randomUUID(), id=randomUUID(), token=makeToken();
-      fakeTokens.push(token);
-      const jwt=await recipient.newSession();
-      const session=JSON.parse(Buffer.from(jwt.split('.')[1],'base64url')).session_id;
-      const generation=stack.query(`INSERT INTO push_private.installations(installation_id,public_key)
-        VALUES ('${installation}',decode('04','hex'));
-        INSERT INTO push_private.installation_bindings(installation_id,user_id,session_id,created_at)
-        VALUES ('${installation}','${recipient.id}','${session}',clock_timestamp()-interval '${age} minutes') RETURNING generation;`);
-      assert.match(generation,/^[0-9]+$/);
-      stack.query(`BEGIN; SET LOCAL ROLE postgres;
-        INSERT INTO public.user_device_tokens(id,user_id,expo_push_token,platform,installation_id,generation,registration_revision)
-        VALUES ('${id}','${recipient.id}',${sqlLiteral(token)},'android','${installation}',${generation},1); COMMIT;`);
-      return {installation,generation,token,session,jwt};
-    };
     if (faultsOnly) for (const kind of ['free_end','member_free','chat_message']) {
       await runCase(kind+': remaining delivery fault cases',async()=>{
         const recipient=auth.eligible, other=auth.outsider;
@@ -426,8 +423,8 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
         const rotating=await managed(recipient,20);
         const extras=Array.from({length:100},makeToken);
         fakeTokens.push(...extras);
-        stack.query(`INSERT INTO public.user_device_tokens(id,user_id,expo_push_token,platform) VALUES ${extras.map((token,index)=>
-          `('ffffffff-ffff-4fff-8fff-${String(index).padStart(12,'0')}','${recipient.id}',${sqlLiteral(token)},'android')`).join(',')};`);
+        stack.query(`BEGIN; SET LOCAL ROLE postgres; INSERT INTO public.user_device_tokens(id,user_id,expo_push_token,platform,installation_id,generation,registration_revision) VALUES ${extras.map((token,index)=>
+          `('ffffffff-ffff-4fff-8fff-${String(index).padStart(12,'0')}','${recipient.id}',${sqlLiteral(token)},'android','${other.installation}',${other.generation},1)`).join(',')}; COMMIT;`);
         let id,table,late;
         if(kind==='free_end') {
           table='free_end_notification_claims'; id=randomUUID();
@@ -468,7 +465,7 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
         await waitFor(()=>has('expo-response-held'),'Expo mock has accepted the authorized batch',signal);
         const newVersion=async()=>stack.query(`SELECT delivery_version FROM public.user_device_tokens WHERE expo_push_token=${sqlLiteral(recipient.token)};`);
         const previous=await newVersion();
-        await rpc('upsert_device_token',{p_token:recipient.token,p_platform:'android'},recipient.jwt,[200,204]);
+        stack.query(`BEGIN; SET LOCAL ROLE postgres; UPDATE public.user_device_tokens SET registration_revision=registration_revision+1 WHERE expo_push_token=${sqlLiteral(recipient.token)}; COMMIT;`);
         const updated=await newVersion();
         assert.notEqual(previous,updated);
         stack.query(`BEGIN; SET LOCAL ROLE postgres;

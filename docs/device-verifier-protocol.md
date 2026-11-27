@@ -289,11 +289,9 @@ interoperability without depending on a mobile keystore.
 
 ### App rollout and logout journal
 
-Set `EXPO_PUBLIC_DEVICE_RECOVERY_ENABLED=true` only for managed-registration
+Before migration 33, `EXPO_PUBLIC_DEVICE_RECOVERY_ENABLED=true` selected managed-registration
 rollout after deploying the Express endpoints and a compatible native build.
-The flag allows enrollment of previously unbound devices. The app does not
-silently migrate legacy registrations, and an existing managed binding
-continues to use the recovery path even if the flag is off.
+An existing managed binding continued using the recovery path with the flag off.
 
 The app stores the installation, user/session IDs, generation, and a stable
 begin operation ID before starting logout. Once returned, the opaque recovery
@@ -355,3 +353,30 @@ Migration `20261203000000_persist_managed_registration_rejections.sql` records a
 The existing signed `lookup` endpoint returns the registration result for the bound session. A committed rejection can clear the matching pending registration after an app restart. A missing record, a failed lookup, or a rejection of a replay alone cannot clear an unknown prior outcome. Rejections from before migration 32 without a durable record cannot be recovered retroactively. The signature format and HTTP endpoint remain unchanged.
 
 Pause device recovery traffic, apply migration 32, deploy the updated Express server, and then resume traffic. The private lookup function now requires the verified session ID.
+
+## Migration 33 and native-only deployment
+
+The app always uses managed registration and recovery. Use an Android or iOS development
+build with the hardware-backed key module. Key creation and installation registration
+do not require notification permission. A generation and device token are only
+registered when a push token is available.
+
+The app creates a key before starting a new Auth session. A restored session with
+no usable device key remains blocked. Assess signed-in development devices before
+cutover and resolve any legacy session using its existing supported flow before
+retiring that flow.
+
+Stop all application access, Express instances and notification workers. Apply pending
+migrations in ledger order through 32, then inspect counts of token rows with NULL
+installation IDs and rows in push_private.legacy_registration_sessions. Migration 33
+rechecks both in its transaction and stops if either count is nonzero. Keep those
+environments paused pending an explicitly authorized decision on development data.
+The migration does not assign old rows to installations or purge them.
+
+After migration 33 commits, verify the migration history, token constraints and effective
+ACLs. Configure `DEVICE_VERIFIER_DATABASE_URL`, `DEVICE_RECOVERY_DATABASE_URL`, and
+`DEVICE_RECOVERY_CHALLENGE_SECRET` on the updated Express deployment. Confirm the retired
+test route returns 404, then restart the three updated workers and distribute the native
+build. Leave old binaries out of service. Verify
+the three worker paths with simulated Expo and track real devices under Issue #50.
+A delivery authorized before the fence may already have reached Expo.

@@ -5,7 +5,6 @@ import {
   type FreeEndNotificationClaim,
   type FreeEndNotificationValidation,
 } from './jobs/free-end-notifications';
-import { createPushNotificationService } from './services/notifications';
 import { createAuthorizedNotificationSender } from './services/notification-delivery';
 import { groupService } from './services/groups';
 import { chatService } from './services/chat';
@@ -19,11 +18,6 @@ const memberFreeMaxAttempts = process.env.MEMBER_FREE_NOTIFICATIONS_ENABLED === 
 const chatNotificationOptions = process.env.CHAT_MESSAGE_NOTIFICATIONS_ENABLED === 'true'
   ? parseChatNotificationOptions(process.env) : null;
 
-const pushNotifications = createPushNotificationService({
-  accessToken: process.env.EXPO_ACCESS_TOKEN,
-  // Manual test delivery has no notification lease or versioned receipt.
-  deleteDeviceToken: async () => ({ error: null }),
-});
 const sendAuthorized = createAuthorizedNotificationSender({
   accessToken: process.env.EXPO_ACCESS_TOKEN,
   async authorize(kind, id, lease, after, signal) {
@@ -85,13 +79,6 @@ const app = createApp({
     return { isFree: row?.is_free ?? null, freeUntil: row?.free_until ?? null, error };
   },
   extendIsFreeFromNotification: notificationSessionExtender(verifierPool),
-}, {
-  getDeviceTokens: async (userId) => {
-    const { data, error } = await serverSupabase.rpc('list_legacy_test_push_tokens', { p_user: userId });
-    return { tokens: (data ?? []) as string[], error };
-  },
-  sendPushNotifications: (tokens, message) =>
-    pushNotifications.sendPushNotifications(tokens, message),
 }, groups, chatService(serverSupabase, groups), undefined, deviceVerifier, recoveryRouter);
 const port = Number(process.env.PORT ?? 3000);
 
