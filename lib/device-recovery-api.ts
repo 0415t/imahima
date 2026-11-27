@@ -37,7 +37,9 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
     let enrolled: string | undefined;
     async function post(action: string, body: Record<string, unknown>, accessToken?: string) {
         const base = new URL(apiUrl ?? '');
-        if (base.protocol !== 'https:' && !(__DEV__ && ['localhost', '127.0.0.1', '10.0.2.2'].includes(base.hostname))) {
+        const localDevelopmentHttp = base.protocol === 'http:' && !accessToken && __DEV__
+            && ['localhost', '127.0.0.1', '10.0.2.2'].includes(base.hostname);
+        if (base.protocol !== 'https:' && !localDevelopmentHttp) {
             throw new Error('Secure device recovery API required');
         }
         const controller = new AbortController();

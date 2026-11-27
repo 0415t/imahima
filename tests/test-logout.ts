@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
+import { AuthApiError, AuthRetryableFetchError, isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { createExtendClient } from '../lib/free-end-action';
 import { createLogoutFlow, type LogoutSession } from '../lib/logout-flow';
 import { createManagedLogout, type ManagedDeviceApi } from '../lib/managed-logout';
@@ -85,12 +86,12 @@ function managedFixture(fresh = false) {
         async setItem(key: string, value: string) { failOnce('write:' + key); stored.set(key, value); },
         async removeItem(key: string) { failOnce('remove:' + key); stored.delete(key); },
     };
-    function restart() {
+    function restart(recoverySession?: () => Promise<LogoutSession | null>) {
         const session = async () => current;
         return createLogoutFlow({
             storage, prefix: "test", session,
             managed: createManagedLogout({
-                storage, session, api, prefix: 'test',
+                storage, session, recoverySession, api, prefix: 'test',
                 async revoke(session) {
                     assert.equal(session, a);
                     events.push('revoke');
@@ -308,7 +309,7 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
             async signLogoutRecoveryProof(input: Record<string, string>) { proofs.push(input); return { status: 'ready', signature: 'test' }; },
         },
     }, {
-        URL, AbortController, setTimeout, clearTimeout,
+        URL, AbortController, setTimeout, clearTimeout, __DEV__: true,
         fetch: async (url: string, init: { body: string; headers: Record<string, string> }) => {
             requests.push({ url, body: JSON.parse(init.body), headers: init.headers });
             return { status: 200, json: async () => url.endsWith('/challenge') ? { nonce: 'A'.repeat(43) } :
@@ -339,6 +340,94 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
     await assert.rejects(api.lookupRegistration(session, id, '2', id), /Invalid push registration lookup/);
     lookupResult = { registered: false, generation: '1', reason: 'unrecognized' };
     await assert.rejects(api.lookupRegistration(session, id, '1', id), /Invalid push registration lookup/);
+    const devApi = createDeviceRecoveryApi('http://10.0.2.2:3000', 'https://auth.example.test');
+    const beforeHttp = requests.length;
+    await assert.rejects(devApi.begin(session, { installationId: id, sessionId: id, userId: id,
+        operationId: id, generation: '1' }), /Secure device recovery API required/);
+    assert.equal(requests.length, beforeHttp);
+    assert.equal((await devApi.recovery(id, 'confirm', recoveryId)).status, 'confirmed');
+    assert.ok(requests.slice(beforeHttp).every(r => !r.headers.authorization));
+});
+
+test('getCurrentSession distinguishes missing setup from an existing logout block', async () => {
+    for (const configured of [false, true]) {
+        const { getCurrentSession } = loadSource<{
+            getCurrentSession(): Promise<{ session: unknown; error: Error | null }>;
+        }>('lib/auth.ts', {
+            './logout': { logoutFlow: { revision: () => 0, canUseSession: async () => false } },
+            './supabase': { supabase: configured ? { auth: {
+                getSession: async () => assert.fail('Logout block must prevent session lookup'),
+            } } : null },
+        });
+        const result = await getCurrentSession();
+        assert.equal(result.session, null);
+        if (configured) assert.equal(result.error, null);
+        else assert.match(result.error?.message ?? '', /EXPO_PUBLIC_SUPABASE_URL/);
+    }
+});
+
+test('logout recovery rechecks definitive refresh rejection and keeps other read errors blocked', async () => {
+    type SessionRead = { data: { session: LogoutSession | null }; error: AuthApiError | AuthRetryableFetchError | null };
+    function adapter(reads: SessionRead[]) {
+        let options!: Parameters<typeof createManagedLogout>[0] & { recoverySession?: () => Promise<LogoutSession | null> };
+        let readsUsed = 0;
+        loadSource('lib/logout.ts', {
+            '@supabase/supabase-js': { isAuthApiError, isAuthSessionMissingError },
+            './auth-storage': {},
+            './logout-flow': { createLogoutFlow() {} },
+            './managed-logout': { createManagedLogout(value: typeof options) { options = value; } },
+            './device-recovery-api': { createDeviceRecoveryApi() {} },
+            './session-identity': { jwtSessionId },
+            './supabase': { supabase: { auth: {
+                async getSession() {
+                    const read = reads[readsUsed++];
+                    assert.ok(read);
+                    return read;
+                },
+                async signOut() { assert.fail('Must not sign out another session'); },
+            } } },
+        }, { process: { env: {} } });
+        return { options, recover: options.recoverySession ?? options.session, count: () => readsUsed };
+    }
+    const empty = { data: { session: null }, error: null };
+    const failure = (error: NonNullable<SessionRead['error']>) => ({ ...empty, error });
+    for (const code of ['session_not_found', 'session_expired', 'refresh_token_not_found', 'refresh_token_already_used']) {
+        const terminal = new AuthApiError('Refresh refused', 400, code);
+        const safe = adapter([failure(terminal), empty]);
+        assert.equal(await safe.recover(), null);
+        assert.equal(safe.count(), 2);
+        const ordinary = adapter([failure(terminal), empty]);
+        await assert.rejects(ordinary.options.session(), error => error === terminal);
+        assert.equal(ordinary.count(), 1);
+    }
+    const network = new AuthRetryableFetchError('Request failed', 503);
+    const terminal = new AuthApiError('Refresh refused', 400, 'refresh_token_not_found');
+    for (const error of [network, new AuthApiError('Unexpected Auth error', 403, 'bad_jwt')]) {
+        const uncertain = adapter([failure(error), empty]);
+        await assert.rejects(uncertain.recover(), actual => actual === error);
+        assert.equal(uncertain.count(), 1);
+    }
+    const disrupted = adapter([failure(terminal), failure(network)]);
+    await assert.rejects(disrupted.recover(), error => error === network);
+    const substituted = adapter([failure(terminal), { data: { session: {
+        user: { id: 'other' }, access_token: sessionToken('other'),
+    } }, error: null }]);
+    await assert.rejects(substituted.options.clean({ installationId: 'device', userId: 'original', sessionId: 'original' }),
+        /Logout session changed/);
+
+    const { a, restart, failAt, events, replaceSession, loseAuth } = managedFixture();
+    const flow = restart();
+    await flow.save(a.user.id, 'test-push');
+    failAt('before-revoke');
+    assert.match((await flow.signOut()).error?.message ?? '', /Old session remains active/);
+    replaceSession(null);
+    const recovered = adapter([failure(terminal), empty, empty]);
+    assert.match((await restart(recovered.recover).signOut()).error?.message ?? '', /Old session remains active/);
+    assert.equal(recovered.count(), 3);
+    assert.ok(!events.includes('ack'));
+    loseAuth();
+    assert.equal((await restart().signOut()).error, null);
+    assert.ok(events.includes('ack'));
 });
 
 test('extension exceptions suppress the old session result while preserving eligible server errors', async () => {

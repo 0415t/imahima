@@ -58,6 +58,7 @@ function readJournal(raw: string): Journal {
 export function createManagedLogout(options: {
     storage: Storage; prefix: string; api: ManagedDeviceApi;
     session(): Promise<LogoutSession | null>;
+    recoverySession?(): Promise<LogoutSession | null>;
     revoke(session: LogoutSession): Promise<void>;
     clean(scope: Scope): Promise<void>;
 }) {
@@ -250,7 +251,7 @@ export function createManagedLogout(options: {
             throw new Error('Logout binding changed');
         }
         const current = async (scope: Scope) => {
-            const session = await options.session();
+            const session = options.recoverySession ? await options.recoverySession() : await options.session();
             if (session && !owns(session, scope)) throw new Error('Logout session changed');
             return session;
         };

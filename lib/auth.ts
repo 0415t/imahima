@@ -74,9 +74,10 @@ export function signOutUser(): Promise<SignOutResult> {
  */
 export async function getCurrentSession(): Promise<GetSessionResult> {
     try {
+        const client = requireSupabase();
         const revision = logoutFlow.revision();
         if (!await logoutFlow.canUseSession()) return { session: null, error: null };
-        const { data, error } = await requireSupabase().auth.getSession();
+        const { data, error } = await client.auth.getSession();
         if (!await logoutFlow.canUseSession() || revision !== logoutFlow.revision()) {
             return { session: null, error: null };
         }

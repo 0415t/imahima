@@ -10,12 +10,21 @@ const project = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 const prefix = 'imahima:' + project;
 
-async function session() {
+async function session(recover = false) {
     if (!supabase) throw new Error('Supabase is not configured');
-    const { data, error } = await supabase.auth.getSession();
+    let { data, error } = await supabase.auth.getSession();
+    if (recover && isAuthApiError(error) &&
+        (error.code === 'session_not_found' || error.code === 'session_expired' ||
+            error.code === 'refresh_token_not_found' || error.code === 'refresh_token_already_used')) {
+        // The SDK may have cleared local storage while returning the refresh error.
+        // The recovery endpoint still has to confirm the old Auth row is absent.
+        ({ data, error } = await supabase.auth.getSession());
+    }
     if (error) throw error;
     return data.session;
 }
+
+const recoverySession = () => session(true);
 
 async function revoke(current: { access_token: string }) {
     if (!supabase) throw new Error('Supabase is not configured');
@@ -35,9 +44,9 @@ export const logoutFlow = createLogoutFlow({
     prefix,
     session,
     managed: createManagedLogout({
-        storage: authStorage, prefix, session, revoke, api: createDeviceRecoveryApi(apiUrl, project),
+        storage: authStorage, prefix, session, recoverySession, revoke, api: createDeviceRecoveryApi(apiUrl, project),
         async clean(scope) {
-            const current = await session();
+            const current = await recoverySession();
             if (current) {
                 if (current.user.id !== scope.userId || jwtSessionId(current.access_token) !== scope.sessionId) {
                     throw new Error('Logout session changed');
