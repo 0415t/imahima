@@ -110,6 +110,8 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
       });
       let ended=false, error;
       let sawWorker=false;
+      let startupSuffix='';
+      const startupLine=({chat_message:'Chat message',free_end:'Free-end',member_free:'Member-free'})[deliveryKind]+' notification poller started';
       const done=new Promise(resolve=>child.once('close',(code,signal)=>{ended=true;resolve({code,signal});}));
       const server={child,done,messages,get ended(){return ended;}};
       servers.push(server);
@@ -119,7 +121,9 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
         if(message.type==='mock-push') observed.push(...message.messages);
       });
       child.stdout.on('data',chunk=>{
-        sawWorker ||= String(chunk).includes(({chat_message:'Chat message',free_end:'Free-end',member_free:'Member-free'})[deliveryKind]+' notification poller started');
+        const startupText=startupSuffix+String(chunk);
+        sawWorker ||= startupText.includes(startupLine);
+        startupSuffix=startupText.slice(1-startupLine.length);
       });
       child.stderr.resume();
       const bound=await waitFor(()=>{

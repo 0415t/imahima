@@ -54,6 +54,17 @@ function createMocks(overrides: Partial<FreeEndNotificationDependencies> = {}) {
 }
 
 describe('free-end notification poller', () => {
+  it('retains confirmed acceptance if authorized delivery throws during cleanup', async () => {
+    const { dependencies, log } = createMocks({
+      async sendAuthorized(_id, _lease, _message, _signal, accepted) {
+        accepted?.(1);
+        throw new Error('Cleanup interrupted');
+      },
+    });
+    await createFreeEndNotificationPoller(dependencies).runOnce();
+    assert.equal(log.completions[0]?.status, 'sent');
+    assert.equal(log.completions[0]?.leaseToken, baseClaim.leaseToken);
+  });
   it('claims, validates, sends, and marks sent', async () => {
     const { dependencies, log } = createMocks();
     const poller = createFreeEndNotificationPoller(dependencies);

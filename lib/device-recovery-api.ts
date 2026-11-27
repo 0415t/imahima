@@ -104,7 +104,7 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
             if (!native.supportsLogoutRecoverySigning()) return null;
             let result = await native.getIdentity();
             if (create && (result.status === 'uninitialized' || result.status === 'initializing')) result = await native.createInstallation();
-            if (result.status === 'unsupported' || (!create && result.status === 'uninitialized')) return null;
+            if (result.status === 'unsupported' || (!create && (result.status === 'uninitialized' || result.status === 'initializing'))) return null;
             if (result.status !== 'ready') throw new Error('Managed device key unavailable');
             return result.installationId;
         },

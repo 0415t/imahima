@@ -67,6 +67,7 @@ export function createManagedLogout(options: {
     const bootstrapKey = prefix + ':device-v2-bootstrap';
     const cleanKey = prefix + ':device-v2-clean';
     const put = (key: string, value: object) => storage.setItem(key, JSON.stringify(value));
+    let rejectedRegistration: { operationId: string; previous: Binding } | undefined;
 
     async function availability() {
         const [journal, intent, binding] = await Promise.all([
@@ -118,6 +119,13 @@ export function createManagedLogout(options: {
             ? { installationId, userId: session.user.id, sessionId } as Binding : readBinding(raw);
         if (!owns(session, binding) || binding.installationId !== installationId) throw new Error('Managed session changed');
         if (!await stillCurrent()) return true;
+        if (rejectedRegistration && binding.registration?.operationId === rejectedRegistration.operationId
+            && !binding.registration.done && sameScope(binding, rejectedRegistration.previous)
+            && binding.generation === rejectedRegistration.previous.generation) {
+            binding = rejectedRegistration.previous;
+            await put(bindingKey, binding);
+            rejectedRegistration = undefined;
+        }
         if (raw === null) await put(bindingKey, binding);
         if (await storage.getItem(cleanKey) !== null) await storage.removeItem(cleanKey);
         if (await storage.getItem(bootstrapKey) !== null) await storage.removeItem(bootstrapKey);
@@ -156,7 +164,9 @@ export function createManagedLogout(options: {
         await put(bindingKey, { ...binding, registration: { token, operationId, done: false } });
         if (!await stillCurrent()) return true;
         if (await api.register(session, installationId, binding.generation!, operationId, token) === 'rejected') {
+            rejectedRegistration = { operationId, previous: binding };
             await put(bindingKey, binding);
+            rejectedRegistration = undefined;
             throw new Error('Push registration rejected');
         }
         if (await stillCurrent()) await put(bindingKey, { ...binding, registration: { token, operationId, done: true } });

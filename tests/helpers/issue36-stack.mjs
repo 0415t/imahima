@@ -160,7 +160,7 @@ export function createStack(signal, { allowSignup = false } = {}) {
     // Relay unmodified HTTP via the owned DB container, keeping secrets on stdin.
     const child = spawn('docker',['--host',host,'exec','-i',db,'curl','-q','--silent','--show-error',
       '--max-time','7','--noproxy','*','--proto','=http','--write-out','\n%{http_code}\n%{content_type}',
-      '--config','-'],{env:cleanEnv,windowsHide:true,stdio:['pipe','pipe','ignore']});
+      '--config','-'],{env:cleanEnv,windowsHide:true,stdio:['pipe','pipe','ignore'],signal,timeout:10000});
     relays.add(child);
     return new Promise((resolve,reject)=>{
       const chunks=[];

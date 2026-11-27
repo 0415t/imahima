@@ -138,9 +138,18 @@ export function createFreeEndNotificationPoller(
         notificationId: claim.claimId,
       },
     };
-    const { sent, error: sendError } = dependencies.sendAuthorized
-      ? await dependencies.sendAuthorized(claim.claimId, claim.leaseToken, outbound)
-      : await dependencies.sendPushNotifications!(tokens, outbound);
+    let sent = 0;
+    let sendError: unknown = null;
+    try {
+      const result = dependencies.sendAuthorized
+        ? await dependencies.sendAuthorized(claim.claimId, claim.leaseToken, outbound, undefined,
+          count => { sent = Math.max(sent, count); })
+        : await dependencies.sendPushNotifications!(tokens, outbound);
+      sent = Math.max(sent, result.sent);
+      sendError = result.error;
+    } catch (error) {
+      sendError = error;
+    }
 
     if (sent === 0) {
       console.error('[free-end-notifications] push send failed:', sendError);

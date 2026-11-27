@@ -112,10 +112,10 @@ export function createLogoutFlow(deps: {
     async function canUseNotification(receivedAt: number | undefined) {
         try {
             const started = revision;
-            if (!await canUseSession()) return false;
+            if (authenticating || !await canUseSession()) return false;
             const raw = await deps.storage.getItem(cutoffKey);
             return (raw === null || (receivedAt !== undefined && receivedAt > Number(raw)))
-                && await canUseSession() && started === revision;
+                && await canUseSession() && !authenticating && started === revision;
         } catch {
             return false;
         }
@@ -130,20 +130,25 @@ export function createLogoutFlow(deps: {
     async function authenticate<T>(operation: () => PromiseLike<T>): Promise<T> {
         if (authenticating) throw new Error('認証処理を実行中です');
         authenticating = true;
+        revision++;
         try {
             if (!await canUseSession()) throw new Error('ログアウト処理が完了していません');
             const cutoff = await deps.storage.getItem(cutoffKey);
             // Cover notifications delivered while durable logout cleanup was finishing.
             if (cutoff !== null) await advanceCutoff(cutoff);
             if (!await canUseSession()) throw new Error('ログアウト処理が完了していません');
-            return await operation();
+            try { return await operation(); }
+            finally { if (cutoff !== null) await advanceCutoff(); }
         } finally {
             authenticating = false;
         }
     }
 
     function save(userId: string, token: string): Promise<void> {
-        if (registration) return registration.then(() => save(userId, token));
+        if (registration) {
+            const next = () => save(userId, token);
+            return registration.then(next, next);
+        }
         const operation = Promise.resolve().then(async () => {
             if (!await canUseSession()) return;
             const session = await deps.session();

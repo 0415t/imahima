@@ -17,14 +17,15 @@ function makeKey() {
   return { ...pair, point };
 }
 
-function isolatedFetch(origin, agent) {
+function isolatedFetch(origin, agent, deadline) {
   return (input, init) => {
     const endpoint = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     if (endpoint.origin !== origin || endpoint.hostname !== '127.0.0.1') throw Error('Unexpected network origin');
     return new Promise((resolve, reject) => {
       const req = request(endpoint, {
         agent, method: init?.method,
-        headers: Object.fromEntries(new Headers(init?.headers)), signal: init?.signal,
+        headers: Object.fromEntries(new Headers(init?.headers)),
+        signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
       }, res => {
         if (res.statusCode >= 300 && res.statusCode < 400) {
           res.resume();
@@ -65,7 +66,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       throw new Error(`Dedicated DB relay connection failed (${error.code ?? 'no SQLSTATE'})`);
     });
     assert.equal(preflight.rows[0].session_user, 'imahima_device_api_login');
-    const localFetch = origin => isolatedFetch(origin, agent);
+    const localFetch = origin => isolatedFetch(origin, agent, t.signal);
     const auth = createClient(gateway.url, gateway.anon, {
       global: { fetch: localFetch(gateway.url) }, auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -111,7 +112,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       // response body and must recover the result through the normal API.
       await new Promise((resolve, reject) => {
         const req = request(origin + '/device-recovery/' + action, {
-          method: 'POST', agent,
+          method: 'POST', agent, signal: t.signal,
           headers: { ...(access ? { authorization: 'Bearer ' + access } : {}), 'content-type': 'application/json' },
         }, response => {
           response.destroy();
@@ -301,8 +302,9 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       await role.query('BEGIN; SET LOCAL ROLE imahima_device_verifier');
       await assert.rejects(role.query('SELECT * FROM push_private.enrollment_challenges'), { code: '42501' });
     } finally {
-      await role.query('ROLLBACK');
-      role.release();
+      let discard = true;
+      try { await role.query('ROLLBACK'); discard = false; }
+      finally { role.release(discard); }
     }
     const rawEnroll = await pool.connect();
     try {
@@ -311,8 +313,9 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         randomUUID(), Buffer.from(key.point, 'base64url'),
       ]), { code: '42501' });
     } finally {
-      await rawEnroll.query('ROLLBACK');
-      rawEnroll.release();
+      let discard = true;
+      try { await rawEnroll.query('ROLLBACK'); discard = false; }
+      finally { rawEnroll.release(discard); }
     }
     const bypass = await localFetch(gateway.url)(gateway.url + '/rest/v1/rpc/lock_device_verification_key', {
       method: 'POST', headers: { authorization: 'Bearer ' + first.access, 'content-type': 'application/json' },
@@ -434,6 +437,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     stack.query(`DELETE FROM push_private.enrollment_challenges WHERE user_id='${quotaUser}';`);
     for (let index = 0; index < 8; index++) await post('enrollment-challenge', enroll);
     await post('enrollment-challenge', enroll, 429);
+    stack.query(`DELETE FROM push_private.enrollment_challenges WHERE user_id='${quotaUser}';`);
     assert.ok(gateway.traffic.get('/auth/v1/user 200') > 0);
     assert.ok(gateway.traffic.get('/rest/v1/rpc/lock_device_verification_key 404') > 0);
 

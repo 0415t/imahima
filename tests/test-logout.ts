@@ -67,6 +67,18 @@ test('logs out locally after removing only the current account and device regist
     assert.equal(await createLogoutFlow(deps).canUseSession(), true);
 });
 
+test('a queued legacy registration runs after a definite rejection', async () => {
+    const { deps, rows } = fixture();
+    const register = deps.register;
+    deps.register = async (session, token) => token === 'rejected'
+        ? { rejected: new Error('Definite rejection') } : register(session, token);
+    const flow = createLogoutFlow(deps);
+    const [first, second] = await Promise.allSettled([flow.save('A', 'rejected'), flow.save('A', 'fresh')]);
+    assert.equal(first.status, 'rejected');
+    assert.equal(second.status, 'fulfilled');
+    assert.equal(rows.get('fresh'), 'A');
+});
+
 function managedFixture() {
     const userId = '01000000-0000-0000-0000-000000000001';
     const sessionId = '02000000-0000-0000-0000-000000000002';
@@ -93,6 +105,7 @@ function managedFixture() {
         async lookupGeneration() { return null; },
         async register() {
             events.push('register');
+            if (fail === 'reject-restore') { fail = 'write:test:device-v2'; return 'rejected'; }
             if (fail === 'reject-register') { fail = ''; return 'rejected'; }
             failOnce('register');
         },
@@ -215,6 +228,30 @@ test('a definitive rejection releases only a fresh managed registration', async 
     assert.equal(JSON.parse(stored.get('test:device-v2')!).registration.done, true);
 });
 
+test('a known managed rejection repairs a failed checkpoint in the same process', async () => {
+    const { a, stored, restart, failAt } = managedFixture();
+    const flow = restart();
+    failAt('reject-restore');
+    await assert.rejects(flow.save(a.user.id, 'rejected'), /interrupted write/);
+    await flow.save(a.user.id, 'fresh');
+    assert.equal(JSON.parse(stored.get('test:device-v2')!).registration.token, 'fresh');
+});
+
+test('notifications received during account authentication remain ineligible', async t => {
+    t.mock.timers.enable({ apis: ['Date'], now: 100 });
+    const { flow, setSession } = fixture();
+    assert.deepEqual(await flow.signOut(), { error: null });
+    await flow.authenticate(async () => {
+        t.mock.timers.setTime(200);
+        assert.equal(await flow.canUseNotification(200), false);
+        setSession({ user: { id: 'B' }, access_token: 'b-here' });
+        assert.equal(await flow.canUseNotification(200), false);
+        t.mock.timers.setTime(300);
+    });
+    assert.equal(await flow.canUseNotification(200), false);
+    assert.equal(await flow.canUseNotification(301), true);
+});
+
 test('logout never creates a generation to resolve a lost generation-opening reply', async () => {
     const { a, events, restart, failAt } = managedFixture();
     const flow = restart();
@@ -318,6 +355,7 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
     const session = { user: { id }, access_token: sessionToken(id) };
     const requests: { url: string; body: Record<string, string>; headers: Record<string, string> }[] = [];
     const proofs: Record<string, string>[] = [];
+    let initializationCalls = 0;
     const { createDeviceRecoveryApi } = loadSource<{
         createDeviceRecoveryApi(api: string, auth: string): ManagedDeviceApi;
     }>('lib/device-recovery-api.ts', {
@@ -325,6 +363,12 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
         'react-native': { Platform: { OS: 'android' } },
         './session-identity': { jwtSessionId },
         '../modules/device-key': {
+            supportsLogoutRecoverySigning: () => true,
+            getIdentity: async () => ({ status: 'initializing' }),
+            createInstallation: async () => {
+                initializationCalls++;
+                return { status: 'ready', installationId: id };
+            },
             async signDeviceProof(input: Record<string, string>) { proofs.push(input); return { status: 'ready', signature: 'test' }; },
             async signLogoutRecoveryProof(input: Record<string, string>) { proofs.push(input); return { status: 'ready', signature: 'test' }; },
         },
@@ -337,6 +381,10 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
         },
     });
     const api = createDeviceRecoveryApi('https://express.example.test', 'https://auth.example.test');
+    assert.equal(await api.identity(false), null);
+    assert.equal(initializationCalls, 0);
+    assert.equal(await api.identity(true), id);
+    assert.equal(initializationCalls, 1);
     assert.equal(await api.begin(session, { installationId: id, sessionId: id, userId: id, operationId: id, generation: '1' }), recoveryId);
     assert.equal((await api.recovery(id, 'discover')).recoveryId, recoveryId);
     assert.equal((await api.recovery(id, 'confirm', recoveryId)).status, 'confirmed');
