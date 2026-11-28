@@ -55,6 +55,15 @@ export function createLogoutFlow(deps: {
         return await sessionAvailability() === 'ready';
     }
 
+    async function registrationAvailable() {
+        const started = revision;
+        const state = await sessionAvailability();
+        if (state === 'read-failed' && started === revision && !blocked && !authenticating) {
+            throw new Error('Push registration state unavailable');
+        }
+        return state === 'ready';
+    }
+
     async function canUseNotification(receivedAt: number | undefined) {
         try {
             const started = revision;
@@ -128,9 +137,10 @@ export function createLogoutFlow(deps: {
         return promise;
     }
 
-    async function stillCurrent(session: LogoutSession) {
-        if (!await canUseSession()) return false;
-        return sameSession(await deps.session(), session) && await canUseSession();
+    async function stillCurrent(session: LogoutSession, registering = false) {
+        const available = registering ? registrationAvailable : canUseSession;
+        if (!await available()) return false;
+        return sameSession(await deps.session(), session) && await available();
     }
 
     function save(userId: string, token: string): Promise<void> {
@@ -139,12 +149,12 @@ export function createLogoutFlow(deps: {
             return registration.then(next, next);
         }
         registration = (async () => {
-            if (authenticating || !await canUseSession()) return;
+            if (authenticating || !await registrationAvailable()) return;
             const session = await deps.session();
-            if (session?.user.id !== userId || !await stillCurrent(session)) return;
+            if (session?.user.id !== userId || !await stillCurrent(session, true)) return;
             await prepareSession(session);
-            if (!await stillCurrent(session)) return;
-            await deps.managed.save(session, token, () => stillCurrent(session));
+            if (!await stillCurrent(session, true)) return;
+            await deps.managed.save(session, token, () => stillCurrent(session, true));
         })().finally(() => { registration = undefined; });
         return registration;
     }

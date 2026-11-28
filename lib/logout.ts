@@ -13,11 +13,13 @@ const prefix = 'imahima:' + project;
 async function session(recover = false) {
     if (!supabase) throw new Error('Supabase is not configured');
     let { data, error } = await supabase.auth.getSession();
-    if (recover && isAuthApiError(error) &&
-        (error.code === 'session_not_found' || error.code === 'session_expired' ||
-            error.code === 'refresh_token_not_found' || error.code === 'refresh_token_already_used')) {
+    const rejectedRefresh = isAuthApiError(error) && [
+        'session_not_found', 'session_expired', 'refresh_token_not_found', 'refresh_token_already_used',
+    ].includes(error.code ?? '');
+    if (recover && (isAuthSessionMissingError(error) || rejectedRefresh)) {
         // The SDK may have cleared local storage while returning the refresh error.
-        // The recovery endpoint still has to confirm the old Auth row is absent.
+        // A missing local session is not proof of server revocation. The saved
+        // logout checkpoint still decides whether cleanup is allowed.
         ({ data, error } = await supabase.auth.getSession());
     }
     if (error) throw error;

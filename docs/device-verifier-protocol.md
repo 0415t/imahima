@@ -56,6 +56,21 @@ The following **review findings**, not new Issue updates, are deferred:
 
 Earlier constraints #31 and #39-41 remain unresolved as stated above. Controlled test destinations and production Push prohibition are unchanged. No migration or shared DB changes are required for these fixes.
 
+### Review 55-64 follow-up
+
+- #56: registration state read failures reject so the existing UI backoff retries them. Logout/account-change cancellation remains a non-retryable cancellation. Notification-action recovery (#59) is not changed.
+- #57: INT-CHAT-PUSH is implemented through real JWT, Express, DB and worker with only final Expo HTTP mocked. Its manual isolated evidence is separate from baseline CI results; CI-branch matrix edits must preserve both facts.
+- #60: recovery-only session reads also re-read after the SDK's actual AuthSessionMissingError class. Ordinary reads, transient errors and unrelated Auth errors retain their existing behavior. An empty re-read is not server revocation evidence and cannot advance begin/revoke checkpoints.
+- #64: failed extension tests count onChanged calls and assert zero after the operation; a callback assertion cannot be swallowed by the client under test.
+- #58 (investigation only, approval pending): the phone clock can exceed the verifier's future-skew allowance. A candidate client-only change is to obtain a fresh Date header from the existing same-origin health route and sign that server time in the unchanged issuedAt field. Keep HTTPS for normal operation, bounded requests, short server freshness checks and single-use DB challenges; missing/stale time must fail closed. This needs approval before any request-sequence/server change. No clock-fix implementation is included.
+- #55: Android icon/background work is separate; no icon configuration is changed here.
+- #59: transient notification-extension action recovery remains deferred; actions stay blocked on uncertain session/storage state.
+- #61: before shared migration application, measure real row counts/statement times and pause all readers and writers. This is a separate pre-deployment audit; no shared DB is queried or changed here.
+- #62: consumed device challenges still count toward the current issuance cap until expiry. Temporary 429/logout delay remains a known MVP limitation; no quota/migration change is included.
+- #63: account-deletion vs acknowledgement lock-order races remain deferred to Issue #53. No Auth-table mutation or special deletion recovery is introduced.
+
+Previously recorded #31/#39-41 and review #50-53 remain unresolved. Production Push prohibition, scoped fences and the normal Auth-success completion contract are unchanged.
+
 ---
 
 # Device verifier API v1

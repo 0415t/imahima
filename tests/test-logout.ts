@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
-import { AuthApiError, AuthRetryableFetchError, isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js';
+import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError, isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js';
 import { createExtendClient } from '../lib/free-end-action';
 import { createLogoutFlow, type LogoutSession } from '../lib/logout-flow';
 import { createManagedLogout, type ManagedDeviceApi } from '../lib/managed-logout';
@@ -345,7 +345,7 @@ test('getCurrentSession distinguishes missing setup from an existing logout bloc
 });
 
 test('logout recovery rechecks definitive refresh rejection and keeps other read errors blocked', async () => {
-    type SessionRead = { data: { session: LogoutSession | null }; error: AuthApiError | AuthRetryableFetchError | null };
+    type SessionRead = { data: { session: LogoutSession | null }; error: AuthApiError | AuthRetryableFetchError | AuthSessionMissingError | null };
     function adapter(reads: SessionRead[]) {
         let options!: Parameters<typeof createManagedLogout>[0] & { recoverySession?: () => Promise<LogoutSession | null> };
         let readsUsed = 0;
@@ -369,6 +369,13 @@ test('logout recovery rechecks definitive refresh rejection and keeps other read
     }
     const empty = { data: { session: null }, error: null };
     const failure = (error: NonNullable<SessionRead['error']>) => ({ ...empty, error });
+    const missingError = new AuthSessionMissingError();
+    const ordinaryMissing = adapter([failure(missingError), empty]);
+    await assert.rejects(ordinaryMissing.options.session(), error => error === missingError);
+    assert.equal(ordinaryMissing.count(), 1);
+    const missing = adapter([failure(missingError), empty]);
+    assert.equal(await missing.recover(), null);
+    assert.equal(missing.count(), 2);
     for (const code of ['session_not_found', 'session_expired', 'refresh_token_not_found', 'refresh_token_already_used']) {
         const terminal = new AuthApiError('Refresh refused', 400, code);
         const safe = adapter([failure(terminal), empty]);
@@ -412,11 +419,12 @@ test('extension exceptions suppress the old session result while preserving elig
     for (const mode of ['fetch', 'body'] as const) {
         for (const invalidated of [false, true]) {
             let eligible = true;
+            let changes = 0;
             const extend = createExtendClient({
                 apiUrl: 'https://api.example.test',
                 getAccessToken: async () => hereToken,
                 canUseToken: async () => eligible,
-                onChanged: () => assert.fail('failed requests must not change state'),
+                onChanged: () => { changes++; },
                 fetch: async () => {
                     const reject = () => { eligible = !invalidated; throw new Error('network failed'); };
                     if (mode === 'fetch') return reject();
@@ -428,6 +436,7 @@ test('extension exceptions suppress the old session result while preserving elig
             assert.deepEqual(await extend('/profiles/me/is-free/extend-from-notification'), {
                 ok: false, reason: invalidated ? 'not-authenticated' : 'server-error',
             });
+            assert.equal(changes, 0, 'failed requests must not emit change events');
         }
     }
 });
@@ -582,7 +591,7 @@ test('an existing session without a key cannot re-enroll as a new installation',
     };
     const flow = restart();
     assert.equal(await flow.sessionAvailability(), 'read-failed');
-    await flow.save(a.user.id, 'ExpoPushToken[unused]');
+    await assert.rejects(flow.save(a.user.id, 'ExpoPushToken[unused]'), /registration state unavailable/);
     assert.match((await flow.signOut()).error?.message ?? '', /key is unavailable/);
     assert.deepEqual(events, []);
 });
@@ -803,4 +812,37 @@ test('review49 a clean marker never proves completion of a pending scoped logout
     assert.ok((await flow.signOut()).error);
     assert.equal(await restart().sessionAvailability(), 'logout-pending');
     assert.equal(stored.has('test:logout-v2-request'), true);
+});
+
+
+test('review56 transient registration storage errors reject for retry, deliberate logout cancellation does not', async () => {
+    const { a, restart, failAt, events } = managedFixture();
+    const flow = restart(); await flow.prepareSession(a);
+    failAt('read:test:logout-v2');
+    await assert.rejects(flow.save(a.user.id, 'ExpoPushToken[retry]'), /registration state unavailable/);
+    assert.equal(events.includes('register'), false);
+    await flow.save(a.user.id, 'ExpoPushToken[retry]');
+    assert.equal(events.filter(event => event === 'register').length, 1);
+    assert.deepEqual(await flow.signOut(), { error: null });
+    await flow.save(a.user.id, 'ExpoPushToken[cancelled]');
+    assert.equal(events.filter(event => event === 'register').length, 1);
+});
+
+
+test('review56 a read failure after registration stays pending until the same operation is retried', async () => {
+    const { a, api, stored, restart, failAt } = managedFixture();
+    const register = api.register; let interrupted = false;
+    api.register = async (...args) => {
+        const result = await register(...args);
+        if (!interrupted) { interrupted = true; failAt('read:test:logout-v2'); }
+        return result;
+    };
+    const flow = restart();
+    await assert.rejects(flow.save(a.user.id, 'ExpoPushToken[retry-after-rpc]'), /registration state unavailable/);
+    const before = JSON.parse(stored.get('test:device-v2')!).registration;
+    assert.equal(before.done, false);
+    await flow.save(a.user.id, 'ExpoPushToken[retry-after-rpc]');
+    const after = JSON.parse(stored.get('test:device-v2')!).registration;
+    assert.equal(after.operationId, before.operationId);
+    assert.equal(after.done, true);
 });

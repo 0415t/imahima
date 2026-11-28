@@ -34,7 +34,7 @@ Lv.1 は単体、Lv.2 はDB結合、Lv.3 は機能結合、Lv.4 はバックエ�
 | グループ管理 | Lv.1/3は `GROUP-01`。Lv.2は `DB-GROUP` 成功、`DB-RACE` の参加・退出競合は未実行。Lv.3は `DB-HTTP`、Lv.4は `INT-CHAT` のグループ回帰が未実行 |
 | チャット | Lv.1/3は `CHAT-01`、Lv.3に `HTTP-01`。Lv.2は `DB-CHAT` 成功、`DB-RACE` の並行送信・削除等は未実行。Lv.3の `DB-HTTP`、Lv.4の `INT-CHAT` とRealtime配送は未実行 |
 | 暇ON通知 | Lv.1/3は `MEMBER-PUSH-01/02`。Lv.2は `DB-OUTBOX`、`DB-RACE`、Lv.4は `INT-MEMBER` が未実行。実DBによる受信者・leaseと通常起動ワーカーの通し経路は基準CIの保証外 |
-| チャット通知 | Lv.1は `CHAT-PUSH-01`。Lv.2/3は `tests/test-chat-message-db.mjs`（`DB-OUTBOX`）の実DB・ワーカーが未実行。Lv.4の `INT-CHAT-PUSH` は配線と部分検証資産があり、実JWT送信から模擬Expoまでの全体結合は未実装 |
+| チャット通知 | Lv.1: `CHAT-PUSH-01`. `INT-CHAT-PUSH` is implemented end to end in `tests/test-chat-push-integration.mjs` (actual JWT/API/DB/worker, mocked Expo). The baseline CI run does not execute this isolated Integration profile; do not copy manual success into historical CI cells. |
 | 終了前通知 | Lv.1は `END-PUSH-01` と `PUSH-03`。Lv.2は `DB-TIMER`、Lv.3は `INT-END` と `DB-RACE` が未実行。実ワーカーと実DBの組合せはLv.3として管理し、独立したLv.4全体試験は未確認 |
 | Push通知基盤 | Lv.1は `PUSH-02/03`、Lv.3は `PUSH-01`、`MEMBER-PUSH-02`。Lv.2の端末・キュー権限は `DB-OUTBOX` 等で未実行。Lv.4/6は `DEVICE-PUSH`。Expo受付スクリプトは存在するが基準SHAで未実行で、端末受信・操作のLv.6は手動確認を要する部分実装 |
 
@@ -105,7 +105,7 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | INT-CHAT | 実JWT、チャット／グループ、退出・アーカイブの権限、Realtime正負対照と再接続 | 4／Integration | 実装済み。 `tests/test-chat-db.ts` の `CHAT_LOCAL_DB=1` ケース、`verification/group-chat-local` の `test:integration`、`test:final`、`test:archive`、`test:timeouts`。診断は受信欠落を別途判定 |
 | INT-MEMBER | 暇ON APIから実キュー／ワーカーと模擬Expoまで | 4／Integration | 実装済み。 `tests/test-member-free-{api,entrypoint,push-integration}.mjs`。専用Auth・DB・設定、同一実行で生成したentrypoint証跡が前提 |
 | INT-END | 終了前通知の受信者、再試行、競合 | 3／Integration | 実装済み。 `npm run test:integration:free-end`。ローカルAuth Admin・DB、模擬Push |
-| INT-CHAT-PUSH | 実JWT送信→通常起動ワーカー→模擬Expo | 4／Integration | 部分実装。Offline配線と実DB・実ワーカー試験あり。全経路の一体検証は未実装 |
+| INT-CHAT-PUSH | Actual JWT -> Express entrypoint/worker -> mocked Expo | 4/Integration | Implemented in `tests/test-chat-push-integration.mjs` with dedicated GoTrue/PostgREST/PG17 and actual workers. Final Expo HTTP only is mocked. Manual isolated evidence is separate from the baseline CI run; CI integration remains follow-up work. |
 | DB-MIGRATIONS | 全23本の空DB適用、既存データ付き更新、権限 | 2／DB | 部分実装。Issue #35の `verify:migrations` 等とSQL監査は対象版・専用環境に依存。現行の全適用とアップグレードのCI証跡が未整備 |
 | UI-E2E | 実ExpoアプリとAPI／Authの結合、セッションの復元 | 5／Integration | 未実装。モックによる表示・ストレージ検証あり |
 | DEVICE-PUSH | Expo受付、端末受信、表示・操作 | 4/6／Device | 隔離統合テストでは Expo への最終送信を模擬。実機での受信と通知操作は Issue #50 で管理 |
@@ -127,3 +127,5 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 - 合否・前提・モック境界が異なる場合は行を分ける。対象ファイル内の入力バリエーションは、個別に追跡する必要がなければまとめる。
 - ケースや実行条件を変えるPRで、管理表と必須ファイル一覧を更新する。skip理由、未検証の範囲、フォローアップ先を記録し、接続文字列や秘密値は証跡に含めない。
 - 新機能には機能別マトリクスの行を追加し、テスト追加・変更時に該当セルと対応IDを更新する。CI化時は成功証跡と対象SHAを確認してから状態を変更する。実装済みでも未実行なら未検証とし、新しいコミットで未実行のケースに過去の成功を転記しない。詳細一覧・実行証跡・マトリクスの状態を照合する。
+
+PR #47 implementation-status update: the isolated chat Push integration is implemented; no CI success is inferred for another SHA. CI work on `chore/issue-39-test-ci` is maintained separately. When reconciling its matrix changes, retain this implementation entry while preserving that branch's own run/SHA evidence and profile scope.
