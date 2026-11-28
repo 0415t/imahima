@@ -9,6 +9,80 @@ import { Client } from 'pg';
 import { createStack, waitFor } from './helpers/issue36-stack.mjs';
 import { test } from 'node:test';
 
+function commitProxy(port) {
+  let armed=false, discarded=false;
+  const sockets=new Set();
+  const server=createServer(downstream=>{
+    const db=connect(port,'127.0.0.1');
+    sockets.add(downstream);
+    downstream.pipe(db);
+    downstream.on('error',()=>db.destroy());
+    downstream.on('close',()=>{ sockets.delete(downstream); db.destroy(); });
+    db.on('error',()=>downstream.destroy());
+    db.once('close',()=>{ if (!downstream.destroyed) downstream.end(); });
+    let pending=Buffer.alloc(0);
+    db.on('data',chunk=>{
+      if (!armed) { downstream.write(chunk); return; }
+      pending=Buffer.concat([pending,chunk]);
+      if (pending.length<5) return;
+      const length=pending.readUInt32BE(1);
+      if (pending.length<length+1) return;
+      discarded=pending[0]===0x43&&pending.subarray(5,length).toString()==='COMMIT';
+      downstream.destroy();
+    });
+  }).listen(0,'127.0.0.1');
+  return {
+    server,
+    arm:()=>{ armed=true; },
+    discarded:()=>discarded,
+    async close() {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+    },
+  };
+}
+
+function commitClient(port,password,connectionTimeoutMillis=5000) {
+  const client=new Client({host:'127.0.0.1',port,user:'session_commit_probe',
+    password,database:'postgres',ssl:false,connectionTimeoutMillis,query_timeout:5000});
+  client.on('error',()=>{});
+  return client;
+}
+
+for (const handshake of ['orderly close','stall']) {
+  test(`COMMIT proxy bounds PostgreSQL handshake on upstream ${handshake}`, async () => {
+    const sockets=new Set();
+    const startup=Promise.withResolvers();
+    const upstream=createServer(socket=>{
+      sockets.add(socket);
+      socket.on('close',()=>sockets.delete(socket));
+      socket.once('data',()=>{
+        startup.resolve();
+        if (handshake==='orderly close') socket.end();
+      });
+    }).listen(0,'127.0.0.1');
+    await once(upstream,'listening');
+    const proxy=commitProxy(upstream.address().port);
+    await once(proxy.server,'listening');
+    const client=commitClient(proxy.server.address().port,'unused-test-password',handshake==='stall'?250:5000);
+    let watchdog;
+    try {
+      const deadline=new Promise((_,reject)=>{
+        watchdog=setTimeout(()=>reject(new Error('Handshake did not settle')),2000);
+      });
+      await assert.rejects(Promise.race([client.connect(),deadline]),
+        handshake==='stall'?/timeout/i:/terminated unexpectedly/i);
+      assert.equal(await Promise.race([startup.promise.then(()=>true),deadline]),true);
+    } finally {
+      clearTimeout(watchdog);
+      await proxy.close();
+      await client.end();
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve,reject)=>upstream.close(error=>error?reject(error):resolve()));
+    }
+  });
+}
+
 test('migration 32 legacy session controls and atomic upgrade to migration 33', { timeout: 240000 }, async t => {
   const stack=createStack(t.signal,{migrationThrough:"20261203000000"});
   const agent=new Agent({proxyEnv:{}});
@@ -151,42 +225,21 @@ test('migration 32 legacy session controls and atomic upgrade to migration 33', 
       GRANT imahima_device_verifier TO session_commit_probe WITH INHERIT FALSE, SET TRUE;
       INSERT INTO push_private.installations(installation_id,public_key) VALUES ('${commitInstallation}',decode('04','hex'));`);
     const upstream=await stack.openPostgresRelay();
-    let armed=false, discarded=false, sockets=[];
-    const proxy=createServer(downstream=>{
-      const db=connect(upstream.port,'127.0.0.1');
-      sockets=[downstream,db];
-      downstream.pipe(db);
-      downstream.on('error',()=>db.destroy());
-      downstream.on('close',()=>db.destroy());
-      db.on('error',()=>downstream.destroy());
-      let pending=Buffer.alloc(0);
-      db.on('data',chunk=>{
-        if (!armed) { downstream.write(chunk); return; }
-        pending=Buffer.concat([pending,chunk]);
-        if (pending.length<5) return;
-        const length=pending.readUInt32BE(1);
-        if (pending.length<length+1) return;
-        discarded=pending[0]===0x43&&pending.subarray(5,length).toString()==='COMMIT';
-        downstream.destroy();
-      });
-    }).listen(0,'127.0.0.1');
-    await once(proxy,'listening');
-    const client=new Client({host:'127.0.0.1',port:proxy.address().port,user:'session_commit_probe',
-      password:passwordForProbe,database:'postgres',ssl:false,query_timeout:5000});
-    client.on('error',()=>{});
+    const proxy=commitProxy(upstream.port);
+    await once(proxy.server,'listening');
+    const client=commitClient(proxy.server.address().port,passwordForProbe);
     try {
       await client.connect();
       await client.query('BEGIN; SET LOCAL ROLE imahima_device_verifier;');
       const { rows }=await client.query(prepare());
-      armed=true;
+      proxy.arm();
       await assert.rejects(client.query('COMMIT'));
-      assert.equal(discarded,true,'the server sent CommandComplete for COMMIT before transport was cut');
+      assert.equal(proxy.discarded(),true,'the server sent CommandComplete for COMMIT before transport was cut');
       const replay=JSON.parse(stack.query(prepare()));
       assert.deepEqual(replay,rows[0].receipt);
     } finally {
-      for (const socket of sockets) socket.destroy();
+      await proxy.close();
       await client.end();
-      await new Promise((resolve,reject)=>proxy.close(error=>error?reject(error):resolve()));
       await upstream.close();
     }
     stack.query(retirement);
