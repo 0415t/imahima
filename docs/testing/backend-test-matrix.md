@@ -80,12 +80,14 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | MEMBER-PUSH-01 | 暇ON宛先の適格性、部分受付・停止 | 1/3 | `test-member-free-notifications.ts` | RPC・送信モック |
 | MEMBER-PUSH-02 | SDKのHTTP停止、部分受付・停止 | 3 | `test-member-free-transport.ts` | 実SDKとループバックの模擬Expo |
 | CHAT-PUSH-01 | チャット宛先の逐次claim、期限・取消・停止 | 1 | `test-chat-message-notifications.ts` | RPC・送信注入 |
-| PUSH-01 | テスト通知の認証、レート制限、予約解除 | 3 | `test-notifications.ts` | Auth・端末・送信注入 |
+| PUSH-01 | 廃止済み手動テスト通知APIが404となること | 3 | `test-groups.ts` | ループバックHTTP、Auth・RPC注入。旧APIの認証・レート制限の検証は現行対象外 |
 | PUSH-02 | Expo受付結果、無効トークン・部分受付 | 1 | `test-push-notification-service.ts` | SDKクライアント注入 |
 | PUSH-03 | Android受信データ、claim再試行、通信期限 | 1/3 | `test-review13.ts` | 模擬端末とSDK、仮想時計 |
 | SERVER-01 | 通常サーバーの依存配線とワーカー有効・無効 | 1 | `test-server-composition.ts` | 起動と下流を注入 |
 | SERVER-02 | 通知の配線・停止、通信境界、cleanup | 1/3 | `test-member-free-review.mjs` | 注入とループバック |
 | HARNESS-01 | ワーカー待機、拒否、タイムアウト | 1 | `test-worker-barrier.ts` | 補助コードの単体検証 |
+| DEVICE-KEY-01 | 端末署名の固定ベクトル、入力・保護レベル・鍵状態の検査 | 1 | `test-device-key.ts` | ネイティブ境界を模擬。ネイティブコンパイル・実機動作の保証ではない |
+| HARNESS-02 | Expressの正常終了・強制終了とclose待機後のcleanup | 1 | `test-issue36-process.mjs` | 子プロセスのテストダブル。実Dockerの後始末は別の統合検証 |
 | LEDGER-01 | 台帳の固定prefix・依存順・適用前提・SQLハッシュ、追加migrationと改行差の検査 | 1 | `test-migration-ledger.mjs` | ファイルと一時fixtureのみ。DB接続・SQL適用なし。過去19ファイルのCI証跡には含まない |
 
 手動Offlineの `node --import tsx --test tests/test-chat-review.mjs` は、一時クローンへのGit操作と一時ファイル作成を伴うため今回の必須セットから外す。Issue #35 のOfflineは `npm --prefix verification/issue35 run test:offline`。22本時点の履歴を前提とする検査は、現行23本の合格証跡として使用しない。

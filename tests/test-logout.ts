@@ -833,7 +833,10 @@ test('review56 transient registration storage errors reject for retry, deliberat
 test('review56 a read failure after registration stays pending until the same operation is retried', async () => {
     const { a, api, stored, restart, failAt } = managedFixture();
     const register = api.register; let interrupted = false;
+    const calls: Parameters<ManagedDeviceApi['register']>[] = [];
     api.register = async (...args) => {
+        calls.push(args);
+        assert.equal(JSON.parse(stored.get('test:device-v2')!).registration.done, false);
         const result = await register(...args);
         if (!interrupted) { interrupted = true; failAt('read:test:logout-v2'); }
         return result;
@@ -842,7 +845,12 @@ test('review56 a read failure after registration stays pending until the same op
     await assert.rejects(flow.save(a.user.id, 'ExpoPushToken[retry-after-rpc]'), /registration state unavailable/);
     const before = JSON.parse(stored.get('test:device-v2')!).registration;
     assert.equal(before.done, false);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][3], before.operationId);
+    assert.equal(calls[0][4], 'ExpoPushToken[retry-after-rpc]');
     await flow.save(a.user.id, 'ExpoPushToken[retry-after-rpc]');
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[1], calls[0], 'retry must register the original scope, operation and token again');
     const after = JSON.parse(stored.get('test:device-v2')!).registration;
     assert.equal(after.operationId, before.operationId);
     assert.equal(after.done, true);
