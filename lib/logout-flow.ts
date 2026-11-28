@@ -66,10 +66,9 @@ export function createLogoutFlow(deps: {
     async function advanceCutoff() {
         const raw = await deps.storage.getItem(cutoffKey);
         const previous = raw === null ? 0 : Number(raw);
-        if (raw !== null && (!Number.isSafeInteger(previous) || previous <= 0)) {
-            throw new Error('Invalid notification cutoff');
-        }
-        const time = Math.max(Date.now(), previous);
+        // A fresh persisted completion boundary supersedes a corrupt timestamp.
+        // No notification is admitted until this write succeeds.
+        const time = Math.max(Date.now(), Number.isSafeInteger(previous) && previous > 0 ? previous : 0);
         await deps.storage.setItem(cutoffKey, String(time));
     }
 

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 
 import { createPushNotificationService, PushSendError, type PushClient } from '../server/services/notifications';
 import { createFreeEndNotificationPoller, type FreeEndNotificationDependencies } from '../server/jobs/free-end-notifications';
-import { createAuthorizedNotificationSender, type DeliveryTarget } from '../server/services/notification-delivery';
+import { createAuthorizedNotificationSender, controlledTestDeliveryPolicy, type DeliveryTarget } from '../server/services/notification-delivery';
 
 type Ticket = Awaited<ReturnType<PushClient['sendPushNotificationsAsync']>>[number];
 const ok: Ticket = { status: 'ok', id: 'expo-ticket-id' };
@@ -26,6 +27,7 @@ it('sends every authorized page before waiting on cleanup of the exact ticket sn
     return Response.json({ data: outbound.length === 2 ? [ok, failure({ error: 'DeviceNotRegistered' })] : [ok] });
   });
   const send = createAuthorizedNotificationSender({
+    allowTarget: () => true,
     async authorize(_kind, _id, _lease, after) {
       steps.push('authorize:' + after);
       return after === null
@@ -55,6 +57,7 @@ it('sends every authorized page before waiting on cleanup of the exact ticket sn
 it('does not call Expo after unknown authorization and does not retry a 429 within a permit', async t => {
   const transport = t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 429 }));
   const sender = (unavailable: boolean) => createAuthorizedNotificationSender({
+    allowTarget: () => true,
     async authorize() {
       if (unavailable) throw Error('DB response lost');
       return { eligible: true, cursor: null, targets: [{
@@ -199,4 +202,27 @@ describe('Expo push ticket handling', () => {
       assert.equal(service.calls.length, 1);
     });
   }
+});
+
+
+it('keeps unverified Push disabled outside an explicit isolated test destination allowlist', async t => {
+  const target: DeliveryTarget = { token: tokens[0], id: 'id', userId: 'user', installationId: 'install',
+    generation: '1', revision: '1', version: 'v' };
+  const config = { PUSH_DELIVERY_MODE: 'controlled-test', SUPABASE_URL: 'https://test.invalid',
+    PUSH_CONTROLLED_SUPABASE_URL: 'https://test.invalid',
+    PUSH_CONTROLLED_TOKEN_SHA256: createHash('sha256').update(target.token).digest('hex') };
+  assert.equal(controlledTestDeliveryPolicy(config)(target), true);
+  for (const overrides of [{ NODE_ENV: 'production' }, { PUSH_DELIVERY_MODE: undefined },
+    { PUSH_CONTROLLED_SUPABASE_URL: 'https://other.invalid' }, { PUSH_CONTROLLED_TOKEN_SHA256: 'invalid' },
+    { PUSH_CONTROLLED_TOKEN_SHA256: '' }]) {
+    assert.equal(controlledTestDeliveryPolicy({ ...config, ...overrides })(target), false);
+  }
+  assert.equal(controlledTestDeliveryPolicy(config)({ ...target, token: tokens[1] }), false);
+  const transport = t.mock.method(globalThis, 'fetch', async () => assert.fail('Push must stay disabled'));
+  const send = createAuthorizedNotificationSender({
+    async authorize() { return { eligible: true, cursor: null, targets: [target] }; },
+    async deleteInvalid() { assert.fail('Denied destinations must not be deleted'); },
+  })('chat_message');
+  assert.equal((await send('claim', 'lease', { title: 'name', body: 'private text' })).sent, 0);
+  assert.equal(transport.mock.callCount(), 0);
 });

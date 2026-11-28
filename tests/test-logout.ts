@@ -23,7 +23,7 @@ function managedFixture(fresh = false) {
     const events: string[] = [];
     const a = { user: { id: userId }, access_token: sessionToken(sessionId) };
     let current: LogoutSession | null = a;
-    let authPresent = true, fenced = false, confirmed = false, acked = false;
+    let authPresent = true, fenced = false, acked = false;
     let fail = '', keyAvailable = true, initialized = !fresh;
     if (initialized) stored.set('test:device-v2-clean', installationId);
     let operations = 0;
@@ -55,7 +55,10 @@ function managedFixture(fresh = false) {
             assert.equal(session, a);
             assert.equal(entry.installationId, installationId);
             assert.ok(entry.generation === undefined || entry.generation === '1');
-            assert.equal(JSON.parse(stored.get('test:logout-v2-intent')!).operationId, entry.operationId);
+            const journal = JSON.parse(stored.get('test:logout-v2-intent')!);
+            assert.equal(journal.operationId, entry.operationId);
+            assert.equal(journal.registration, undefined);
+            assert.equal(journal.access_token, undefined);
             events.push('begin:' + entry.operationId);
             fenced = true;
             failOnce('begin');
@@ -69,16 +72,16 @@ function managedFixture(fresh = false) {
                 assert.equal(binding?.sessionId, sessionId);
             }
             if (action === 'confirm' || action === 'ack') assert.equal(id, recoveryId);
-            if (action === 'confirm' && !authPresent) confirmed = true;
+            if (action !== 'ack') throw new Error('Automatic recovery is disabled');
             if (action === 'ack') {
-                assert.equal(confirmed, true);
+                assert.equal(authPresent, false);
                 assert.equal(current, null);
                 assert.equal(stored.has('test:notification-cutoff'), true);
                 assert.equal(JSON.parse(stored.get('test:logout-v2')!).stage, 'ack');
                 acked = true;
             }
             failOnce(action);
-            return { recoveryId, status: acked ? 'cleared' : confirmed ? 'confirmed' : 'pending' };
+            return { recoveryId, status: acked ? 'cleared' : 'pending' };
         },
     };
     const storage = {
@@ -99,7 +102,7 @@ function managedFixture(fresh = false) {
                     authPresent = false;
                     failOnce('revoke');
                 },
-                async clean() { assert.equal(confirmed, true); events.push('clear'); current = null; failOnce('clear'); },
+                async clean() { assert.equal(authPresent, false); events.push('clear'); current = null; failOnce('clear'); },
             }),
         });
     }
@@ -109,7 +112,7 @@ function managedFixture(fresh = false) {
         loseKey: () => { keyAvailable = false; }, api };
 }
 
-for (const fault of ['begin', 'confirm', 'clear', 'ack', 'write:test:logout-v2',
+for (const fault of ['begin', 'clear', 'ack', 'write:test:logout-v2',
     'write:test:notification-cutoff', 'remove:test:logout-v2-intent', 'remove:test:logout-v2']) {
     test(`managed logout resumes after process loss at ${fault}`, async () => {
         const { stored, events, a, restart, failAt } = managedFixture();
@@ -123,26 +126,29 @@ for (const fault of ['begin', 'confirm', 'clear', 'ack', 'write:test:logout-v2',
         const resumed = restart();
         assert.equal(await resumed.sessionAvailability(), 'logout-pending');
         assert.equal(await resumed.canUseNotification(Date.now() + 1000), false);
-        await assert.rejects(resumed.authenticate(() => assert.fail('Sign-in is blocked')));
+        let authStarted = false;
+        await assert.rejects(resumed.authenticate(async () => { authStarted = true; }));
+        assert.equal(authStarted, false);
         assert.deepEqual(await resumed.signOut(), { error: null });
         assert.equal(stored.has('test:logout-v2'), false);
         assert.equal(stored.has('test:logout-v2-intent'), false);
         assert.equal(stored.has('test:device-v2'), false);
-        assert.equal(events.indexOf('clear') > events.indexOf('confirm'), true);
+        assert.equal(events.indexOf('clear') > events.indexOf('revoke'), true);
         assert.equal(events.indexOf('ack') > events.indexOf('clear'), true);
         assert.equal(new Set(events.filter(event => event.startsWith('begin:'))).size, 1);
     });
 }
 
-test('managed logout confirms after a lost Auth reply and fences an unknown registration', async () => {
+test('managed logout retries a lost Auth reply without independent confirmation', async () => {
     const { a, events, restart, failAt } = managedFixture();
     const flow = restart();
     failAt('register');
     await assert.rejects(flow.save(a.user.id, 'test-push'));
     failAt('revoke');
-    assert.deepEqual(await flow.signOut(), { error: null });
+    assert.ok((await flow.signOut()).error);
+    assert.deepEqual(await restart().signOut(), { error: null });
     assert.equal(events.filter(event => event === 'register').length, 1);
-    assert.ok(events.includes('confirm'));
+    assert.equal(events.includes('confirm'), false);
 });
 
 test('a definitive rejection releases only a fresh managed registration', async () => {
@@ -197,43 +203,14 @@ test('logout never creates a generation to resolve a lost generation-opening rep
     assert.ok(events.includes('revoke'));
 });
 
-test('damaged managed journal finds a case using the old binding when all copies of the case ID are lost', async () => {
-    const { stored, events, a, restart, failAt, loseAuth } = managedFixture();
-    const start = restart();
-    await start.save(a.user.id, 'test-push');
-    failAt('begin');
-    assert.ok((await start.signOut()).error);
-    stored.set('test:logout-v2', '{broken');
-    stored.delete('test:logout-v2-intent');
-    loseAuth();
-    const resumed = restart();
-    assert.equal(await resumed.sessionAvailability(), 'logout-pending');
-    assert.deepEqual(await resumed.signOut(), { error: null });
-    assert.ok(events.includes('discover-binding'));
-    assert.ok(events.includes('ack'));
-});
-
-test('damaged managed journal resumes without the old JWT when the discovered case matches the backup', async () => {
-    const { stored, events, a, restart, failAt, replaceSession } = managedFixture();
-    const start = restart();
-    await start.save(a.user.id, 'test-push');
-    failAt('confirm');
-    assert.ok((await start.signOut()).error);
-    stored.set('test:logout-v2', '{broken');
-    replaceSession(null);
-    assert.deepEqual(await restart().signOut(), { error: null });
-    assert.ok(events.includes('discover-binding'));
-    assert.ok(events.includes('ack'));
-});
-
 test('a known recovery ID does not unlock while the lost JWT still has a live Auth row', async () => {
     const { a, restart, events, failAt, replaceSession } = managedFixture();
     const flow = restart();
     await flow.save(a.user.id, 'test-push');
     failAt('before-revoke');
-    assert.match((await flow.signOut()).error!.message, /Old session remains/);
+    assert.match((await flow.signOut()).error!.message, /interrupted before-revoke|Logout session unavailable/);
     replaceSession(null);
-    assert.match((await restart().signOut()).error!.message, /Old session remains/);
+    assert.match((await restart().signOut()).error!.message, /interrupted before-revoke|Logout session unavailable/);
     assert.equal(events.filter(event => event === 'revoke').length, 1);
     assert.ok(!events.includes('ack'));
 });
@@ -354,7 +331,7 @@ test('getCurrentSession distinguishes missing setup from an existing logout bloc
         const { getCurrentSession } = loadSource<{
             getCurrentSession(): Promise<{ session: unknown; error: Error | null }>;
         }>('lib/auth.ts', {
-            './logout': { logoutFlow: { revision: () => 0, canUseSession: async () => false } },
+            './logout': { logoutFlow: { revision: () => 0, sessionAvailability: async () => 'logout-pending' } },
             './supabase': { supabase: configured ? { auth: {
                 getSession: async () => assert.fail('Logout block must prevent session lookup'),
             } } : null },
@@ -419,15 +396,15 @@ test('logout recovery rechecks definitive refresh rejection and keeps other read
     const flow = restart();
     await flow.save(a.user.id, 'test-push');
     failAt('before-revoke');
-    assert.match((await flow.signOut()).error?.message ?? '', /Old session remains active/);
+    assert.match((await flow.signOut()).error?.message ?? '', /interrupted before-revoke|Logout session unavailable/);
     replaceSession(null);
     const recovered = adapter([failure(terminal), empty, empty]);
-    assert.match((await restart(recovered.recover).signOut()).error?.message ?? '', /Old session remains active/);
-    assert.equal(recovered.count(), 3);
+    assert.match((await restart(recovered.recover).signOut()).error?.message ?? '', /interrupted before-revoke|Logout session unavailable/);
+    assert.equal(recovered.count(), 2);
     assert.ok(!events.includes('ack'));
     loseAuth();
-    assert.equal((await restart().signOut()).error, null);
-    assert.ok(events.includes('ack'));
+    assert.ok((await restart().signOut()).error);
+    assert.equal(events.includes('ack'), false);
 });
 
 test('extension exceptions suppress the old session result while preserving eligible server errors', async () => {
@@ -516,7 +493,9 @@ test('unavailable hardware is rejected before invoking authentication', async ()
     const { restart, replaceSession, loseKey } = managedFixture(true);
     replaceSession(null);
     loseKey();
-    await assert.rejects(restart().authenticate(async () => assert.fail('Auth must not start')));
+    let started = false;
+    await assert.rejects(restart().authenticate(async () => { started = true; }));
+    assert.equal(started, false);
 });
 
 test('sign-in reports Auth success and retries device setup for the same restored session', async () => {
@@ -638,4 +617,39 @@ test('logout shares one operation and waits for in-flight token registration', a
     await saving;
     assert.equal((await leaving).error, null);
     assert.equal(events.filter(event => event.startsWith('begin:')).length, 1);
+});
+
+
+test('corrupt logout records remain blocked without discovery or account cleanup', async () => {
+    const { a, stored, restart, events, failAt } = managedFixture();
+    await restart().save(a.user.id, 'test-push');
+    failAt('begin');
+    assert.ok((await restart().signOut()).error);
+    stored.set('test:logout-v2', '{broken');
+    assert.ok((await restart().signOut()).error);
+    assert.equal(events.includes('discover-binding'), false);
+    assert.equal(events.includes('clear'), false);
+});
+
+test('a corrupt cutoff is superseded only by a successful completion write', async () => {
+    const { a, stored, restart, failAt, events } = managedFixture();
+    await restart().save(a.user.id, 'test-push');
+    stored.set('test:notification-cutoff', 'corrupt');
+    failAt('write:test:notification-cutoff');
+    assert.ok((await restart().signOut()).error);
+    assert.equal(stored.get('test:notification-cutoff'), 'corrupt');
+    assert.equal(await restart().canUseNotification(Date.now() + 10000), false);
+    assert.deepEqual(await restart().signOut(), { error: null });
+    assert.ok(Number.isSafeInteger(Number(stored.get('test:notification-cutoff'))));
+    assert.equal(events.includes('confirm'), false);
+});
+
+test('session read failure is returned as an error, never as a normal signed-out result', async () => {
+    const { getCurrentSession } = loadSource<typeof import('../lib/auth')>('lib/auth.ts', {
+        './logout': { logoutFlow: { revision: () => 0, sessionAvailability: async () => 'read-failed' } },
+        './supabase': { supabase: { auth: { getSession: async () => assert.fail('blocked read') } } },
+    });
+    const result = await getCurrentSession();
+    assert.equal(result.session, null);
+    assert.match(result.error?.message ?? '', /Session state unavailable/);
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Expo, type ExpoPushTicket } from 'expo-server-sdk';
 import { PushSendError, type PushMessage, type SendPushResult } from './notifications';
 
@@ -10,10 +11,29 @@ export type AuthorizedSend = (id: string, lease: string, message: PushMessage, s
   onAccepted?: (count: number) => void) => Promise<SendPushResult>;
 export type NotificationKind = 'free_end' | 'member_free' | 'chat_message';
 
+// Until #31 is resolved, named/body-bearing Push is for explicitly managed
+// test destinations only. A production deployment cannot opt into this mode.
+export function controlledTestDeliveryPolicy(env: Record<string, string | undefined>) {
+  const hashes = new Set((env.PUSH_CONTROLLED_TOKEN_SHA256 ?? '').split(',').filter(Boolean));
+  let origin = '';
+  try {
+    if (env.SUPABASE_URL && env.PUSH_CONTROLLED_SUPABASE_URL) {
+      const actual = new URL(env.SUPABASE_URL);
+      const expected = new URL(env.PUSH_CONTROLLED_SUPABASE_URL);
+      if (actual.origin === expected.origin) origin = actual.origin;
+    }
+  } catch { /* Invalid configuration stays disabled. */ }
+  const enabled = env.NODE_ENV !== 'production' && env.PUSH_DELIVERY_MODE === 'controlled-test'
+    && Boolean(origin) && hashes.size > 0 && [...hashes].every(value => /^[a-f0-9]{64}$/.test(value));
+  return (target: DeliveryTarget) => enabled
+    && hashes.has(createHash('sha256').update(target.token, 'utf8').digest('hex'));
+}
+
 export function createAuthorizedNotificationSender(options: {
   authorize(kind: NotificationKind, id: string, lease: string, after: string | null, signal: AbortSignal): Promise<Page>;
   deleteInvalid(target: DeliveryTarget, signal: AbortSignal): Promise<void>;
   accessToken?: string;
+  allowTarget?: (target: DeliveryTarget) => boolean;
 }) {
   return (kind: NotificationKind): AuthorizedSend => async (id, lease, message, signal, onAccepted) => {
     const timeout = AbortSignal.timeout(30_000);
@@ -31,7 +51,7 @@ export function createAuthorizedNotificationSender(options: {
       if (!page.eligible) break;
       if (page.cursor !== null && cursor !== null && page.cursor <= cursor) throw new Error('Invalid delivery cursor');
       cursor = page.cursor;
-      const targets = page.targets.filter(target => Expo.isExpoPushToken(target.token));
+      const targets = page.targets.filter(target => Expo.isExpoPushToken(target.token) && options.allowTarget?.(target) === true);
       failures.permanent += page.targets.length - targets.length;
       if (!targets.length) continue;
       let tickets: ExpoPushTicket[];

@@ -323,7 +323,7 @@ function recoveryLimits() {
   };
 }
 
-export function logoutRecoveryRouter(pool?: Pool, issuer?: string, challengeSecret?: Buffer) {
+export function logoutRecoveryRouter(pool?: Pool, issuer?: string, challengeSecret?: Buffer, automaticRecovery = false) {
   const router = express.Router();
   const limits = recoveryLimits();
   router.use(express.json({ limit: '2kb', inflate: false }));
@@ -345,6 +345,7 @@ export function logoutRecoveryRouter(pool?: Pool, issuer?: string, challengeSecr
         const purpose = issuance ? body.purpose : action;
         if (typeof purpose !== 'string' || !recoveryPurposes.includes(purpose) ||
             (!issuance && (Object.hasOwn(body, 'purpose') || Object.hasOwn(body, 'issuedAt')))) throw new Rejected(400);
+        if (!automaticRecovery && purpose !== 'ack') throw new Rejected(410);
         const scoped = purpose === 'discover-binding';
         const discovering = scoped || purpose === 'discover';
         const recoveryId = discovering ? null : string(body.recoveryId, uuidPattern, 36);

@@ -5,7 +5,7 @@ import {
   type FreeEndNotificationClaim,
   type FreeEndNotificationValidation,
 } from './jobs/free-end-notifications';
-import { createAuthorizedNotificationSender } from './services/notification-delivery';
+import { createAuthorizedNotificationSender, controlledTestDeliveryPolicy } from './services/notification-delivery';
 import { groupService } from './services/groups';
 import { chatService } from './services/chat';
 import { serverSupabase } from './services/supabase';
@@ -19,6 +19,7 @@ const chatNotificationOptions = process.env.CHAT_MESSAGE_NOTIFICATIONS_ENABLED =
   ? parseChatNotificationOptions(process.env) : null;
 
 const sendAuthorized = createAuthorizedNotificationSender({
+  allowTarget: controlledTestDeliveryPolicy(process.env),
   accessToken: process.env.EXPO_ACCESS_TOKEN,
   async authorize(kind, id, lease, after, signal) {
     const { data, error } = await serverSupabase.rpc('authorize_notification_delivery', {

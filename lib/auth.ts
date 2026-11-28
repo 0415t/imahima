@@ -76,9 +76,13 @@ export async function getCurrentSession(): Promise<GetSessionResult> {
     try {
         const client = requireSupabase();
         const revision = logoutFlow.revision();
-        if (!await logoutFlow.canUseSession()) return { session: null, error: null };
+        const availability = await logoutFlow.sessionAvailability();
+        if (availability === 'read-failed') throw new Error('Session state unavailable');
+        if (availability !== 'ready') return { session: null, error: null };
         const { data, error } = await client.auth.getSession();
-        if (!await logoutFlow.canUseSession() || revision !== logoutFlow.revision()) {
+        const after = await logoutFlow.sessionAvailability();
+        if (after === 'read-failed') throw new Error('Session state unavailable');
+        if (after !== 'ready' || revision !== logoutFlow.revision()) {
             return { session: null, error: null };
         }
 

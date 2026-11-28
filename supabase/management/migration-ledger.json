@@ -643,6 +643,24 @@
           "Preserve the existing session guard function owner and execute grants"
         ]
       }
+    },
+    {
+      "version": "20261208000000",
+      "name": "simplify_normal_device_logout",
+      "file": "20261208000000_simplify_normal_device_logout.sql",
+      "dependsOn": [
+        "20261207000000"
+      ],
+      "gitBlob": "8907ea23b4af90da637e8c314daea024c50cb6b4",
+      "sourceSha256": "cc8a698723e533bb7445860f196609353008089e5fb268e0a18e0c4a163cbc72",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Stop device recovery traffic; apply all prior migrations; deploy the MVP client and controlled-test delivery policy together"
+        ]
+      }
     }
   ]
 }

@@ -333,3 +333,10 @@ An authenticated end-to-end test on a disposable Supabase instance with exact
 live timer functions and notification jobs, plus a production policy/dependency
 audit, remain release prerequisites. The fixture tests model confirmed output
 states; they do not execute or replace the production timer functions.
+
+
+### MVP controlled-test Push restriction
+
+The normal logout client requires migration 37 (all prior migrations in ledger order). Auth normal success is the client completion evidence; the signed cleanup ack is not a DB assertion of Auth absence. Special automatic recovery endpoints are inactive by default. Dedicated verifier/recovery connections are still required for registration and ack; notification extension remains 503 if its dedicated connection is absent.
+
+Until review finding #31 is resolved, names/body-bearing Push is restricted to operator-managed test destinations: explicitly set `PUSH_DELIVERY_MODE=controlled-test`, matching `PUSH_CONTROLLED_SUPABASE_URL`, and comma-separated SHA-256 token fingerprints in `PUSH_CONTROLLED_TOKEN_SHA256`. Never use third-party tokens. Missing/invalid settings block all normal Push. Public deployment must use `NODE_ENV=production` and remove test settings; production denies even a copied allowlist. Keep all three worker enable flags off until DB/version/config checks pass. See the authoritative MVP section of `docs/device-verifier-protocol.md` for deploy order and limitations.

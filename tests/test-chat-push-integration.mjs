@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { Agent, request as httpRequest } from 'node:http';
 import { test } from 'node:test';
@@ -118,6 +118,8 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
           ISSUE36_DELAY_MOCK_IPC:process.env.ISSUE36_DELAY_MOCK_IPC==='1'?'1':'0',
           ISSUE36_DELIVERY_KIND:deliveryKind,ISSUE36_AUTHORIZATION_ID:authorizationId,ISSUE36_INVALID_TOKEN:invalidToken,
           ISSUE36_DROP_AUTHORIZATION:String(Number(dropAuthorization)),
+          PUSH_DELIVERY_MODE:'controlled-test',PUSH_CONTROLLED_SUPABASE_URL:config.url,
+          PUSH_CONTROLLED_TOKEN_SHA256:fakeTokens.map(token=>createHash('sha256').update(token).digest('hex')).join(','),
           EXPO_ACCESS_TOKEN:'',EXPO_BASE_URL:'https://exp.host',FREE_END_NOTIFICATIONS_ENABLED:String(deliveryKind==='free_end'),
           MEMBER_FREE_NOTIFICATIONS_ENABLED:String(deliveryKind==='member_free'),CHAT_MESSAGE_NOTIFICATIONS_ENABLED:String(worker&&deliveryKind==='chat_message'),
           FREE_END_NOTIFICATIONS_INTERVAL_MS:faultsOnly?'60000':'1000',MEMBER_FREE_NOTIFICATIONS_INTERVAL_MS:faultsOnly?'60000':'1000',

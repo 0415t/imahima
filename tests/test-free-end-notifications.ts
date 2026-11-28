@@ -65,6 +65,7 @@ describe('free-end notification poller', () => {
         return Response.json({ data: [{ status: 'ok', id: 'ticket' }] });
       });
       const sendAuthorized = createAuthorizedNotificationSender({
+    allowTarget: () => true,
         async authorize(_kind, _id, _lease, after) {
           if (after === delayedPage) t.mock.timers.setTime(expiry);
           return { eligible: true, cursor: after === null ? '1' : null, targets: [{

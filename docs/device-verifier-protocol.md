@@ -1,3 +1,28 @@
+> MVP implementation note: the normal logout/deployment contract below supersedes the historical phase notes later in this document. Special automatic recovery is inactive in the application and default Express router. Existing SQL and native signing formats remain for compatibility and regression evidence.
+
+## MVP normal logout and controlled-test Push
+
+Apply migrations 24 through **37**, in ledger reconstruction order, before starting this release. Do not edit or replay applied migrations. Stop old workers, registration traffic and manual send routes before the permission changes; deploy the updated Express server, verify its dedicated connections, and then start only the intended workers. Resume device traffic with the matching native client. Migration 37 must precede the new client: old SQL requires independent Auth confirmation before ack. On failed/unknown commit, stop and audit history plus objects before retrying; never grant raw token access as a workaround.
+
+Normal logout is: durable local intent -> signed begin (Push fence and receipt committed atomically) -> successful Supabase local-scope Auth response -> durable clear checkpoint -> exact-session local cleanup and notification cutoff -> signed ack -> remove local journal. The default client does not discover receipts or independently confirm Auth absence. A lost Auth response is retried only with the same surviving session; missing keys/JWT, corrupt scope or a legacy confirm checkpoint stays blocked for explicit diagnosis. Never infer success from a missing session. Keep the device key, installation ID and receipt until ack is confirmed. Ack response loss is safely retried with a fresh challenge.
+
+Migration 37 adds `client_cleanup_acknowledged_at`, separately from verified `auth_revocation_confirmed_at`. A signed ack attests client cleanup, not server-observed Auth revocation, and cannot un-fence Push. New-generation creation requires the previous generation fenced and either the historical confirmation or its completed client-cleanup receipt; an open receipt still blocks creation. Session-scoped fences remain permanent. Exact recorded registration results remain queryable for the bound session only (a different session of the same account is not enough). New registration locks Auth user before Auth session; installation-first locking remains in place.
+
+The public recovery router accepts only ack and ack challenge issuance by default. `automaticRecovery=true` is used solely by explicit archived regression construction, never by the production entrypoint. Historical `confirm`/`discover` code and tables are not deleted. The historical suite can be selected with `IMAHIMA_ARCHIVED_RECOVERY_TESTS=1`; it reconstructs through migration 36 and is not evidence for the new normal flow. `npm run test:login` now exercises the current app state machine with real isolated GoTrue, PostgREST, Express and all migrations. Native keys are test adapters, not hardware verification. Issue #50 remains open for native builds/devices; Issue #53 covers special account-deletion recovery.
+
+Push ownership finding #31 remains unresolved. Sender names, chat bodies, navigation and notification extension are retained **only on managed test devices and synthetic accounts**. No Push ownership verification is claimed. All normal sends fail closed unless all of these hold:
+
+- `NODE_ENV` is not `production`.
+- `PUSH_DELIVERY_MODE=controlled-test` is explicitly set.
+- `PUSH_CONTROLLED_SUPABASE_URL` matches the configured `SUPABASE_URL` origin.
+- The exact destination token SHA-256 appears in the comma-separated `PUSH_CONTROLLED_TOKEN_SHA256` operator allowlist.
+
+Never configure this exception on an internet-public deployment. Public deployment must set `NODE_ENV=production`, omit the controlled-test settings, and verify zero outbound Push requests. Production mode denies even if an old allowlist was copied. Missing/invalid settings deny all targets. The allowlist is not token ownership proof and must be maintained outside client requests, using only operator-controlled devices. It does not restrict login/logout. The three worker enable flags retain their existing defaults. Authorization, event-time checks, per-page reauthorization, deadlines and snapshot-based invalid-token deletion remain active. Denied targets are not deleted. Outbox work may be cancelled without delivery while blocked; do not expect later automatic replay.
+
+Already-authorized external requests cannot be recalled after a fence. Existing access JWTs can remain valid until expiry outside the session-checked APIs. Native compilation, device behavior and Hosted privileges remain unverified. No backup/restore automation is introduced; operating without backups carries unrecoverable-data risk and any shared application needs separate approval.
+
+---
+
 # Device verifier API v1
 
 Express mounts `POST /device-recovery/:action` when

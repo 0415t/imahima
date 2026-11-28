@@ -48,7 +48,8 @@ function isolatedFetch(origin, agent, deadline, localAddress) {
 test('isolated GoTrue, Express and PostgreSQL verify device ownership without exposing RPCs to PostgREST', {
   timeout: 480000,
 }, async t => {
-  const stack = createStack(t.signal, { allowSignup: true });
+  const stack = createStack(t.signal, { allowSignup: true,
+    migrationThrough: process.env.IMAHIMA_ARCHIVED_RECOVERY_TESTS === '1' ? '20261207000000' : undefined });
   const agent = new Agent({ proxyEnv: {} });
   let server, pool, recoveryPool;
   try {
@@ -96,7 +97,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         return { isFree: true, freeUntil: null, error: null };
       },
     }, undefined, undefined, undefined, router,
-    logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
+    logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32), process.env.IMAHIMA_ARCHIVED_RECOVERY_TESTS === '1')).listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`;
     async function post(action, body, status = 200, access = first.access) {
@@ -176,7 +177,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         const target = recoveryTarget();
         await addClearedRecovery(target, (await signup()).access);
         const limiter = createApp({}, undefined, undefined, undefined, undefined,
-          logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32))).listen(0, '127.0.0.1');
+          logoutRecoveryRouter(recoveryPool, issuer, randomBytes(32), process.env.IMAHIMA_ARCHIVED_RECOVERY_TESTS === '1')).listen(0, '127.0.0.1');
         try {
           await once(limiter, 'listening');
           const limiterOrigin = `http://127.0.0.1:${limiter.address().port}`;
@@ -335,11 +336,14 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       await assert.rejects(restartClient().save(localSession, 'ExpoPushToken[unused]', async () => true),
         /Lost generation response/);
       await assert.rejects(restartClient().finish(async () => {}), /Lost acknowledgement/);
-      const intentKey = 'isolated:logout-v2-intent';
-      const { recoveryId: _lostId, ...intentWithoutId } = JSON.parse(localRecords.get(intentKey));
-      localRecords.set(intentKey, JSON.stringify({ ...intentWithoutId, stage: 'begin' }));
-      localRecords.set('isolated:logout-v2', '{broken');
+      // The exact journal survives; ordinary ack response loss is retryable.
+      // Corrupt/all-lost records are separately tested to stay blocked in MVP.
       await restartClient().finish(async () => {});
+      assert.equal(stack.query(`SELECT count(*) FROM push_private.logout_recoveries r
+        LEFT JOIN push_private.installation_bindings b USING(installation_id,generation)
+        WHERE r.installation_id='${clientTarget.installationId}' AND r.cleared_at IS NOT NULL
+          AND r.client_cleanup_acknowledged_at IS NOT NULL
+          AND r.scopeless_auth_confirmed_at IS NULL AND b.auth_revocation_confirmed_at IS NULL;`), '2');
       assert.equal(await restartClient().availability(), 'ready');
       assert.equal(localSession, null);
       assert.equal(openCalls, 1);
@@ -353,9 +357,54 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       }, key, nextClient.access), 200, nextClient.access)).result);
     }
 
-    if (process.env.IMAHIMA_MANAGED_CLIENT_ONLY === '1') {
-      await exerciseManagedClient();
-      return;
+    if (process.env.IMAHIMA_ARCHIVED_RECOVERY_TESTS !== '1' || process.env.IMAHIMA_MANAGED_CLIENT_ONLY === '1') {
+      await t.test('normal logout, missing Push permission, lost generation/ack replies and account switching', exerciseManagedClient);
+      await t.test('automatic recovery endpoints are inactive by default', async () => {
+        const nonce = randomBytes(32).toString('base64url');
+        await post('recovery/challenge', { installationId, keyVersion: '1', purpose: 'discover', nonce,
+          signature: randomBytes(64).toString('base64url'), issuedAt: String(Math.floor(Date.now()/1000)) }, 410, null);
+      });
+      await t.test('user lock is acquired before session lock, avoiding the deletion lock inversion', async () => {
+        const actor = await signup();
+        const claims = jwtClaims(actor.access);
+        const holder = stack.openSqlSession();
+        const waiter = stack.openSqlSession();
+        let held = '', waiting = '';
+        holder.stdout.on('data', chunk => { held += chunk; });
+        waiter.stdout.on('data', chunk => { waiting += chunk; });
+        const done = once(holder, 'close'), waiterDone = once(waiter, 'close');
+        holder.stdin.on('error', () => {}); waiter.stdin.on('error', () => {});
+        try {
+          holder.stdin.write(`BEGIN; SET LOCAL lock_timeout='8s';
+            SELECT 1 FROM auth.users WHERE id='${claims.sub}' FOR UPDATE;\n\\echo user-held\n`);
+          await waitFor(() => held.includes('user-held'), 'Auth user row locked', t.signal);
+          waiter.stdin.write(`SET application_name='mvp-lock-order'; BEGIN;
+            SET LOCAL statement_timeout='15s';
+            SELECT push_private.lock_live_device_auth('${claims.sub}','${claims.session_id}');\n\\echo auth-checked\n`);
+          await waitFor(() => stack.query(`SELECT count(*) FROM pg_stat_activity
+            WHERE application_name='mvp-lock-order' AND wait_event_type='Lock';`) === '1',
+          'Auth helper waits on the user lock', t.signal);
+          holder.stdin.write(`SELECT 1 FROM auth.sessions WHERE id='${claims.session_id}' FOR UPDATE;\n\\echo session-held\n`);
+          // If the helper held the session first, this second lock would fail.
+          await waitFor(() => held.includes('session-held'), 'deletion order acquires the session', t.signal);
+          holder.stdin.end('COMMIT;\n');
+          assert.equal((await done)[0], 0);
+          await waitFor(() => waiting.includes('auth-checked'), 'Auth helper completes after release', t.signal);
+          waiter.stdin.end('COMMIT;\n');
+          assert.equal((await waiterDone)[0], 0);
+          assert.ok(waiting.includes('t'));
+        } finally {
+          if (holder.exitCode === null) holder.stdin.end('ROLLBACK;\n');
+          if (waiter.exitCode === null) waiter.stdin.end('ROLLBACK;\n');
+          await Promise.all([done, waiterDone]);
+        }
+      });
+      await t.test('dedicated verifier cannot directly read Auth sessions or registration rows', async () => {
+        for (const table of ['auth.users', 'auth.sessions', 'public.user_device_tokens']) {
+          await assert.rejects(pool.query('SELECT * FROM ' + table + ' LIMIT 1'), error => error.code === '42501');
+        }
+      });
+      if (process.env.IMAHIMA_MVP_LOGOUT_ONLY === '1') return;
     }
     if (process.env.IMAHIMA_REGISTRATION_REJECTION_ONLY === '1') {
       const input = { installationId, publicKey: key.point };
@@ -851,6 +900,10 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       WHERE installation_id='${installationId}' AND generation=${nextGeneration}
         AND user_id='${nextOwner}' AND expo_push_token='ExpoPushToken[isolated_test]';`), '1');
 
+    // The current suite retains the registration/JWT/transaction regressions above.
+    // Only the obsolete automatic-recovery tail uses the archived SQL contract.
+    if (process.env.IMAHIMA_ARCHIVED_RECOVERY_TESTS !== '1') return;
+
     // The recovery-only path starts while B has a live JWT. Every call after
     // GoTrue local revocation deliberately sends no Authorization header.
     stack.query(`DELETE FROM push_private.device_challenges WHERE installation_id='${installationId}';`);
@@ -1033,7 +1086,6 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         { recoveryId: id, status: 'cleared' });
     }
 
-    await exerciseManagedClient();
     await exerciseRecoveryReview();
   } finally {
     agent.destroy();

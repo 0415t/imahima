@@ -12,7 +12,7 @@ const recoveryRole = 'imahima_logout_recovery_verifier';
 const asRole = (role, sql) => `BEGIN; SET LOCAL ROLE ${role}; ${sql}; COMMIT;`;
 
 test('durable logout recovery survives lost results and serializes account switching', { timeout: 180000 }, async t => {
-  const stack = createStack(t.signal, { allowSignup: true });
+  const stack = createStack(t.signal, { allowSignup: true, migrationThrough: '20261207000000' });
   const agent = new Agent({ proxyEnv: {} });
   const sessions = [];
   try {

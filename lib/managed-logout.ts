@@ -232,52 +232,29 @@ export function createManagedLogout(options: {
         }
         const installationId = await api.identity(false);
         if (!installationId) throw new Error('Managed device key is unavailable');
-        const parse = <T,>(value: string | null, decode: (s: string) => T): T | undefined => {
-            try { return value === null ? undefined : decode(value); } catch { return undefined; }
-        };
-        let entry = parse(raw, readJournal);
-        const intent = parse(anchor, readJournal);
-        const binding = parse(storedBinding, readBinding);
+        // MVP: exact local records only. Corruption/lost scope stays blocked;
+        // never discover or infer another account's cleanup target.
+        let entry = raw === null ? undefined : readJournal(raw);
+        const intent = anchor === null ? undefined : readJournal(anchor);
+        const binding = storedBinding === null ? undefined : readBinding(storedBinding);
         if (entry && intent && (!sameScope(entry, intent) || entry.operationId !== intent.operationId
             || entry.generation !== intent.generation
             || (entry.recoveryId && intent.recoveryId && entry.recoveryId !== intent.recoveryId))) {
             throw new Error('Logout records disagree');
         }
+        if (!entry) entry = intent;
         if (entry?.stage === 'begin' && intent?.recoveryId) entry = intent;
-        const saved = entry ?? intent ?? binding;
-        if (!saved) throw new Error('Discovered logout has no verified local scope');
-        if (saved.installationId !== installationId) throw new Error('Logout installation unavailable');
-        if (binding && (entry ?? intent) && !sameScope(binding, (entry ?? intent)!)) {
-            throw new Error('Logout binding changed');
-        }
+        const scope = entry ?? binding;
+        if (!scope || scope.installationId !== installationId) throw new Error('Logout scope unavailable');
+        if (binding && entry && !sameScope(binding, entry)) throw new Error('Logout binding changed');
         const current = async (scope: Scope) => {
             const session = options.recoverySession ? await options.recoverySession() : await options.session();
             if (session && !owns(session, scope)) throw new Error('Logout session changed');
             return session;
         };
-        if (!entry && (raw !== null || anchor !== null || (binding && !await current(binding)))) {
-            const scope = intent ?? binding;
-            if (!scope) throw new Error('Logout scope unavailable');
-            const session = await current(scope);
-            if (intent && session) {
-                // The backup may be the only write that survived before begin.
-                entry = intent;
-            } else {
-                if (!scope.generation && !intent?.operationId) throw new Error('Discovered logout has no verified local scope');
-                const receipt = await api.recovery(installationId, 'discover-binding', undefined, scope);
-                if (intent?.recoveryId && intent.recoveryId !== receipt.recoveryId) throw new Error('Discovered logout changed');
-                entry = { ...scope, operationId: intent?.operationId ?? api.operationId(),
-                    recoveryId: receipt.recoveryId, stage: receipt.status === 'pending' ? 'revoke' : 'clear' };
-            }
-            await put(journalKey, entry);
-        }
         if (!entry) {
-            if (!binding) throw new Error('Invalid managed device record');
-            const session = await current(binding);
-            if (!session) throw new Error('Logout session unavailable');
-            if (await storage.getItem(cleanKey) !== null) await storage.removeItem(cleanKey);
-            if (await storage.getItem(bootstrapKey) !== null) await storage.removeItem(bootstrapKey);
-            entry = { installationId, userId: binding.userId, sessionId: binding.sessionId,
+            if (!binding || !await current(binding)) throw new Error('Logout session unavailable');
+            entry = { installationId, userId: scope.userId, sessionId: scope.sessionId,
                 generation: binding.generation, operationId: api.operationId(), stage: 'begin' };
             await put(intentKey, entry);
             await put(journalKey, entry);
@@ -290,34 +267,20 @@ export function createManagedLogout(options: {
         }
         if (entry.stage === 'begin') {
             const session = await current(entry);
-            if (session) {
-                if (!entry.generation) await api.ensureInstallation(session, installationId);
-                if (!await current(entry)) throw new Error('Logout session unavailable');
-                await checkpoint('revoke', await api.begin(session, entry));
-            } else {
-                const receipt = await api.recovery(installationId, 'discover-binding', undefined, entry);
-                await checkpoint('revoke', receipt.recoveryId);
-            }
+            if (!session) throw new Error('Logout session unavailable');
+            if (!entry.generation) await api.ensureInstallation(session, installationId);
+            if (!await current(entry)) throw new Error('Logout session unavailable');
+            await checkpoint('revoke', await api.begin(session, entry));
         }
         if (entry.stage === 'revoke') {
             const session = await current(entry);
-            if (session) {
-                try { await options.revoke(session); } catch {
-                    // A lost Auth response may still leave the old row absent.
-                    const receipt = await api.recovery(installationId, 'confirm', entry.recoveryId!);
-                    if (receipt.status === 'pending') throw new Error('Old session remains active');
-                }
-            }
-            await checkpoint('confirm');
-        }
-        if (entry.stage === 'confirm') {
-            const receipt = await api.recovery(installationId, 'confirm', entry.recoveryId!);
-            if (receipt.status === 'pending') {
-                if (await current(entry)) await checkpoint('revoke');
-                throw new Error('Old session remains active');
-            }
+            if (!session) throw new Error('Logout session unavailable');
+            // Only a definitive Auth success advances the durable checkpoint.
+            // Unknown responses remain retryable while the same session exists.
+            await options.revoke(session);
             await checkpoint('clear');
         }
+        if (entry.stage === 'confirm') throw new Error('Legacy logout checkpoint requires manual recovery');
         if (entry.stage === 'clear') {
             await current(entry);
             await options.clean(entry);
