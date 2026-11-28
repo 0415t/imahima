@@ -145,6 +145,7 @@ export function createLogoutFlow(deps: {
         if (logout) return logout;
         if (authenticating) return Promise.resolve({ error: new Error('認証処理を実行中です') });
         logout = Promise.resolve().then(async () => {
+            await deps.managed.requestLogout();
             await registration?.catch(() => {});
             await provisioning?.promise.catch(() => {});
             await deps.managed.finish(advanceCutoff);

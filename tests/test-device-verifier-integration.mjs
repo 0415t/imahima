@@ -88,7 +88,23 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
     let cachedOldClaims;
     const claimsLookup = token => token === first.access && cachedOldClaims
       ? Promise.resolve(cachedOldClaims) : auth.auth.getClaims(token);
-    const router = deviceVerifierRouter(pool, issuer, claimsLookup, true);
+    // Test-only connection facade: the intentional race barrier must outlive
+    // production's 1.5s/3s deadlines, while remaining bounded. Runtime source and
+    // all non-race tests retain the real production limits.
+    const racePool = process.env.IMAHIMA_ENROLLMENT_RACE_ONLY === '1' ? {
+      async connect() {
+        const db = await pool.connect();
+        return new Proxy(db, { get(target, property) {
+          if (property === 'query') return (sql, ...args) => target.query(
+            typeof sql === 'string' && sql.includes("SET LOCAL lock_timeout = '1500ms'")
+              ? sql.replace("'1500ms'", "'15s'").replace("'3000ms'", "'20s'")
+                .replace("'5s'", "'30s'").replace("'6s'", "'30s'") : sql, ...args);
+          const value = Reflect.get(target, property);
+          return typeof value === 'function' ? value.bind(target) : value;
+        } });
+      },
+    } : pool;
+    const router = deviceVerifierRouter(racePool, issuer, claimsLookup, true);
     let notificationExtensions = 0;
     server = createApp({
       authenticateNotificationSession: notificationSessionAuthenticator(pool, issuer, claimsLookup),
@@ -357,8 +373,56 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       }, key, nextClient.access), 200, nextClient.access)).result);
     }
 
-    if (process.env.IMAHIMA_ARCHIVED_RECOVERY_TESTS !== '1' || process.env.IMAHIMA_MANAGED_CLIENT_ONLY === '1') {
+    if ((process.env.IMAHIMA_ARCHIVED_RECOVERY_TESTS !== '1' || process.env.IMAHIMA_MANAGED_CLIENT_ONLY === '1')
+        && process.env.IMAHIMA_ENROLLMENT_RACE_ONLY !== '1') {
       await t.test('normal logout, missing Push permission, lost generation/ack replies and account switching', exerciseManagedClient);
+      for (const withGeneration of [false, true]) {
+        await t.test(`pending ${withGeneration ? 'confirmed fenced' : 'generationless'} logout blocks admission until ack`, async () => {
+          const owner = await signup(), next = await signup();
+          const target = { installationId: randomUUID(), keyVersion: '1' };
+          const enrollment = { installationId: target.installationId, publicKey: key.point };
+          const initial = await post('enrollment-challenge', enrollment, 200, owner.access);
+          await post('enroll-installation', signed('enroll-installation', { ...enrollment, nonce: initial.nonce }, key, owner.access), 200, owner.access);
+          const issue = async (purpose, access = owner.access) => (await post('challenge', signed('challenge', {
+            ...target, purpose, nonce: randomBytes(32).toString('base64url'),
+          }, key, access), 200, access)).nonce;
+          const generation = withGeneration ? (await post('enroll', signed('enroll', {
+            ...target, nonce: await issue('enroll'),
+          }, key, owner.access), 200, owner.access)).result : null;
+          const started = await post('begin-session-logout', signed('begin-session-logout', {
+            ...target, operationId: randomUUID(), nonce: await issue('begin_session_logout'),
+          }, key, owner.access), 200, owner.access);
+          const id = started.result.recoveryId;
+          if (withGeneration) {
+            const proof = await issue('confirm_auth_revocation');
+            assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
+              method: 'POST', headers: { authorization: 'Bearer ' + owner.access },
+            })).status, 204);
+            const identity = jwtClaims(owner.access);
+            const digest = createHash('sha256').update(Buffer.from(proof, 'base64url')).digest('hex');
+            stack.query(`BEGIN; SET LOCAL ROLE imahima_device_verifier;
+              SELECT push_private.confirm_auth_revocation('${target.installationId}','${identity.sub}',${generation},
+              '${randomUUID()}',1,decode('${digest}','hex')); COMMIT;`);
+            assert.equal(stack.query(`SELECT auth_revocation_confirmed_at IS NOT NULL FROM push_private.installation_bindings
+              WHERE installation_id='${target.installationId}' AND generation=${generation};`), 't');
+          }
+          await post('enroll', signed('enroll', { ...target, nonce: await issue('enroll', next.access) }, key, next.access), 403, next.access);
+          assert.equal(stack.query(`SELECT count(*) FROM push_private.installation_bindings WHERE installation_id='${target.installationId}';`), withGeneration ? '1' : '0');
+          if (!withGeneration) assert.equal((await localAuth(gateway.url + '/auth/v1/logout?scope=local', {
+            method: 'POST', headers: { authorization: 'Bearer ' + owner.access },
+          })).status, 204);
+          const challenge = await recoveryPost('challenge', recoveryProof('challenge', { ...target, recoveryId: id,
+            purpose: 'ack', issuedAt: String(Math.floor(Date.now()/1000)), nonce: randomBytes(32).toString('base64url') }));
+          assert.equal((await recoveryPost('ack', recoveryProof('ack', { ...target, recoveryId: id, nonce: challenge.nonce }))).result.status, 'cleared');
+          const opened = (await post('enroll', signed('enroll', {
+            ...target, nonce: await issue('enroll', next.access),
+          }, key, next.access), 200, next.access)).result;
+          assert.ok(BigInt(opened) > BigInt(generation ?? 0));
+          const signature = stack.query(`SELECT has_function_privilege('authenticated',
+            'push_private.open_device_generation(uuid,uuid,uuid,bigint,bytea)','EXECUTE');`);
+          assert.equal(signature, 'f');
+        });
+      }
       await t.test('automatic recovery endpoints are inactive by default', async () => {
         const nonce = randomBytes(32).toString('base64url');
         await post('recovery/challenge', { installationId, keyVersion: '1', purpose: 'discover', nonce,
@@ -464,6 +528,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
       stack.query(`CREATE FUNCTION push_private.test_pause_first_enrollment() RETURNS trigger
         LANGUAGE plpgsql AS $$BEGIN
           IF NEW.installation_id='${installationId}' THEN
+            PERFORM set_config('lock_timeout','0',true);
             PERFORM pg_advisory_xact_lock(61202,1);
           END IF;
           RETURN NEW;
@@ -482,6 +547,10 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         await waitFor(() => stack.query(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
           WHERE application_name='device-proof-test' AND cardinality(pg_blocking_pids(pid))>0);`) === 't',
         'signed enrollment waiting before commit', t.signal);
+        await waitFor(() => stack.query(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+          WHERE application_name='device-proof-test' AND cardinality(pg_blocking_pids(pid))>0
+            AND clock_timestamp()-xact_start>interval '3.5 seconds');`) === 't',
+        'intentional barrier outlives the production statement deadline', t.signal);
         await post('begin-session-logout', signed('begin-session-logout', {
           ...base, operationId, nonce: randomBytes(32).toString('base64url'),
         }), 403);

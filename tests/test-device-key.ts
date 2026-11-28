@@ -127,3 +127,12 @@ test('recovery passes no JWT fields and propagates key loss without creating a k
   });
   assert.equal((await olderBuild.signLogoutRecoveryProof(input)).status, 'unsupported');
 });
+
+
+test('Android checkpoint explicitly syncs before AtomicFile completion and preserves rollback/readback', () => {
+  const source = readFileSync('modules/device-key/android/src/main/java/expo/modules/imahimadevicekey/DeviceKeyModule.kt', 'utf8');
+  const body = source.slice(source.indexOf('  private fun writeBytes('), source.indexOf('  private fun alias('));
+  assert.match(body, /try \{[\s\S]*stream\.write\(data\)[\s\S]*stream\.fd\.sync\(\)[\s\S]*target\.finishWrite\(stream\)/);
+  assert.match(body, /catch \(error: Exception\) \{\s*target\.failWrite\(stream\)\s*throw error/);
+  assert.ok(body.indexOf('readBytes(target)') > body.indexOf('target.finishWrite(stream)'));
+});

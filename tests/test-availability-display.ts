@@ -256,3 +256,105 @@ for (const outcome of ['success', 'failure'] as const) {
     assert.equal(screen.writes, writes, 'unmounted completion must not update any state, including the clock');
   });
 }
+
+
+function startupLayout(failure: 'throw' | 'error', initialEvent = false) {
+  let authListener: ((event: string, session: null) => void) | undefined;
+  let cursor = 0, reads = 0, failed = true, prepared = 0;
+  const states: unknown[] = [], effects: { deps: unknown[]; cleanup?: () => void }[] = [];
+  const pending: (() => void)[] = [];
+  const react = {
+    createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({ type, props, children }),
+    useState(initial: unknown) {
+      const i = cursor++;
+      if (!(i in states)) states[i] = initial;
+      return [states[i], (next: unknown) => { states[i] = typeof next === 'function' ? next(states[i]) : next; }];
+    },
+    useEffect(effect: () => (() => void) | undefined, deps: unknown[]) {
+      const i = cursor++;
+      const previous = effects[i];
+      if (!previous || previous.deps.length !== deps.length || deps.some((v, k) => !Object.is(v, previous.deps[k]))) {
+        previous?.cleanup?.();
+        effects[i] = { deps };
+        pending.push(() => { effects[i].cleanup = effect(); });
+      }
+    },
+    useSyncExternalStore(_subscribe: unknown, snapshot: () => unknown) { return snapshot(); },
+  };
+  const Stack = Object.assign('stack', { Protected: 'protected', Screen: 'screen' });
+  const module = loadSource<{ default(): unknown }>('app/_layout.tsx', {
+    react, 'react-native': { ActivityIndicator: 'spinner', Button: 'button', Platform: { OS: 'android' },
+      StyleSheet: { create: (s: unknown) => s } },
+    'expo-notifications': { addNotificationResponseReceivedListener: () => ({ remove() {} }),
+      getLastNotificationResponseAsync: async () => null },
+    'expo-router': { Stack }, 'expo-status-bar': { StatusBar: 'status' }, 'react-native-reanimated': {},
+    '@react-navigation/native': { DarkTheme: {}, DefaultTheme: {}, ThemeProvider: 'theme' },
+    '@/components/themed-text': { ThemedText: 'text' }, '@/components/themed-view': { ThemedView: 'view' },
+    '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
+    '@/lib/notification-task': { handleFreeEndAction: async () => null },
+    '@/lib/session-identity': { jwtSessionId: () => 'session' },
+    '@/lib/push-notifications': { registerNotificationCategories: async () => {}, registerForPushNotificationsAsync: async () => null },
+    '@/lib/logout': { logoutFlow: { subscribe() {}, isBlocked: () => false, getError: () => null,
+      revision: () => 0, isAuthenticating: () => false, sessionAvailability: async () => 'ready',
+      prepareSession: async () => { prepared++; }, signOut: () => assert.fail('Read errors must not sign out') } },
+    '@/lib/supabase': { hasSupabaseConfig: true, supabase: { auth: {
+      onAuthStateChange: (callback: typeof authListener) => {
+        authListener = callback;
+        return { data: { subscription: { unsubscribe() {} } } };
+      },
+      async getSession() {
+        reads++;
+        if (failed && initialEvent) authListener?.('INITIAL_SESSION', null);
+        if (failed && failure === 'throw') throw Error('Auth storage unavailable');
+        return { data: { session: failed ? null : { user: { id: 'self' }, access_token: 'test' } },
+          error: failed ? Error('Auth storage unavailable') : null };
+      },
+    } } },
+  }, { React: react });
+  let tree: unknown;
+  async function render() {
+    for (let i = 0; i < 6; i++) {
+      cursor = 0; tree = module.default();
+      pending.splice(0).forEach(effect => effect());
+      await setImmediate();
+    }
+    return JSON.stringify(tree);
+  }
+  function buttons(node: unknown): { title: string; onPress(): void }[] {
+    if (!node || typeof node !== 'object') return [];
+    const entry = node as { type?: string; props?: { title: string; onPress(): void }; children?: unknown[] };
+    return [...(entry.type === 'button' && entry.props ? [entry.props] : []), ...(entry.children ?? []).flatMap(buttons)];
+  }
+  return { render, retry() { failed = false; buttons(tree).find(b => b.title === '\u518d\u78ba\u8a8d')!.onPress(); },
+    get reads() { return reads; }, get prepared() { return prepared; },
+    close() { effects.forEach(effect => effect?.cleanup?.()); } };
+}
+
+for (const failure of ['throw', 'error'] as const) {
+  it(`startup Auth ${failure} reaches a retryable screen without INITIAL_SESSION`, async () => {
+    const screen = startupLayout(failure);
+    try {
+      const failed = await screen.render();
+      assert.match(failed, /\u30ed\u30b0\u30a4\u30f3/);
+      assert.doesNotMatch(failed, /spinner|protected/);
+      assert.equal(screen.reads, 1);
+      assert.equal(screen.prepared, 0);
+      screen.retry();
+      assert.match(await screen.render(), /protected/);
+      assert.equal(screen.reads, 2);
+      assert.equal(screen.prepared, 1);
+    } finally { screen.close(); }
+  });
+}
+
+
+it('an INITIAL_SESSION null fallback cannot hide an explicit Auth read error', async () => {
+  const screen = startupLayout('error', true);
+  try {
+    assert.match(await screen.render(), /\u30ed\u30b0\u30a4\u30f3/);
+    assert.equal(screen.prepared, 0);
+    screen.retry();
+    assert.match(await screen.render(), /protected/);
+    assert.equal(screen.prepared, 1);
+  } finally { screen.close(); }
+});

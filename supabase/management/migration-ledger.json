@@ -661,6 +661,24 @@
           "Stop device recovery traffic; apply all prior migrations; deploy the MVP client and controlled-test delivery policy together"
         ]
       }
+    },
+    {
+      "version": "20261209000000",
+      "name": "unify_pending_logout_generation_guard",
+      "file": "20261209000000_unify_pending_logout_generation_guard.sql",
+      "dependsOn": [
+        "20261208000000"
+      ],
+      "gitBlob": "1b4921c3497df956e3458060417c8419e4267b46",
+      "sourceSha256": "4bdb2470e9bca217280f7e5cb4f1f61d06f8ecae540cde02a82a245638a53d75",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Apply after migration 37; pause registration traffic and preserve verifier role grants"
+        ]
+      }
     }
   ]
 }

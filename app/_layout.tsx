@@ -28,13 +28,14 @@ export default function RootLayout() {
   const logoutError = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.getError, logoutFlow.getError);
   const [checkedSession, setCheckedSession] = useState<{ identity: string | Session | null; revision: number } | null>(null);
   const [storageReadFailed, setStorageReadFailed] = useState(false);
+  const [authReadFailed, setAuthReadFailed] = useState(false);
   const [storageRetry, setStorageRetry] = useState(0);
   const sessionUser = session?.user.id;
   const sessionId = session ? jwtSessionId(session.access_token) : undefined;
   const identity = sessionId ? `${sessionUser}:${sessionId}` : session;
   const revision = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.revision, logoutFlow.revision);
   const authenticating = logoutFlow.isAuthenticating();
-  const authorized = !supabase || (!blocked && !storageReadFailed
+  const authorized = !supabase || (!blocked && !storageReadFailed && !authReadFailed
     && checkedSession?.identity === identity && (!session || (!authenticating && checkedSession.revision === revision)));
   const userId = authorized ? sessionUser : undefined;
 
@@ -43,18 +44,31 @@ export default function RootLayout() {
       return;
     }
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    let active = true;
+    let authRevision = 0;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!active) return;
+      if (event !== 'INITIAL_SESSION') authRevision++;
       setSession(nextSession);
       setIsLoading(false);
     });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    const started = authRevision;
+    // INITIAL_SESSION is not guaranteed when the SDK's storage read rejects.
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!active || started !== authRevision) return;
+      if (error) throw error;
+      setSession(data.session);
+      setAuthReadFailed(false);
+    }).catch(() => {
+      if (!active || started !== authRevision) return;
+      setCheckedSession(null);
+      setAuthReadFailed(true);
+    }).finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; subscription.unsubscribe(); };
+  }, [storageRetry]);
 
   useEffect(() => {
-    if (isLoading || blocked || authenticating || !supabase) return;
+    if (isLoading || authReadFailed || blocked || authenticating || !supabase) return;
     let active = true;
     void logoutFlow.sessionAvailability().then(async availability => {
       if (!active) return;
@@ -69,7 +83,7 @@ export default function RootLayout() {
       setStorageReadFailed(true);
     });
     return () => { active = false; };
-  }, [authenticating, blocked, isLoading, revision, identity, session, storageRetry]);
+  }, [authenticating, authReadFailed, blocked, isLoading, revision, identity, session, storageRetry]);
 
   useEffect(() => {
     void registerNotificationCategories().catch((error: unknown) => {
@@ -153,10 +167,10 @@ export default function RootLayout() {
           <ThemedText accessibilityRole="alert">ログアウトを完了できませんでした。</ThemedText>
           <Button title="再試行" onPress={() => { void logoutFlow.signOut(); }} />
         </ThemedView>
-      ) : storageReadFailed && !blocked ? (
+      ) : (authReadFailed || storageReadFailed) && !blocked ? (
         <ThemedView style={styles.loading}>
           <ThemedText accessibilityRole="alert">ログイン状態を確認できませんでした。</ThemedText>
-          <Button title="再確認" onPress={() => { setStorageRetry(attempt => attempt + 1); }} />
+          <Button title="再確認" onPress={() => { setIsLoading(true); setStorageRetry(attempt => attempt + 1); }} />
         </ThemedView>
       ) : isLoading || !authorized || blocked ? (
         <ThemedView style={styles.loading}>

@@ -115,8 +115,13 @@ test('durable logout recovery survives lost results and serializes account switc
     assert.equal(await waiter.closed, 3);
     assert.match(waiter.error, denied);
 
+    // Read before retry: a post-retry row count cannot prove receipt identity.
+    const committedId = stack.query(`SELECT recovery_id FROM push_private.logout_recoveries
+      WHERE installation_id=${installation};`);
+    assert.match(committedId, /^[0-9a-f-]{36}$/);
     // The committed first reply was ignored. Reacquire the same opaque ID.
     const started = JSON.parse(execute(deviceRole, begin(a, operation, issueDevice('begin_logout'))));
+    assert.equal(started.recoveryId, committedId);
     const recovery = quoted(started.recoveryId);
     assert.equal(stack.query(`SELECT count(*) FROM public.user_device_tokens WHERE installation_id=${installation};`), '0');
     assert.equal(stack.query(`SELECT count(*) FROM push_private.logout_recoveries WHERE installation_id=${installation};`), '1');

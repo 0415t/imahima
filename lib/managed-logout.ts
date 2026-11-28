@@ -66,16 +66,17 @@ export function createManagedLogout(options: {
     const bindingKey = prefix + ':device-v2';
     const journalKey = prefix + ':logout-v2';
     const intentKey = prefix + ':logout-v2-intent';
+    const requestKey = prefix + ':logout-v2-request';
     const bootstrapKey = prefix + ':device-v2-bootstrap';
     const cleanKey = prefix + ':device-v2-clean';
     const put = (key: string, value: object) => storage.setItem(key, JSON.stringify(value));
     let rejectedRegistration: { operationId: string; previous: Binding } | undefined;
 
     async function availability() {
-        const [journal, intent, binding] = await Promise.all([
-            storage.getItem(journalKey), storage.getItem(intentKey), storage.getItem(bindingKey),
+        const [journal, intent, binding, request] = await Promise.all([
+            storage.getItem(journalKey), storage.getItem(intentKey), storage.getItem(bindingKey), storage.getItem(requestKey),
         ]);
-        if (journal !== null || intent !== null) return 'logout-pending' as const;
+        if (journal !== null || intent !== null || request !== null) return 'logout-pending' as const;
         if (binding !== null) {
             let record: Binding;
             try { record = readBinding(binding); } catch { return 'logout-pending' as const; }
@@ -209,10 +210,38 @@ export function createManagedLogout(options: {
         return true;
     }
 
+    function readRequest(raw: string): { userId: string; sessionId: string; operationId: string } {
+        const value = JSON.parse(raw);
+        if (!value || !isUuid(value.userId) || !isUuid(value.sessionId) || !isUuid(value.operationId)) {
+            throw new Error('Invalid logout request');
+        }
+        return value;
+    }
+
+    async function requestLogout() {
+        const raw = await storage.getItem(requestKey);
+        if (raw !== null) { readRequest(raw); return; }
+        // A surviving journal is already scoped; keep its operation ID on retry.
+        const saved = await storage.getItem(journalKey) ?? await storage.getItem(intentKey);
+        const scope = saved === null ? await options.session() : readJournal(saved);
+        if (!scope && saved === null) {
+            if (await storage.getItem(bindingKey) !== null || await storage.getItem(bootstrapKey) !== null) {
+                throw new Error('Logout session unavailable');
+            }
+            return; // finish still validates the existing clean marker for a true no-op.
+        }
+        const userId = scope && ('user' in scope ? scope.user.id : scope.userId);
+        const sessionId = scope && ('access_token' in scope ? jwtSessionId(scope.access_token) : scope.sessionId);
+        if (!isUuid(userId) || !isUuid(sessionId)) throw new Error('Logout session unavailable');
+        await put(requestKey, { userId, sessionId,
+            operationId: saved === null ? api.operationId() : (scope as Journal).operationId });
+    }
+
     async function finish(beforeAcknowledgement: () => Promise<void>): Promise<void> {
-        const [raw, anchor, storedBinding] = await Promise.all([
-            storage.getItem(journalKey), storage.getItem(intentKey), storage.getItem(bindingKey),
+        const [raw, anchor, storedBinding, requested] = await Promise.all([
+            storage.getItem(journalKey), storage.getItem(intentKey), storage.getItem(bindingKey), storage.getItem(requestKey),
         ]);
+        const request = requested === null ? undefined : readRequest(requested);
         if (raw === null && anchor === null && storedBinding === null) {
             const installation = await api.identity(false);
             const bootstrap = await storage.getItem(bootstrapKey);
@@ -246,6 +275,8 @@ export function createManagedLogout(options: {
         if (entry?.stage === 'begin' && intent?.recoveryId) entry = intent;
         const scope = entry ?? binding;
         if (!scope || scope.installationId !== installationId) throw new Error('Logout scope unavailable');
+        if (request && (request.userId !== scope.userId || request.sessionId !== scope.sessionId
+            || (entry && request.operationId !== entry.operationId))) throw new Error('Logout request session changed');
         if (binding && entry && !sameScope(binding, entry)) throw new Error('Logout binding changed');
         const current = async (scope: Scope) => {
             const session = options.recoverySession ? await options.recoverySession() : await options.session();
@@ -255,7 +286,7 @@ export function createManagedLogout(options: {
         if (!entry) {
             if (!binding || !await current(binding)) throw new Error('Logout session unavailable');
             entry = { installationId, userId: scope.userId, sessionId: scope.sessionId,
-                generation: binding.generation, operationId: api.operationId(), stage: 'begin' };
+                generation: binding.generation, operationId: request?.operationId ?? api.operationId(), stage: 'begin' };
             await put(intentKey, entry);
             await put(journalKey, entry);
         }
@@ -293,8 +324,9 @@ export function createManagedLogout(options: {
         await storage.setItem(cleanKey, installationId);
         await storage.removeItem(bindingKey);
         await storage.removeItem(intentKey);
+        await storage.removeItem(requestKey);
         await storage.removeItem(journalKey);
     }
 
-    return { save, finish, availability, initialize, prepareAuthentication, notificationReady };
+    return { save, finish, requestLogout, availability, initialize, prepareAuthentication, notificationReady };
 }

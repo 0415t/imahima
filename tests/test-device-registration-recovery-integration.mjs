@@ -20,11 +20,23 @@ test('managed registration serializes with fencing and Auth revocation', {timeou
     child.stderr.on('data', chunk => {result.stderr += chunk;});
     child.stdin.on('error', () => {});
     result.done = new Promise((resolve,reject) => {
-      child.on('error', reject);
-      child.on('close', resolve);
+      child.on('error', error => { result.spawnError = error; reject(error); });
+      child.on('close', code => { result.exitCode = code; resolve(code); });
     });
+    result.done.catch(() => {}); // ready() reports spawn failure without an unhandled rejection.
     sessions.push(result);
     return result;
+  }
+
+  async function ready(holder, marker, label) {
+    return waitFor(() => {
+      if (holder.spawnError) throw new Error(`SQL holder could not start (${holder.spawnError.code ?? 'unknown'})`);
+      if (Object.hasOwn(holder, 'exitCode')) {
+        const diagnostic = holder.stderr.split(/\r?\n/).find(line => /(?:ERROR|FATAL):/.test(line)) ?? 'No SQL diagnostic';
+        throw new Error(`SQL holder exited (${holder.exitCode}) before ${label}: ${diagnostic.slice(0,300)}`);
+      }
+      return holder.stdout.includes(marker);
+    }, label, t.signal);
   }
 
   try {
@@ -89,12 +101,19 @@ test('managed registration serializes with fencing and Auth revocation', {timeou
       return {common, installation, authSession, generation, token, registerOp, fenceOp, register, requests, resultFor};
     }
 
+    await t.test('SQL holder failure is reported without waiting for a readiness timeout', async () => {
+      const broken = session();
+      broken.child.stdin.end('SELECT FROM;\n');
+      assert.equal(await broken.done,3);
+      await assert.rejects(ready(broken,'never-ready','injected SQL failure'), /SQL holder exited \(3\).*ERROR:/);
+    });
+
     for(const first of ['register','fence']){
       const {jwt} = await account();
       const {generation, token, registerOp, fenceOp, requests, resultFor} = fixture(jwt);
       const holder = session();
       holder.child.stdin.write(`BEGIN; SET LOCAL ROLE imahima_device_verifier; ${requests[first]}\n\\echo holder-ready\n`);
-      await waitFor(()=>holder.stdout.includes('holder-ready'),'first operation holding installation lock',t.signal);
+      await ready(holder,'holder-ready','first operation holding installation lock');
 
       const waiter = session();
       const app = quoted('device-race-'+randomUUID());
@@ -147,7 +166,7 @@ test('managed registration serializes with fencing and Auth revocation', {timeou
       const observing = new AbortController();
       let revocation;
       try {
-        await waitFor(() => holder.stdout.includes('registration-held'),'registration holding its transaction',t.signal);
+        await ready(holder,'registration-held','registration holding its transaction');
         const pid = Number(holder.stdout.match(/^\d+\s*$/m)?.[0]);
         assert.ok(Number.isSafeInteger(pid) && pid > 0);
         revocation = authPost('logout?scope=local',{},jwt);

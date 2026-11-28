@@ -128,6 +128,7 @@ private class Store(context: Context) {
     val stream = target.startWrite()
     try {
       stream.write(data)
+      stream.fd.sync() // AtomicFile can log sync failures instead of propagating them.
       target.finishWrite(stream)
     } catch (error: Exception) {
       target.failWrite(stream)

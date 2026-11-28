@@ -653,3 +653,86 @@ test('session read failure is returned as an error, never as a normal signed-out
     assert.equal(result.session, null);
     assert.match(result.error?.message ?? '', /Session state unavailable/);
 });
+
+
+test('logout request survives restart before in-flight registration drains', async () => {
+    const { restart, api, a, stored, events } = managedFixture();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    api.register = async () => { entered.resolve(); await release.promise; };
+    const flow = restart();
+    const saving = flow.save(a.user.id, 'ExpoPushToken[waiting]');
+    await entered.promise;
+    const leaving = flow.signOut();
+    try {
+        await new Promise(resolve => setImmediate(resolve));
+        const raw = stored.get('test:logout-v2-request');
+        assert.ok(raw, 'logout request must be durable before the registration wait');
+        const request = JSON.parse(raw);
+        assert.equal(request.userId, a.user.id);
+        assert.equal(request.sessionId, jwtSessionId(a.access_token));
+        assert.equal(request.access_token, undefined);
+        assert.equal(await restart().sessionAvailability(), 'logout-pending');
+        assert.equal(events.some(event => event.startsWith('begin:')), false);
+    } finally {
+        release.resolve(); await saving; await leaving;
+    }
+    assert.equal(stored.has('test:logout-v2-request'), false);
+});
+
+
+test('a completed clean installation can repeat logout without creating an unscoped request', async () => {
+    const { restart, replaceSession, stored } = managedFixture();
+    replaceSession(null);
+    assert.deepEqual(await restart().signOut(), { error: null });
+    assert.equal(stored.has('test:logout-v2-request'), false);
+});
+
+
+test('restart resumes a persisted logout while the old registration response is still pending', async () => {
+    const { restart, api, a, stored } = managedFixture();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    api.register = async () => { entered.resolve(); await release.promise; };
+    const flow = restart();
+    const saving = flow.save(a.user.id, 'ExpoPushToken[waiting]');
+    await entered.promise;
+    const leaving = flow.signOut();
+    try {
+        await new Promise(resolve => setImmediate(resolve));
+        const next = restart();
+        assert.equal(await next.sessionAvailability(), 'logout-pending');
+        assert.deepEqual(await next.signOut(), { error: null });
+        assert.equal(stored.has('test:logout-v2-request'), false);
+    } finally { release.resolve(); await saving; await leaving; }
+    assert.equal(stored.has('test:device-v2'), false);
+});
+
+test('logout persists its target before waiting for device provisioning', async () => {
+    const { restart, api, a, stored } = managedFixture();
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    const ensure = api.ensureInstallation;
+    api.ensureInstallation = async (...args) => { entered.resolve(); await release.promise; return ensure(...args); };
+    const flow = restart();
+    const preparing = flow.prepareSession(a).catch(error => error as Error);
+    await entered.promise;
+    const leaving = flow.signOut();
+    try {
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(JSON.parse(stored.get('test:logout-v2-request')!).sessionId, jwtSessionId(a.access_token));
+        assert.equal(await restart().sessionAvailability(), 'logout-pending');
+    } finally {
+        release.resolve();
+        assert.match((await preparing as Error).message, /Device session changed/);
+        await leaving;
+    }
+});
+
+test('failed logout request persistence stops before any server invalidation', async () => {
+    const { restart, a, failAt, events } = managedFixture();
+    const flow = restart(); await flow.prepareSession(a);
+    failAt('write:test:logout-v2-request');
+    assert.ok((await flow.signOut()).error);
+    assert.equal(events.some(event => event.startsWith('begin:')), false);
+    assert.equal(events.includes('revoke'), false);
+    assert.equal(flow.isBlocked(), true);
+    assert.deepEqual(await flow.signOut(), { error: null });
+});
