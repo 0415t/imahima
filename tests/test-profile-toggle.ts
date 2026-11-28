@@ -16,6 +16,14 @@ describe('POST /profiles/me/is-free/toggle', () => {
   let getUserIdCalls: string[];
   let toggleCalls: string[];
 
+  it('health returns fresh server time without cache reuse', async () => {
+    const response = await fetch(new URL('/health?clockNonce=test', endpoint));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.ok(Math.abs(Date.parse(response.headers.get('date')!) - Date.now()) < 2000);
+    assert.deepEqual(await response.json(), { ok: true });
+  });
+
   beforeEach(async () => {
     getUserIdCalls = [];
     toggleCalls = [];

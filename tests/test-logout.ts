@@ -289,6 +289,7 @@ test('production adapter uses JWT only for begin and exact HTTP fields for recov
     }, {
         URL, AbortController, setTimeout, clearTimeout, __DEV__: true,
         fetch: async (url: string, init: { body: string; headers: Record<string, string> }) => {
+            if (new URL(url).pathname === '/health') return { status: 200, headers: new Headers({ date: 'Sat, 28 Nov 2026 00:00:00 GMT' }) };
             requests.push({ url, body: JSON.parse(init.body), headers: init.headers });
             return { status: 200, json: async () => url.endsWith('/challenge') ? { nonce: 'A'.repeat(43) } :
                 { result: url.endsWith('/lookup') ? lookupResult : { status: 'confirmed', recoveryId } } };
@@ -845,4 +846,62 @@ test('review56 a read failure after registration stays pending until the same op
     const after = JSON.parse(stored.get('test:device-v2')!).registration;
     assert.equal(after.operationId, before.operationId);
     assert.equal(after.done, true);
+});
+
+
+test('review58 recovery uses fresh server time regardless of phone skew and fails closed on time errors', async () => {
+    const id = '03000000-0000-0000-0000-000000000003';
+    const serverTime = 'Sat, 28 Nov 2026 00:00:00 GMT';
+    for (const skew of [-86400000, 86400000]) {
+        let mode = 'ok';
+        const samples: string[] = [];
+        const proofs: Record<string, string>[] = [];
+        const { createDeviceRecoveryApi } = loadSource<{
+            createDeviceRecoveryApi: typeof import('../lib/device-recovery-api').createDeviceRecoveryApi;
+        }>('lib/device-recovery-api.ts', {
+            'expo-modules-core': { uuid: { v4: randomUUID } },
+            'react-native': { Platform: { OS: 'android' } },
+            './session-identity': { jwtSessionId },
+            '../modules/device-key': {
+                async signLogoutRecoveryProof(input: Record<string, string>) {
+                    proofs.push(input); return { status: 'ready', signature: 'test' };
+                },
+            },
+        }, {
+            URL, AbortController, setTimeout, clearTimeout, __DEV__: false,
+            Date: class extends Date { static now() { return Date.parse(serverTime) + skew; } },
+            fetch: async (url: string, init: RequestInit) => {
+                if (new URL(url).pathname === '/health') {
+                    samples.push(url);
+                    assert.equal(init.cache, 'no-store');
+                    assert.equal(init.redirect, 'error');
+                    assert.equal(new Headers(init.headers).has('authorization'), false);
+                    assert.ok(init.signal);
+                    if (mode === 'network') throw new Error('offline');
+                    return { status: mode === 'status' ? 503 : 200,
+                        headers: new Headers(mode === 'missing' ? {} : {
+                            date: mode === 'invalid' ? 'invalid' : serverTime,
+                            ...(mode === 'cached' ? { age: '60' } : {}),
+                        }) };
+                }
+                return { status: 200, json: async () => url.endsWith('/challenge')
+                    ? { nonce: 'A'.repeat(43) } : { result: { recoveryId: id, status: 'cleared' } } };
+            },
+        });
+        const api = createDeviceRecoveryApi('https://express.example.test', 'https://auth.example.test');
+        for (const failure of ['network', 'status', 'missing', 'invalid', 'cached']) {
+            mode = failure;
+            await assert.rejects(api.recovery(id, 'ack', id));
+            assert.equal(proofs.length, 0, 'no proof or completion request without fresh time');
+        }
+        mode = 'ok';
+        for (let attempt = 0; attempt < 2; attempt++) {
+            assert.equal((await api.recovery(id, 'ack', id)).status, 'cleared');
+        }
+        assert.equal(new Set(samples).size, samples.length, 'never reuse a clock sample URL');
+        const challenges = proofs.filter(proof => proof.action === 'challenge');
+        assert.equal(challenges.length, 2);
+        assert.ok(challenges.every(proof => proof.issuedAt === String(Date.parse(serverTime) / 1000)));
+        assert.notEqual(challenges[0].nonce, challenges[1].nonce);
+    }
 });

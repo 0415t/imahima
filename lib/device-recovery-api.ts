@@ -61,6 +61,24 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
         } finally { clearTimeout(timer); }
     }
 
+    async function serverIssuedAt() {
+        const url = new URL('/health', endpoint(false));
+        // A fresh URL and no-store on both sides prevent reusing cached clock samples.
+        url.searchParams.set('clockNonce', randomNonce());
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 12_000);
+        try {
+            const response = await fetch(url.href, { method: 'GET', cache: 'no-store',
+                headers: { 'Cache-Control': 'no-store' }, signal: controller.signal, redirect: 'error' });
+            const date = response.headers.get('date');
+            const age = response.headers.get('age');
+            const timestamp = date ? Date.parse(date) : NaN;
+            if (response.status !== 200 || !Number.isFinite(timestamp) || timestamp <= 0
+                || (age !== null && age !== '0')) throw new Error('Fresh server time unavailable');
+            return String(Math.floor(timestamp / 1_000));
+        } finally { clearTimeout(timer); }
+    }
+
     async function signDevice(request: DeviceProofRequest) {
         const result = await (await import('../modules/device-key')).signDeviceProof(request);
         if (result.status !== 'ready') throw new Error('Device signing unavailable');
@@ -160,7 +178,7 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
         async recovery(installationId, action, recoveryId, binding) {
             const native = await import('../modules/device-key');
             const context = { issuer: issuer(), keyVersion: '1' };
-            const issue = { ...context, action: 'challenge' as const, nonce: randomNonce(), issuedAt: String(Math.floor(Date.now() / 1_000)) };
+            const issue = { ...context, action: 'challenge' as const, nonce: randomNonce(), issuedAt: await serverIssuedAt() };
             const scope = binding ? { bindingUserId: binding.userId, bindingSessionId: binding.sessionId,
                 ...(binding.generation ? { bindingGeneration: binding.generation }
                     : { bindingOperationId: checkedId(binding.operationId) }) } : null;

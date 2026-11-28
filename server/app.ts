@@ -46,7 +46,7 @@ export function createApp(
 
 
   app.get('/health', (_request, response) => {
-    response.json({ ok: true });
+    response.set('Cache-Control', 'no-store').set('Date', new Date().toUTCString()).json({ ok: true });
   });
 
   app.post('/profiles/me/is-free/toggle', async (request, response) => {
