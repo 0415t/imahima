@@ -625,6 +625,24 @@
           "Preserve the existing scoped recovery function owners and execute grants"
         ]
       }
+    },
+    {
+      "version": "20261207000000",
+      "name": "record_generation_start_after_session_lock",
+      "file": "20261207000000_record_generation_start_after_session_lock.sql",
+      "dependsOn": [
+        "20261206000000"
+      ],
+      "gitBlob": "46fcac027193b6f7d47bc7c862d71d887796a08d",
+      "sourceSha256": "a8ec18793c6c1c806aaf596eea8a79e533fe44be97e0b566f6fe7404c811f6ee",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Preserve the existing session guard function owner and execute grants"
+        ]
+      }
     }
   ]
 }

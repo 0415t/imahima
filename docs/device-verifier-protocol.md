@@ -331,6 +331,8 @@ Migration `20261201000000_notification_delivery_authorization.sql` replaces the 
 
 Member-free uses the original event timestamp and chat uses the stored message creation time. Free-end uses the claim's original creation time and also excludes managed generations created after the opening of the five-minute window. This conservative bound prevents a delayed first claim from sending to a generation opened inside that window. Legacy recipients keep their existing eligibility.
 
+Migration 36 records the generation start after acquiring the session lock and confirming that the Auth session is live. The recorded time can precede commit. Reopening or fencing an existing generation preserves its original timestamp.
+
 The transaction finishes before Expo HTTP starts. A fence blocks authorizations that occur after it commits. Delivery already authorized before the fence can still reach Expo. Expo acceptance does not guarantee delivery, and an interrupted worker may retry with a new lease.
 
 Phase 6 still needs isolated fault injection for all three workers: a lost database authorization reply, lease expiration and reacquisition, and account switching while a delivery is in progress. The existing suite covers fences between claim and authorization, stale lease rejection, multiple pages and stale Expo tickets after registration updates.

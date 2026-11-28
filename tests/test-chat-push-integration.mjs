@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { Agent, request as httpRequest } from 'node:http';
 import { test } from 'node:test';
 import { stopIssue36Server } from './helpers/issue36-process.mjs';
@@ -76,8 +77,10 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
       const session=JSON.parse(Buffer.from(jwt.split('.')[1],'base64url')).session_id;
       const generation=stack.query(`INSERT INTO push_private.installations(installation_id,public_key)
         VALUES ('${installation}',decode('04','hex'));
-        INSERT INTO push_private.installation_bindings(installation_id,user_id,session_id,created_at)
-        VALUES ('${installation}','${recipient.id}','${session}',clock_timestamp()-interval '${age} minutes') RETURNING generation;`);
+        INSERT INTO push_private.installation_bindings(installation_id,user_id,session_id)
+        VALUES ('${installation}','${recipient.id}','${session}') RETURNING generation;
+        UPDATE push_private.installation_bindings SET created_at=created_at-interval '${age} minutes'
+        WHERE installation_id='${installation}' AND ${age}>0;`);
       assert.match(generation,/^[0-9]+$/);
       stack.query(`BEGIN; SET LOCAL ROLE postgres;
         INSERT INTO public.user_device_tokens(id,user_id,expo_push_token,platform,installation_id,generation,registration_revision)
@@ -500,6 +503,103 @@ test('Real Supabase and Express notification workers to mocked Expo', {timeout:4
             OR id::text LIKE 'ffffffff-ffff-4fff-8fff-%'; COMMIT;`);
       });
     }
+    await runCase('generation lock wait crosses the delivery cutoff for all three notification types',async()=>{
+      for(const name of ['cutoffSender','cutoffRecipient']) await actor(name);
+      const recipient=auth.cutoffRecipient;
+      const group=await room('cutoffSender','Generation cutoff');
+      await join('cutoffRecipient',group);
+      await setFree('cutoffRecipient',true);
+
+      const asRole=(role,sql)=>stack.query(`BEGIN; SET LOCAL ROLE ${role}; ${sql}; COMMIT;`);
+      const proof=()=>`decode('${randomBytes(32).toString('hex')}','hex')`;
+      const challenge=(installation,purpose,digest)=>asRole('imahima_device_verifier',
+        `SELECT push_private.issue_bounded_device_challenge('${installation}',1,'${purpose}',${digest})`);
+      const waiting=randomUUID();
+      stack.query(`INSERT INTO push_private.installations(installation_id,public_key)
+        VALUES ('${waiting}',decode('04','hex'));`);
+      const enrollment=proof();
+      challenge(waiting,'enroll',enrollment);
+      const open=digest=>`SELECT push_private.open_device_generation(
+        '${waiting}','${recipient.id}','${recipient.session}',1,${digest})`;
+      function sqlSession() {
+        const child=stack.openSqlSession();
+        const result={child,stdout:'',done:once(child,'close')};
+        child.stdout.on('data',chunk=>{ result.stdout+=chunk; });
+        child.stdin.on('error',()=>{});
+        return result;
+      }
+      const holder=sqlSession(), pending=sqlSession();
+      const name='issue47-cutoff-'+randomUUID();
+      let claims, generation;
+      try {
+        holder.child.stdin.write(`BEGIN; SELECT pg_backend_pid();
+          SELECT push_private.lock_device_session('${recipient.session}');\n\\echo lock-held\n`);
+        await waitFor(()=>holder.stdout.includes('lock-held'),'Auth session lock held',signal);
+        const pid=Number(holder.stdout.match(/^\d+$/m)?.[0]);
+        assert.ok(Number.isSafeInteger(pid)&&pid>0);
+        pending.child.stdin.end(`SET application_name='${name}'; BEGIN; SET LOCAL ROLE imahima_device_verifier;
+          ${open(enrollment)}; COMMIT;\n`);
+        const waitingOnSession=`FROM pg_stat_activity
+          WHERE application_name='${name}' AND wait_event='advisory' AND ${pid}=ANY(pg_blocking_pids(pid))`;
+        await waitFor(()=>stack.query(`SELECT EXISTS (SELECT 1 ${waitingOnSession});`)==='t',
+          'generation enrollment blocked on the Auth session lock',signal);
+
+        // Create all three event boundaries while the generation insert is blocked.
+        stack.query(`UPDATE public.profiles SET free_until=clock_timestamp()+interval '5 minutes' WHERE id='${recipient.id}';`);
+        await setFree('cutoffSender',true);
+        const messageId=messageKey(await send(group,'cutoff boundary',randomUUID(),201,'cutoffSender'));
+        const freeEnd=JSON.parse(asRole('service_role',`SELECT row_to_json(c) FROM public.claim_free_end_notifications() c
+          WHERE c.user_id='${recipient.id}'`));
+        const member=JSON.parse(asRole('service_role',`SELECT row_to_json(c) FROM public.claim_member_free_notifications() c
+          WHERE c.recipient_user_id='${recipient.id}'`));
+        const chat=JSON.parse(asRole('service_role',`SELECT row_to_json(c) FROM public.claim_chat_message_notifications() c
+          WHERE c.recipient_user_id='${recipient.id}' AND c.message_id='${messageId}'`));
+        claims=[['free_end',freeEnd.claim_id,freeEnd.lease_token],['member_free',member.notification_id,member.lease_token],
+          ['chat_message',chat.notification_id,chat.lease_token]];
+        const boundaries=`SELECT min(event_time) FROM (
+          SELECT least(created_at,free_until-interval '5 minutes') AS event_time FROM public.free_end_notification_claims
+            WHERE id='${freeEnd.claim_id}'
+          UNION ALL SELECT occurred_at FROM public.member_free_events WHERE id='${member.event_id}'
+          UNION ALL SELECT message_created_at FROM public.chat_message_notifications WHERE id='${chat.notification_id}'
+        ) events`;
+        assert.equal(stack.query(`SELECT query_start<(${boundaries}) ${waitingOnSession};`),'t');
+        assert.equal(stack.query(`SELECT count(*) FROM push_private.installation_bindings WHERE installation_id='${waiting}';`),'0');
+
+        holder.child.stdin.end('COMMIT;\n');
+        assert.equal((await holder.done)[0],0);
+        assert.equal((await pending.done)[0],0);
+        generation=pending.stdout.trim();
+        assert.match(generation,/^[1-9]\d*$/);
+      } finally {
+        for(const session of [holder,pending]) if(session.child.exitCode===null) session.child.kill();
+        await Promise.allSettled([holder.done,pending.done]);
+      }
+
+      const registration=proof();
+      challenge(waiting,'register',registration);
+      const registered=JSON.parse(asRole('imahima_device_verifier',`SELECT push_private.register_device_v2(
+        '${waiting}','${recipient.id}','${recipient.session}',${generation},'${randomUUID()}',1,${registration},'${makeToken()}','android')`));
+      assert.equal(registered.registered,true);
+      await managed(recipient,0);
+      for(const [kind,id,lease] of claims) {
+        const actual=JSON.parse(asRole('service_role',
+          `SELECT public.authorize_notification_delivery('${kind}','${id}','${lease}')`));
+        assert.equal(actual.eligible,true,kind);
+        assert.deepEqual(actual.targets.map(target=>target.installationId),[recipient.installation],kind);
+      }
+      const created=()=>stack.query(`SELECT created_at FROM push_private.installation_bindings WHERE installation_id='${waiting}';`);
+      const original=created();
+      const repeat=proof();
+      challenge(waiting,'enroll',repeat);
+      assert.equal(asRole('imahima_device_verifier',open(repeat)),generation);
+      assert.equal(created(),original);
+      const fence=proof();
+      challenge(waiting,'fence',fence);
+      const fenced=JSON.parse(asRole('imahima_device_verifier',`SELECT push_private.fence_device_registration(
+        '${waiting}','${recipient.id}','${recipient.session}',${generation},'${randomUUID()}',1,${fence})`));
+      assert.equal(fenced.fenced,true);
+      assert.equal(created(),original);
+    });
   } finally {
     directAgent.destroy();
     const results=await Promise.all(servers.map(({child,done,ended})=>stopIssue36Server(child,done,ended)));
