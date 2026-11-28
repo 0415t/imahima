@@ -174,52 +174,20 @@ Content-Type: application/json
 
 無期限ONの成功時は `{ "is_free": true, "free_until": null }` が返る。
 
-## Send a test push notification
+## Explicit integration tests
 
-Apply `supabase/migrations/20261017000000_create_user_device_tokens.sql` and sign in on a physical device so the Expo Push Token is stored in `user_device_tokens` before using the endpoint.
+`npm test` runs the offline tests. The integration commands below run on demand.
 
-```http
-POST /notifications/test
-Authorization: ****** access token>
-```
-
-The server validates the access token with Supabase Auth, fetches only the authenticated user's device tokens, and sends a fixed test notification via the Expo Push API. The request body cannot specify a destination user or push token.
-
-- `200 { "sent": 1 }` — accepted by the Expo Push API (push ticket `status: "ok"`)
-- `200 { "sent": 0, "message": "No registered devices" }` — no registered devices
-- `401` — missing or invalid access token
-- `429` — rate limited (one successful test notification per user per minute; failed sends and users without devices do not consume the limit)
-- `502` — failed to send to the Expo Push API
-
-Tokens reported as `DeviceNotRegistered` in push tickets are deleted from `user_device_tokens`. Set `EXPO_ACCESS_TOKEN` in `server/.env` to authenticate against the Expo Push API (optional but recommended). Never expose it to the Expo app.
-
-**Known limitation / future work:** delivery is only confirmed at the push-ticket stage. A ticket `status: "ok"` means the Expo Push API accepted the notification, not that the device received it. Delayed verification via push receipts (`getPushNotificationReceiptsAsync`) and cleanup of tokens that fail at the delivery stage are future work.
-
-Run the endpoint tests without connecting to Supabase or Expo:
-
-```powershell
-npm run test:notifications
-```
-
-## Explicit integration and live push tests
-
-`npm test` runs the tests under `tests/`. The following scripts live under
-`integration/` and run only when explicitly selected. Each command loads `.env.test`.
-
-- `npm run test:integration:extend`: requires the API on `localhost:3000`, Supabase
+- `npm run test:integration:extend`: loads `.env.test` and requires the API on `localhost:3000`, Supabase
   app credentials (`EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`),
   `TEST_EMAIL`, `TEST_PASSWORD`, and `ALLOWED_TEST_EMAILS`. The test account must
   initially be OFF with `free_until: null`.
-- `npm run test:integration:free-end`: requires the dedicated local Supabase on
-  port 55321 with migrations applied, `SUPABASE_URL`, and
-  `SUPABASE_SERVICE_ROLE_KEY`. It changes DB fixtures and mocks Expo Push delivery.
-- `npm run test:integration:push`: requires the API on `localhost:3000`, Supabase
-  app credentials, `TEST_EMAIL`, `TEST_PASSWORD`, and registered device tokens.
-  This command sends a real push notification to the test user's devices.
+- `npm run test:integration:free-end` runs the three notification workers against
+  a dedicated Docker stack with simulated Expo delivery.
 
-The existing `npm run test:login` and `npm run test:persistence` commands also run
-scripts under `integration/`, outside normal test discovery. They continue to load
-`.env` via dotenv and require the Supabase app credentials and test account above.
+`npm run test:login` uses a dedicated Docker stack and a test key to verify the
+managed Auth and device recovery flow. `npm run test:persistence` still loads
+`.env` and checks Supabase SDK session persistence independently.
 
 ## Group management MVP
 
@@ -365,3 +333,10 @@ An authenticated end-to-end test on a disposable Supabase instance with exact
 live timer functions and notification jobs, plus a production policy/dependency
 audit, remain release prerequisites. The fixture tests model confirmed output
 states; they do not execute or replace the production timer functions.
+
+
+### MVP controlled-test Push restriction
+
+The normal logout client requires migration 37 (all prior migrations in ledger order). Auth normal success is the client completion evidence; the signed cleanup ack is not a DB assertion of Auth absence. Special automatic recovery endpoints are inactive by default. Dedicated verifier/recovery connections are still required for registration and ack; notification extension remains 503 if its dedicated connection is absent.
+
+Until review finding #31 is resolved, names/body-bearing Push is restricted to operator-managed test destinations: explicitly set `PUSH_DELIVERY_MODE=controlled-test`, matching `PUSH_CONTROLLED_SUPABASE_URL`, and comma-separated SHA-256 token fingerprints in `PUSH_CONTROLLED_TOKEN_SHA256`. Never use third-party tokens. Missing/invalid settings block all normal Push. Public deployment must use `NODE_ENV=production` and remove test settings; production denies even a copied allowlist. Keep all three worker enable flags off until DB/version/config checks pass. See the authoritative MVP section of `docs/device-verifier-protocol.md` for deploy order and limitations.

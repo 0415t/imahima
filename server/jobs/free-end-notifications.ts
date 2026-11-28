@@ -7,6 +7,7 @@
 //   送信成功後〜sent記録前にプロセスが停止すると、lease期限切れ後の再試行で重複送信しうる。
 
 import { PushSendError } from '../services/notifications';
+import type { AuthorizedSend } from '../services/notification-delivery';
 
 export type FreeEndNotificationClaim = {
   claimId: string;
@@ -28,8 +29,9 @@ export type FreeEndNotificationDependencies = {
     claimId: string,
     leaseToken: string
   ) => Promise<{ validation: FreeEndNotificationValidation | null; error: unknown | null }>;
-  getDeviceTokens: (userId: string) => Promise<{ tokens: string[]; error: unknown | null }>;
-  sendPushNotifications: (
+  sendAuthorized?: AuthorizedSend;
+  getDeviceTokens?: (userId: string) => Promise<{ tokens: string[]; error: unknown | null }>;
+  sendPushNotifications?: (
     tokens: string[],
     message: { title: string; body: string; data?: Record<string, unknown>; categoryId?: string }
   ) => Promise<{ sent: number; error: unknown | null }>;
@@ -106,7 +108,8 @@ export function createFreeEndNotificationPoller(
       return;
     }
 
-    const { tokens, error: tokensError } = await dependencies.getDeviceTokens(claim.userId);
+    const { tokens, error: tokensError } = dependencies.sendAuthorized
+      ? { tokens: [], error: null } : await dependencies.getDeviceTokens!(claim.userId);
 
     if (tokensError) {
       console.error('[free-end-notifications] device tokens fetch failed:', tokensError);
@@ -119,22 +122,40 @@ export function createFreeEndNotificationPoller(
       return;
     }
 
-    if (tokens.length === 0) {
+    if (!dependencies.sendAuthorized && tokens.length === 0) {
       // 受付成功はないため、送信対象なしとして終了する。
       await dependencies.completeNotification(claim.claimId, claim.leaseToken, 'cancelled');
       return;
     }
 
-    const { sent, error: sendError } = await dependencies.sendPushNotifications(tokens, {
+    const expiration = Math.floor(Date.parse(claim.freeUntil) / 1000);
+    if (dependencies.sendAuthorized && (!Number.isSafeInteger(expiration) || expiration <= 0)) {
+      await dependencies.completeNotification(claim.claimId, claim.leaseToken, 'cancelled', 'Invalid notification deadline');
+      return;
+    }
+    const outbound = {
       title: message.title,
       body: message.body,
       categoryId: 'free_end',
+      ...(dependencies.sendAuthorized ? { expiration } : {}),
       data: {
         type: 'free_end',
         expectedFreeUntil: claim.freeUntil,
         notificationId: claim.claimId,
       },
-    });
+    };
+    let sent = 0;
+    let sendError: unknown = null;
+    try {
+      const result = dependencies.sendAuthorized
+        ? await dependencies.sendAuthorized(claim.claimId, claim.leaseToken, outbound, undefined,
+          count => { sent = Math.max(sent, count); })
+        : await dependencies.sendPushNotifications!(tokens, outbound);
+      sent = Math.max(sent, result.sent);
+      sendError = result.error;
+    } catch (error) {
+      sendError = error;
+    }
 
     if (sent === 0) {
       console.error('[free-end-notifications] push send failed:', sendError);

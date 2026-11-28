@@ -1,10 +1,10 @@
-import { registerForPushNotificationsAsync, registerNotificationCategories, saveDeviceToken } from '@/lib/push-notifications';
+import { registerForPushNotificationsAsync, registerNotificationCategories } from '@/lib/push-notifications';
 import type { Session } from '@supabase/supabase-js';
 import * as Notifications from 'expo-notifications';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet } from 'react-native';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { ActivityIndicator, Button, Platform, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
@@ -12,6 +12,8 @@ import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 // バックグラウンドタスクの定義・登録のためモジュールスコープで読み込む
 import { handleFreeEndAction } from '@/lib/notification-task';
+import { logoutFlow } from '@/lib/logout';
+import { jwtSessionId } from '@/lib/session-identity';
 import { hasSupabaseConfig, supabase } from '@/lib/supabase';
 
 export const unstable_settings = {
@@ -22,51 +24,66 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(hasSupabaseConfig && supabase));
-  const [authError, setAuthError] = useState<string | null>(null);
-  const userId = session?.user.id;
+  const blocked = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.isBlocked, logoutFlow.isBlocked);
+  const logoutError = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.getError, logoutFlow.getError);
+  const [checkedSession, setCheckedSession] = useState<{ identity: string | Session | null; revision: number } | null>(null);
+  const [storageReadFailed, setStorageReadFailed] = useState(false);
+  const [authReadFailed, setAuthReadFailed] = useState(false);
+  const [storageRetry, setStorageRetry] = useState(0);
+  const sessionUser = session?.user.id;
+  const sessionId = session ? jwtSessionId(session.access_token) : undefined;
+  const identity = sessionId ? `${sessionUser}:${sessionId}` : session;
+  const revision = useSyncExternalStore(logoutFlow.subscribe, logoutFlow.revision, logoutFlow.revision);
+  const authenticating = logoutFlow.isAuthenticating();
+  const authorized = !supabase || (!blocked && !storageReadFailed && !authReadFailed
+    && checkedSession?.identity === identity && (!session || (!authenticating && checkedSession.revision === revision)));
+  const userId = authorized ? sessionUser : undefined;
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase) {
       return;
     }
 
-    let isMounted = true;
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (isMounted) {
-        setSession(nextSession);
-        setAuthError(null);
-        setIsLoading(false);
-      }
+    let active = true;
+    let authRevision = 0;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!active) return;
+      if (event !== 'INITIAL_SESSION') authRevision++;
+      setSession(nextSession);
+      setIsLoading(false);
     });
+    const started = authRevision;
+    // INITIAL_SESSION is not guaranteed when the SDK's storage read rejects.
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!active || started !== authRevision) return;
+      if (error) throw error;
+      setSession(data.session);
+      setAuthReadFailed(false);
+    }).catch(() => {
+      if (!active || started !== authRevision) return;
+      setCheckedSession(null);
+      setAuthReadFailed(true);
+    }).finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; subscription.unsubscribe(); };
+  }, [storageRetry]);
 
-    void supabase.auth
-      .getSession()
-      .then(({ data, error }) => {
-        if (!isMounted) {
-          return;
-        }
-
-        if (error) {
-          setAuthError(error.message);
-        } else {
-          setSession(data.session);
-        }
-        setIsLoading(false);
-      })
-      .catch((error: unknown) => {
-        if (isMounted) {
-          setAuthError(error instanceof Error ? error.message : String(error));
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+  useEffect(() => {
+    if (isLoading || authReadFailed || blocked || authenticating || !supabase) return;
+    let active = true;
+    void logoutFlow.sessionAvailability().then(async availability => {
+      if (!active) return;
+      if (availability === 'ready' && session) await logoutFlow.prepareSession(session);
+      if (!active) return;
+      setStorageReadFailed(availability === 'read-failed');
+      setCheckedSession(availability === 'ready' ? { identity, revision } : null);
+      if (availability === 'logout-pending') void logoutFlow.signOut();
+    }).catch(() => {
+      if (!active) return;
+      setCheckedSession(null);
+      setStorageReadFailed(true);
+    });
+    return () => { active = false; };
+  }, [authenticating, authReadFailed, blocked, isLoading, revision, identity, session, storageRetry]);
 
   useEffect(() => {
     void registerNotificationCategories().catch((error: unknown) => {
@@ -80,9 +97,10 @@ export default function RootLayout() {
     const processResponse = async (response: Notifications.NotificationResponse) => {
       if (!isActive) return;
       const result = await handleFreeEndAction(response);
-      if (isActive && result && (result.ok || result.reason === 'conflict')) {
+      if (isActive && logoutFlow.revision() === revision && result && (result.ok || result.reason === 'conflict' || result.reason === 'not-authenticated')) {
         const last = await Notifications.getLastNotificationResponseAsync();
-        if (last?.notification.request.identifier === response.notification.request.identifier &&
+        if (isActive && logoutFlow.revision() === revision &&
+            last?.notification.request.identifier === response.notification.request.identifier &&
             last.actionIdentifier === response.actionIdentifier) {
           await Notifications.clearLastNotificationResponseAsync();
         }
@@ -101,7 +119,7 @@ export default function RootLayout() {
       isActive = false;
       subscription.remove();
     };
-  }, [userId]);
+  }, [userId, identity, revision]);
 
   useEffect(() => {
     if (!userId) {
@@ -119,10 +137,7 @@ export default function RootLayout() {
           return;
         }
 
-        const { error } = await saveDeviceToken(token);
-        if (error) {
-          throw error;
-        }
+        await logoutFlow.save(userId, token);
       } catch (error: unknown) {
         console.log('[push] 取得・保存に失敗しました:', error);
 
@@ -143,24 +158,30 @@ export default function RootLayout() {
         clearTimeout(retryTimeout);
       }
     };
-  }, [userId]);
+  }, [userId, identity, revision]);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      {isLoading ? (
+      {blocked && logoutError ? (
+        <ThemedView style={styles.loading}>
+          <ThemedText accessibilityRole="alert">ログアウトを完了できませんでした。</ThemedText>
+          <Button title="再試行" onPress={() => { void logoutFlow.signOut(); }} />
+        </ThemedView>
+      ) : (authReadFailed || storageReadFailed) && !blocked ? (
+        <ThemedView style={styles.loading}>
+          <ThemedText accessibilityRole="alert">ログイン状態を確認できませんでした。</ThemedText>
+          <Button title="再確認" onPress={() => { setIsLoading(true); setStorageRetry(attempt => attempt + 1); }} />
+        </ThemedView>
+      ) : isLoading || !authorized || blocked ? (
         <ThemedView style={styles.loading}>
           <ActivityIndicator size="large" />
         </ThemedView>
-      ) : authError ? (
-        <ThemedView style={styles.loading}>
-          <ThemedText>ログイン状態を確認できませんでした: {authError}</ThemedText>
-        </ThemedView>
       ) : (
-        <Stack>
+        <Stack key={session ? `${sessionUser}:${sessionId ?? revision}` : 'signed-out'}>
           <Stack.Protected guard={!session}>
             <Stack.Screen name="sign-in" options={{ headerShown: false }} />
           </Stack.Protected>
-          <Stack.Protected guard={Boolean(session)}>
+          <Stack.Protected guard={Boolean(userId)}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack.Protected>

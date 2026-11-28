@@ -14,7 +14,7 @@ test('dedicated local Auth and availability API integration', { timeout: 60000 }
       headers: { apikey: key, Authorization: `Bearer ${token ?? key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
       body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await response.text();
-    return { status: response.status, body: text ? JSON.parse(text) : null };
+    return { status: response.status, body: text && response.headers.get("content-type")?.includes("application/json") ? JSON.parse(text) : null };
   }
   async function rest(table, query = '') {
     const response = await request(config.url, `/rest/v1/${table}${query}`);
@@ -106,9 +106,9 @@ test('dedicated local Auth and availability API integration', { timeout: 60000 }
     report.checks.push('A re-ON: unchanged event/outbox and ON period');
     const manual = await request(config.api, '/notifications/test', 'POST', {}, sessions.A);
     report.responses.manualPush = manual;
-    assert.equal(manual.status, 503);
+    assert.equal(manual.status, 404);
     assert.deepEqual(await snapshot(), afterRepeat);
-    report.checks.push('manual push: 503; no DB change; workers not loaded');
+    report.checks.push('manual push: 404; no DB change; workers not loaded');
     report.db = afterRepeat;
     report.passed = true;
   } finally {

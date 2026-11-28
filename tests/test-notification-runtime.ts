@@ -16,7 +16,7 @@ for (const platform of ['ios', 'android', 'web']) {
         },
       },
       'react-native': { Platform: { OS: platform } },
-      './notification-task': { EXTEND_30_ACTION: 'extend_30', FREE_END_CATEGORY: 'free_end' },
+      './free-end-action': { EXTEND_30_ACTION: 'extend_30', FREE_END_CATEGORY: 'free_end' },
       './supabase': {},
     });
     await module.registerNotificationCategories();
@@ -53,8 +53,9 @@ for (const timing of ['simultaneous', 'after-completion']) {
       client('/profiles/me/is-free/extend-from-notification', { claim_id: id }));
     const effects: (() => void | (() => void))[] = [];
     let stateIndex = 0;
-    const state = [{ user: { id: 'self' } }, false, null];
+    const state = [{ user: { id: 'self' } }, false, { userId: 'self', revision: 0 }];
     const react = { useState: () => [state[stateIndex++], () => {}],
+      useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useEffect(effect: typeof effects[number]) { effects.push(effect); }, createElement() { return null; } };
     const root = loadSource<{ default(): void }>('app/_layout.tsx', {
       '@/lib/push-notifications': {}, '@supabase/supabase-js': {},
@@ -70,10 +71,13 @@ for (const timing of ['simultaneous', 'after-completion']) {
       'react-native-reanimated': {}, '@/components/themed-text': {}, '@/components/themed-view': {},
       '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
       '@/lib/notification-task': { handleFreeEndAction }, '@/lib/supabase': {},
+      '@/lib/logout': { logoutFlow: { revision: () => 0, isBlocked: () => false,
+        isAuthenticating: () => false, getError: () => null } },
+      '@/lib/session-identity': { jwtSessionId: () => 'test-session' },
     }, { React: react });
     root.default();
     // Exercise the actual root effect that installs the listener and reads the launch response.
-    const cleanup = effects[2]();
+    const cleanup = effects[3]();
     try {
       if (timing === 'after-completion') await setImmediate();
       listener(response);
@@ -85,6 +89,40 @@ for (const timing of ['simultaneous', 'after-completion']) {
     } finally { if (typeof cleanup === 'function') cleanup(); }
   });
 }
+
+it('keeps sign-in mounted and gates authenticated screens until preparation succeeds', () => {
+  const session = { user: { id: 'self' } };
+  for (const [current, authenticating, prepared, expected] of [
+    [null, true, false, true],
+    [session, true, false, false],
+    [session, false, false, false],
+    [session, false, true, true],
+  ] as const) {
+    let slot = 0;
+    let stackMounted = false;
+    const checked = prepared ? { identity: 'self:test-session', revision: 1 } : { identity: null, revision: 0 };
+    const states = [current, false, checked, false, 0];
+    const Stack = { Protected: 'protected', Screen: 'screen' };
+    const react = {
+      useState: () => [states[slot++], () => {}],
+      useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+      useEffect() {},
+      createElement(type: unknown) { stackMounted ||= type === Stack; },
+    };
+    const root = loadSource<{ default(): void }>('app/_layout.tsx', {
+      react, 'expo-router': { Stack }, 'expo-notifications': {}, 'expo-status-bar': {},
+      'react-native': { StyleSheet: { create: (value: unknown) => value } }, 'react-native-reanimated': {},
+      '@/lib/push-notifications': {}, '@/lib/supabase': { supabase: {} }, '@/lib/notification-task': {},
+      '@/lib/session-identity': { jwtSessionId: () => 'test-session' },
+      '@/lib/logout': { logoutFlow: { revision: () => 1, isBlocked: () => false,
+        isAuthenticating: () => authenticating, getError: () => null } },
+      '@/components/themed-text': {}, '@/components/themed-view': {},
+      '@/hooks/use-color-scheme': { useColorScheme: () => 'light' },
+    }, { React: react });
+    root.default();
+    assert.equal(stackMounted, expected);
+  }
+});
 
 for (const result of [
   { ok: true, freeUntil: '2026-11-17T12:00:00.000Z' },
@@ -110,7 +148,11 @@ for (const result of [
       actionIdentifier: 'extend_30',
       notification: { request: { content: { data: { type: 'free_end', notificationId: 'claim-1' } } } },
     } });
-    assert.equal(outcome, result.ok ? 'new' : result.reason === 'conflict' ? 'none' : 'failed');
+    assert.equal(outcome, result.ok ? 'new' : result.reason === 'server-error' ? 'failed' : 'none');
+    if (!result.ok && result.reason === 'not-authenticated') {
+      assert.deepEqual(bodies, []);
+      return;
+    }
     assert.equal(bodies.length, 1);
     assert.equal(bodies[0], result.ok ? '暇状態を30分延長しました。' : result.reason === 'conflict'
       ? 'アプリを開いて現在の暇状態を確認してください。'

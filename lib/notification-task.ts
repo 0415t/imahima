@@ -36,6 +36,9 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
         if (!result) {
             return Notifications.BackgroundNotificationTaskResult.NoData;
         }
+        if (!result.ok && result.reason === 'not-authenticated') {
+            return Notifications.BackgroundNotificationTaskResult.NoData;
+        }
 
         // DB側でclaim照合とfree_until一致判定を行うため、
         // フォアグラウンドリスナーと二重に処理されても延長は1回のみ

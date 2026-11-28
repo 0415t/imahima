@@ -1,5 +1,6 @@
 import { PushSendError, type PushMessage, type SendPushResult } from '../services/notifications';
 import { withRequestTimeout } from './request-timeout';
+import type { AuthorizedSend } from '../services/notification-delivery';
 
 export type ChatMessageClaim = {
   notificationId: string; roomId: string; messageId: string; recipientUserId: string; leaseToken: string;
@@ -11,8 +12,9 @@ export type ChatMessageValidation = {
 export type ChatMessageNotificationDependencies = {
   claimNotifications: (signal: AbortSignal) => Promise<{ claims: ChatMessageClaim[]; error: unknown | null }>;
   validateNotification: (id: string, lease: string, signal: AbortSignal) => Promise<{ validation: ChatMessageValidation | null; error: unknown | null }>;
-  getDeviceTokens: (userId: string, signal: AbortSignal) => Promise<{ tokens: string[]; error: unknown | null }>;
-  sendPushNotifications: (tokens: string[], message: PushMessage, signal?: AbortSignal,
+  sendAuthorized?: AuthorizedSend;
+  getDeviceTokens?: (userId: string, signal: AbortSignal) => Promise<{ tokens: string[]; error: unknown | null }>;
+  sendPushNotifications?: (tokens: string[], message: PushMessage, signal?: AbortSignal,
     onAccepted?: (confirmedCount: number) => void) => Promise<SendPushResult>;
   completeNotification: (id: string, lease: string, status: 'sent' | 'failed' | 'cancelled', reason: string,
     acceptedCount: number, signal: AbortSignal) => Promise<{ completed: boolean; error: unknown | null }>;
@@ -88,9 +90,13 @@ export function createChatMessageNotificationPoller(deps: ChatMessageNotificatio
     let accepted = 0;
     try {
       if (!await validate(c)) return;
-      const { tokens, error } = await request(signal => deps.getDeviceTokens(c.recipientUserId, signal));
-      if (error) { await complete(c, 'failed', 'Device lookup failed'); return; }
-      if (!tokens.length) { await complete(c, 'cancelled', 'No registered devices'); return; }
+      let tokens: string[] = [];
+      if (!deps.sendAuthorized) {
+        const result = await request(signal => deps.getDeviceTokens!(c.recipientUserId, signal));
+        if (result.error) { await complete(c, 'failed', 'Device lookup failed'); return; }
+        if (!result.tokens.length) { await complete(c, 'cancelled', 'No registered devices'); return; }
+        tokens = result.tokens;
+      }
       if (stopped) return;
       const ready = await validate(c);
       if (!ready || stopped) return;
@@ -101,9 +107,12 @@ export function createChatMessageNotificationPoller(deps: ChatMessageNotificatio
       if (budget < 1) { await complete(c, 'cancelled', 'Deadline reached'); return; }
       const result = await withRequestTimeout(signal => {
         if (performance.now() >= ready.deadline) throw new Error('Chat notification expired');
-        return deps.sendPushNotifications([...new Set(tokens)], message, signal, count => {
+        const onAccepted = (count: number) => {
           if (!signal.aborted && performance.now() < ready.deadline && Number.isSafeInteger(count) && count > 0) accepted = Math.max(accepted, count);
-        });
+        };
+        return deps.sendAuthorized
+          ? deps.sendAuthorized(c.notificationId, c.leaseToken, message, signal, onAccepted)
+          : deps.sendPushNotifications!([...new Set(tokens)], message, signal, onAccepted);
       }, budget, shutdown.signal);
       if (performance.now() < ready.deadline) accepted = Math.max(accepted, result.sent);
       const reason = `temporary=${result.failures.temporary}, permanent=${result.failures.permanent}, unknown=${result.failures.unknown}`;

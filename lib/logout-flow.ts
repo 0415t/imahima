@@ -1,0 +1,196 @@
+import { jwtSessionId } from './session-identity';
+import type { createManagedLogout } from './managed-logout';
+
+export type LogoutSession = { user: { id: string }; access_token: string };
+
+type Storage = {
+    getItem(key: string): Promise<string | null>;
+    setItem(key: string, value: string): Promise<void>;
+    removeItem(key: string): Promise<void>;
+};
+
+export function createLogoutFlow(deps: {
+    storage: Storage;
+    prefix: string;
+    session(): Promise<LogoutSession | null>;
+    managed: ReturnType<typeof createManagedLogout>;
+}) {
+    const cutoffKey = deps.prefix + ':notification-cutoff';
+    const notificationBlockKey = deps.prefix + ':notification-auth-pending';
+    const listeners = new Set<() => void>();
+    let blocked = false;
+    let logoutError: Error | null = null;
+    let revision = 0;
+    let logout: Promise<{ error: Error | null }> | undefined;
+    let registration: Promise<void> | undefined;
+    let authenticating = false;
+    let provisioning: { session: LogoutSession; promise: Promise<void> } | undefined;
+
+    function notify() {
+        for (const listener of listeners) {
+            try { listener(); } catch { /* UI observers cannot interrupt safety transitions. */ }
+        }
+    }
+
+    function setBlocked(value: boolean) {
+        if (blocked === value) return;
+        blocked = value;
+        revision++;
+        notify();
+    }
+
+    async function sessionAvailability(): Promise<'ready' | 'logout-pending' | 'read-failed'> {
+        if (blocked) return 'logout-pending';
+        const started = revision;
+        try {
+            const managed = await deps.managed.availability();
+            if (blocked || started !== revision) return 'read-failed';
+            return managed;
+        } catch {
+            return 'read-failed';
+        }
+    }
+
+    async function canUseSession() {
+        return await sessionAvailability() === 'ready';
+    }
+
+    async function registrationAvailable() {
+        const started = revision;
+        const state = await sessionAvailability();
+        if (state === 'read-failed' && started === revision && !blocked && !authenticating) {
+            throw new Error('Push registration state unavailable');
+        }
+        return state === 'ready';
+    }
+
+    async function canUseNotification(receivedAt: number | undefined) {
+        try {
+            const started = revision;
+            if (authenticating || !await canUseSession() || !await deps.managed.notificationReady()) return false;
+            if (await deps.storage.getItem(notificationBlockKey) !== null) return false;
+            const raw = await deps.storage.getItem(cutoffKey);
+            const cutoff = raw === null ? null : Number(raw);
+            if (cutoff !== null && (!Number.isSafeInteger(cutoff) || cutoff <= 0)) return false;
+            return (cutoff === null || (receivedAt !== undefined && receivedAt > cutoff))
+                && await deps.storage.getItem(notificationBlockKey) === null
+                && await canUseSession() && !authenticating && started === revision;
+        } catch {
+            return false;
+        }
+    }
+
+    async function advanceCutoff() {
+        const raw = await deps.storage.getItem(cutoffKey);
+        const previous = raw === null ? 0 : Number(raw);
+        // A fresh persisted completion boundary supersedes a corrupt timestamp.
+        // No notification is admitted until this write succeeds.
+        const time = Math.max(Date.now(), Number.isSafeInteger(previous) && previous > 0 ? previous : 0);
+        await deps.storage.setItem(cutoffKey, String(time));
+    }
+
+    async function authenticate<T>(operation: () => PromiseLike<T>): Promise<T> {
+        if (authenticating) throw new Error('認証処理を実行中です');
+        authenticating = true;
+        revision++;
+        notify();
+        try {
+            if (!await canUseSession()) throw new Error('ログアウト処理が完了していません');
+            if (provisioning || await deps.session()) throw new Error('Sign out before starting another session');
+            await deps.managed.prepareAuthentication();
+            const pending = await deps.storage.getItem(notificationBlockKey);
+            if (pending !== null && pending !== 'pending') throw new Error('Invalid notification block');
+            if (pending === null) await deps.storage.setItem(notificationBlockKey, 'pending');
+            return await operation();
+        } finally {
+            authenticating = false;
+            revision++;
+            notify();
+        }
+    }
+
+    function sameSession(current: LogoutSession | null, expected: LogoutSession) {
+        const id = jwtSessionId(expected.access_token);
+        return Boolean(id && current?.user.id === expected.user.id && jwtSessionId(current.access_token) === id);
+    }
+
+    async function prepareSession(session: LogoutSession): Promise<void> {
+        if (authenticating) throw new Error('Authentication in progress');
+        if (provisioning) {
+            if (!sameSession(provisioning.session, session)) throw new Error('Device session changed');
+            return provisioning.promise;
+        }
+        const promise = (async () => {
+            if (!await stillCurrent(session)) throw new Error('Device session changed');
+            await deps.managed.initialize(session, () => stillCurrent(session));
+            const pending = await deps.storage.getItem(notificationBlockKey);
+            if (pending !== null) {
+                if (pending !== 'pending') throw new Error('Invalid notification block');
+                if (!await stillCurrent(session)) throw new Error('Device session changed');
+                await advanceCutoff();
+                if (!await stillCurrent(session)) throw new Error('Device session changed');
+                await deps.storage.removeItem(notificationBlockKey);
+            }
+            if (!await stillCurrent(session)) throw new Error('Device session changed');
+        })().finally(() => { provisioning = undefined; });
+        provisioning = { session, promise };
+        return promise;
+    }
+
+    async function stillCurrent(session: LogoutSession, registering = false) {
+        const available = registering ? registrationAvailable : canUseSession;
+        if (!await available()) return false;
+        return sameSession(await deps.session(), session) && await available();
+    }
+
+    function save(userId: string, token: string): Promise<void> {
+        if (registration) {
+            const next = () => save(userId, token);
+            return registration.then(next, next);
+        }
+        registration = (async () => {
+            if (authenticating || !await registrationAvailable()) return;
+            const session = await deps.session();
+            if (session?.user.id !== userId || !await stillCurrent(session, true)) return;
+            await prepareSession(session);
+            if (!await stillCurrent(session, true)) return;
+            await deps.managed.save(session, token, () => stillCurrent(session, true));
+        })().finally(() => { registration = undefined; });
+        return registration;
+    }
+
+    function signOut() {
+        if (logout) return logout;
+        if (authenticating) return Promise.resolve({ error: new Error('認証処理を実行中です') });
+        logout = Promise.resolve().then(async () => {
+            await deps.managed.requestLogout();
+            await registration?.catch(() => {});
+            await provisioning?.promise.catch(() => {});
+            await deps.managed.finish(advanceCutoff);
+        }).then(() => {
+            setBlocked(false);
+            return { error: null };
+        }).catch((error: unknown) => {
+            logoutError = error instanceof Error ? error : new Error(String(error));
+            notify();
+            return { error: logoutError };
+        }).finally(() => { logout = undefined; });
+        const retrying = blocked;
+        logoutError = null;
+        setBlocked(true);
+        if (retrying) notify();
+        return logout;
+    }
+
+    return {
+        save, signOut, authenticate, prepareSession, canUseSession, sessionAvailability, canUseNotification,
+        revision: () => revision,
+        isBlocked: () => blocked,
+        isAuthenticating: () => authenticating,
+        getError: () => logoutError,
+        subscribe(listener: () => void) {
+            listeners.add(listener);
+            return () => { listeners.delete(listener); };
+        },
+    };
+}

@@ -1,10 +1,13 @@
-import express, { type ErrorRequestHandler } from 'express';
+import express, { type ErrorRequestHandler, type Router } from 'express';
 import { groupRouter, type GroupDependencies } from './groups';
 import { chatRouter, isChatPath, type ChatDependencies } from './chat';
 import { requestDeadline } from './timeouts';
 
 export type AvailabilityDependencies = {
   getUserId: (accessToken: string) => Promise<{ userId: string | null; error: unknown | null }>;
+  authenticateNotificationSession?: (accessToken: string) => Promise<{
+    userId: string | null; sessionId?: string; status: 200 | 401 | 503;
+  }>;
   toggleIsFree: (userId: string) => Promise<{ isFree: boolean | null; error: unknown | null }>;
   setIsFree: (
     userId: string,
@@ -16,39 +19,34 @@ export type AvailabilityDependencies = {
   ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
   extendIsFreeFromNotification: (
     userId: string,
-    claimId: string
-  ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null }>;
+    claimId: string,
+    sessionId?: string
+  ) => Promise<{ isFree: boolean | null; freeUntil: string | null; error: unknown | null; status?: 401 | 503 }>;
 };
-
-export type NotificationDependencies = {
-  getDeviceTokens: (userId: string) => Promise<{ tokens: string[]; error: unknown | null }>;
-  sendPushNotifications: (
-    tokens: string[],
-    message: { title: string; body: string }
-  ) => Promise<{ sent: number; error: unknown | null }>;
-};
-
-const TEST_NOTIFICATION_COOLDOWN_MS = 60_000;
 
 export function createApp(
   dependencies: AvailabilityDependencies,
-  notifications?: NotificationDependencies,
   groups?: GroupDependencies,
   chat?: ChatDependencies,
-  requestTimeoutMs?: number
+  requestTimeoutMs?: number,
+  deviceVerifier?: Router,
+  logoutRecovery?: Router
 ) {
   const app = express();
 
   app.use(requestDeadline(requestTimeoutMs));
+  app.use('/device-recovery/recovery', logoutRecovery ?? ((_request, response) => {
+    response.set('Cache-Control', 'no-store').status(503).json({ error: 'Logout recovery request failed' });
+  }));
+  if (deviceVerifier) app.use('/device-recovery', deviceVerifier);
   app.use(express.json());
   app.use((_request, response, next) => { if (!response.headersSent && !response.destroyed) next(); });
   if (chat) app.use('/groups', chatRouter(chat));
   if (groups) app.use('/groups', groupRouter(groups));
 
-  const lastTestNotificationAt = new Map<string, number>();
 
   app.get('/health', (_request, response) => {
-    response.json({ ok: true });
+    response.set('Cache-Control', 'no-store').set('Date', new Date().toUTCString()).json({ ok: true });
   });
 
   app.post('/profiles/me/is-free/toggle', async (request, response) => {
@@ -216,17 +214,23 @@ export function createApp(
     }
 
     try {
-      const { userId, error: authError } = await dependencies.getUserId(bearerToken);
-
-      if (authError || !userId) {
-        response.status(401).json({ error: 'Invalid or expired access token' });
+      const identity = await dependencies.authenticateNotificationSession?.(bearerToken);
+      if (identity?.status !== 200 || !identity.userId) {
+        const status = identity?.status === 401 ? 401 : 503;
+        response.status(status).json({ error: status === 401 ? 'Invalid or expired access token' : 'Session verification unavailable' });
         return;
       }
 
-      const { isFree, freeUntil, error: extendError } = await dependencies.extendIsFreeFromNotification(
-        userId,
-        claimId
+      const { isFree, freeUntil, error: extendError, status: extendStatus } = await dependencies.extendIsFreeFromNotification(
+        identity.userId,
+        claimId,
+        identity.sessionId
       );
+      if (extendStatus) {
+        response.status(extendStatus).json({ error: extendStatus === 401
+          ? 'Invalid or expired access token' : 'Session verification unavailable' });
+        return;
+      }
 
       if (extendError) {
         let errorMessage: string;
@@ -267,83 +271,6 @@ export function createApp(
     } catch (error) {
       console.error('profiles.is_free extend-from-notification request failed:', error);
       response.status(500).json({ error: 'Unable to extend availability' });
-    }
-  });
-
-  app.post('/notifications/test', async (request, response) => {
-    const authorization = request.get('authorization');
-    const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
-
-    if (!bearerToken) {
-      response.status(401).json({ error: 'Bearer token is required' });
-      return;
-    }
-
-    if (!notifications) {
-      response.status(503).json({ error: 'Notifications are not configured' });
-      return;
-    }
-
-    try {
-      const { userId, error: authError } = await dependencies.getUserId(bearerToken);
-
-      if (authError || !userId) {
-        response.status(401).json({ error: 'Invalid or expired access token' });
-        return;
-      }
-
-      // 認証済みユーザー単位のレート制限（連続送信防止）
-      const now = Date.now();
-      const lastSentAt = lastTestNotificationAt.get(userId);
-      if (lastSentAt !== undefined && now - lastSentAt < TEST_NOTIFICATION_COOLDOWN_MS) {
-        response.status(429).json({ error: 'Please wait before sending another test notification' });
-        return;
-      }
-
-      // 非同期のトークン取得前に予約し、同時リクエストの通過を防ぐ。
-      lastTestNotificationAt.set(userId, now);
-      const clearRateLimit = () => {
-        if (lastTestNotificationAt.get(userId) === now) {
-          lastTestNotificationAt.delete(userId);
-        }
-      };
-
-      try {
-        // 宛先は認証ユーザー自身のトークンのみ。ボディの宛先指定は一切受け付けない
-        const { tokens, error: tokensError } = await notifications.getDeviceTokens(userId);
-
-        if (tokensError) {
-          clearRateLimit();
-          console.error('device tokens fetch failed:', tokensError);
-          response.status(500).json({ error: 'Unable to fetch device tokens' });
-          return;
-        }
-
-        if (tokens.length === 0) {
-          clearRateLimit();
-          response.json({ sent: 0, message: 'No registered devices' });
-          return;
-        }
-
-        const { sent, error: sendError } = await notifications.sendPushNotifications(tokens, {
-          title: 'imahima テスト通知',
-          body: 'サーバーからのテスト通知です。',
-        });
-
-        if (sendError) {
-          clearRateLimit();
-          response.status(502).json({ error: 'Unable to send notification' });
-          return;
-        }
-
-        response.json({ sent });
-      } catch (error) {
-        clearRateLimit();
-        throw error;
-      }
-    } catch (error) {
-      console.error('test notification request failed:', error);
-      response.status(500).json({ error: 'Unable to send notification' });
     }
   });
 

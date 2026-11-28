@@ -398,6 +398,287 @@
           "public.profiles.free_period_id and group chat membership/events exist"
         ]
       }
+    },
+    {
+      "version": "20261125000000",
+      "name": "device_registration_recovery_foundation",
+      "file": "20261125000000_device_registration_recovery_foundation.sql",
+      "dependsOn": [
+        "20261001000000",
+        "20261017000000",
+        "20261118000000"
+      ],
+      "gitBlob": "5b78922c05ece7bfa58ad550cd5c3eaef7fbbf8d",
+      "sourceSha256": "131fd1472c415ccfe33965946823f2a7700ca5cd6831d5682d30477faa1f2082",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "auth.users and public.user_device_tokens exist",
+          "Application roles anon, authenticated and service_role exist"
+        ]
+      }
+    },
+    {
+      "version": "20261126000000",
+      "name": "device_registration_recovery_rpc",
+      "file": "20261126000000_device_registration_recovery_rpc.sql",
+      "dependsOn": [
+        "20261125000000",
+        "20261118000000"
+      ],
+      "gitBlob": "e80692b5a81d498124d2bb3d3e7fa68a31848537",
+      "sourceSha256": "8f2597a128962ed526dee80107e1791038abe33f79307e0fe295d7eef683a372",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Migration owner can create a dedicated NOLOGIN role",
+          "PostgREST authenticator and application roles must not inherit verifier access",
+          "No verifier login is provisioned by this migration"
+        ]
+      }
+    },
+    {
+      "version": "20261127000000",
+      "name": "device_verifier_gateway",
+      "file": "20261127000000_device_verifier_gateway.sql",
+      "dependsOn": [
+        "20261126000000"
+      ],
+      "gitBlob": "4769fa433a6c959e6c324fd2fd7403b1b254eb81",
+      "sourceSha256": "b199624ebc4a782dd479f2563c01fd8997bd9e429c805975f3447461519a32fd",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Dedicated verifier role from migration 25 exists",
+          "No verifier login is provisioned by this migration"
+        ]
+      }
+    },
+    {
+      "version": "20261128000000",
+      "name": "device_auth_revocation_confirmation",
+      "file": "20261128000000_device_auth_revocation_confirmation.sql",
+      "dependsOn": [
+        "20261127000000"
+      ],
+      "gitBlob": "e6b56628a5eb444d49f868df9c315c5d6e13ed1f",
+      "sourceSha256": "91d188fd40cf3c91e268eb50aae3e1a0bf89281997d653e05d5ac8e9ddef9709",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Primary database and dedicated verifier role from migration 26",
+          "Function owner can read auth.sessions id and user_id without row filtering"
+        ]
+      }
+    },
+    {
+      "version": "20261129000000",
+      "name": "device_logout_recovery",
+      "file": "20261129000000_device_logout_recovery.sql",
+      "dependsOn": [
+        "20261128000000"
+      ],
+      "gitBlob": "acf73d54fca43159bff9edbd5ddc7da659c02cae",
+      "sourceSha256": "8694f3d6624aec3176282542f104609b25b4e69984c8721ce571053fc0ee01fc",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Primary database and verified Auth session reader from migration 27",
+          "Migration owner can create a dedicated NOLOGIN role",
+          "No recovery verifier login is provisioned by this migration"
+        ]
+      }
+    },
+    {
+      "version": "20261130000000",
+      "name": "device_logout_session_fence",
+      "file": "20261130000000_device_logout_session_fence.sql",
+      "dependsOn": [
+        "20261129000000"
+      ],
+      "gitBlob": "447129b18a0d43c9da92f15f052cff37ce94d4dc",
+      "sourceSha256": "952e0c672a35e39493bb9d102598fd83cef70711b0f43e58ed4cd007a8db21c6",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Existing device and logout recovery verifier roles and primary Auth session reader are available"
+        ]
+      }
+    },
+    {
+      "version": "20261201000000",
+      "name": "notification_delivery_authorization",
+      "file": "20261201000000_notification_delivery_authorization.sql",
+      "dependsOn": [
+        "20261130000000"
+      ],
+      "gitBlob": "b85a970caae3286422a6fdee0df84aed8c9eeba6",
+      "sourceSha256": "08844718d0959df5593fe99f3ec13cd9572ccce0f7bc8e4feaef32853b13463c",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Stop old notification workers and the old Express test-send path before applying; deploy the updated server before resuming delivery"
+        ]
+      }
+    },
+    {
+      "version": "20261202000000",
+      "name": "guard_notification_and_legacy_device_sessions",
+      "file": "20261202000000_guard_notification_and_legacy_device_sessions.sql",
+      "dependsOn": [
+        "20261201000000"
+      ],
+      "gitBlob": "fde34e5b7d0c98fb174c7015f0f992b48ffaa608",
+      "sourceSha256": "00acd2952e6d0a394d6836dc8a5183f62efe1c2880e3852cce2273275d903c18",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Primary Auth session rows are readable and lockable by the function owner",
+          "Deploy Express with the dedicated notification session extension path"
+        ]
+      }
+    },
+    {
+      "version": "20261203000000",
+      "name": "persist_managed_registration_rejections",
+      "file": "20261203000000_persist_managed_registration_rejections.sql",
+      "dependsOn": [
+        "20261202000000"
+      ],
+      "gitBlob": "1d0845abce96235c28434acf93f9c2cd5a047e03",
+      "sourceSha256": "46986f400da19edd003733e7bc1e37ce87e8e3bfee599c0c735c11d71919f245",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Coordinate Express deployment with the session-bound operation lookup signature"
+        ]
+      }
+    },
+    {
+      "version": "20261204000000",
+      "name": "retire_legacy_device_registration",
+      "file": "20261204000000_retire_legacy_device_registration.sql",
+      "dependsOn": [
+        "20261203000000"
+      ],
+      "gitBlob": "feb6cab4b7f6c3a6af37f5723c3e617764d9c5fd",
+      "sourceSha256": "19425ae266e3f6a5310f2e9387fda07c53195af9b6f9aa2f4d0041b389ae40e4",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Stop old clients and workers; review legacy registration inventory and confirm it is empty before applying"
+        ]
+      }
+    },
+    {
+      "version": "20261205000000",
+      "name": "serialize_managed_registration_with_auth_revocation",
+      "file": "20261205000000_serialize_managed_registration_with_auth_revocation.sql",
+      "dependsOn": [
+        "20261204000000"
+      ],
+      "gitBlob": "5f92f72afc113b6bfb6c4c9e1e1088df571103b8",
+      "sourceSha256": "f94343554d4729d2162122c220dbe34b3218d225203e52e3b7b4136506066055",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Apply after migration 33; preserve the existing device verifier function owner and execute grants"
+        ]
+      }
+    },
+    {
+      "version": "20261206000000",
+      "name": "match_logout_recovery_scope_before_ranking",
+      "file": "20261206000000_match_logout_recovery_scope_before_ranking.sql",
+      "dependsOn": [
+        "20261205000000"
+      ],
+      "gitBlob": "0e68eb3ceb5d19edf99bfb392858f6b648ce6fd6",
+      "sourceSha256": "f03f08c86520971919e3d595ef3ebb9f2c57fcc0f5aae0bbb9d0d8d5917ba031",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Preserve the existing scoped recovery function owners and execute grants"
+        ]
+      }
+    },
+    {
+      "version": "20261207000000",
+      "name": "record_generation_start_after_session_lock",
+      "file": "20261207000000_record_generation_start_after_session_lock.sql",
+      "dependsOn": [
+        "20261206000000"
+      ],
+      "gitBlob": "46fcac027193b6f7d47bc7c862d71d887796a08d",
+      "sourceSha256": "a8ec18793c6c1c806aaf596eea8a79e533fe44be97e0b566f6fe7404c811f6ee",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Preserve the existing session guard function owner and execute grants"
+        ]
+      }
+    },
+    {
+      "version": "20261208000000",
+      "name": "simplify_normal_device_logout",
+      "file": "20261208000000_simplify_normal_device_logout.sql",
+      "dependsOn": [
+        "20261207000000"
+      ],
+      "gitBlob": "8907ea23b4af90da637e8c314daea024c50cb6b4",
+      "sourceSha256": "cc8a698723e533bb7445860f196609353008089e5fb268e0a18e0c4a163cbc72",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Stop device recovery traffic; apply all prior migrations; deploy the MVP client and controlled-test delivery policy together"
+        ]
+      }
+    },
+    {
+      "version": "20261209000000",
+      "name": "unify_pending_logout_generation_guard",
+      "file": "20261209000000_unify_pending_logout_generation_guard.sql",
+      "dependsOn": [
+        "20261208000000"
+      ],
+      "gitBlob": "1b4921c3497df956e3458060417c8419e4267b46",
+      "sourceSha256": "4bdb2470e9bca217280f7e5cb4f1f61d06f8ecae540cde02a82a245638a53d75",
+      "sharedHistorySha256": null,
+      "apply": {
+        "role": "postgres",
+        "transaction": "required",
+        "preconditions": [
+          "Apply after migration 37; pause registration traffic and preserve verifier role grants"
+        ]
+      }
     }
   ]
 }

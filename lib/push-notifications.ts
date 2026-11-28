@@ -2,8 +2,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { EXTEND_30_ACTION, FREE_END_CATEGORY } from './notification-task';
-import { supabase } from './supabase';
+import { EXTEND_30_ACTION, FREE_END_CATEGORY } from './free-end-action';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -63,36 +62,19 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
         return null;
     }
 
+    return getCurrentDeviceToken();
+}
+
+async function getCurrentDeviceToken(): Promise<string | null> {
+    if (Platform.OS === 'web' || !Device.isDevice) return null;
     const projectId =
         Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
 
     if (!projectId) {
-        console.log('[push] projectId が見つかりません');
-        return null;
+        throw new Error('Expo project ID is missing');
     }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-    console.log('[push] token:', token);
 
     return token;
-}
-
-export async function saveDeviceToken(token: string): Promise<{ error: Error | null }> {
-    if (!supabase) {
-        return { error: new Error('Supabase が設定されていません') };
-    }
-
-    const { error } = await supabase.rpc('upsert_device_token', {
-        p_token: token,
-        p_platform: Platform.OS,
-        p_device_name: Device.deviceName,
-    });
-
-    if (error) {
-        console.log('[push] 保存に失敗しました:', error.message);
-        return { error };
-    }
-
-    console.log('[push] 保存に成功しました');
-    return { error: null };
 }

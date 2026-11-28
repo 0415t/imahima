@@ -21,9 +21,10 @@ describe('POST /profiles/me/is-free/extend-from-notification', () => {
     getUserIdCalls = [];
     extendCalls = [];
     dependencies = {
-      getUserId: async (token) => {
+      getUserId: async () => ({ userId: null, error: null }),
+      authenticateNotificationSession: async (token) => {
         getUserIdCalls.push(token);
-        return { userId: token === accessToken ? authenticatedUserId : null, error: null };
+        return token === accessToken ? { userId: authenticatedUserId, status: 200 } : { userId: null, status: 401 };
       },
       toggleIsFree: async () => ({ isFree: true, error: null }),
       setIsFree: async () => ({ isFree: true, freeUntil: null, error: null }),

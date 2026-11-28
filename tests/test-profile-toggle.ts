@@ -16,6 +16,18 @@ describe('POST /profiles/me/is-free/toggle', () => {
   let getUserIdCalls: string[];
   let toggleCalls: string[];
 
+  it('health returns fresh server time without cache reuse', async () => {
+    const before = Date.now();
+    const response = await fetch(new URL('/health?clockNonce=test', endpoint));
+    const after = Date.now();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const serverTime = Date.parse(response.headers.get('date')!);
+    assert.ok(serverTime >= Math.floor(before / 1000) * 1000 && serverTime <= after,
+      'Date must fall within the request interval, rounded down to HTTP second precision');
+    assert.deepEqual(await response.json(), { ok: true });
+  });
+
   beforeEach(async () => {
     getUserIdCalls = [];
     toggleCalls = [];

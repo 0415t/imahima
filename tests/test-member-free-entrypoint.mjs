@@ -22,7 +22,7 @@ test('normal server/index.ts with dedicated Auth, DB and guarded workers', { tim
       headers: { apikey: config.service, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
       body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await response.text();
-    return { status: response.status, body: text ? JSON.parse(text) : null };
+    return { status: response.status, body: text && response.headers.get("content-type")?.includes("application/json") ? JSON.parse(text) : null };
   }
   async function rows(table, query = '') {
     const result = await request(config.url, `/rest/v1/${table}?select=*${query}`);
@@ -99,8 +99,8 @@ test('normal server/index.ts with dedicated Auth, DB and guarded workers', { tim
     assert.equal((await rows('member_free_events', `&actor_user_id=eq.${report.users.A}`)).length, 1);
     assert.deepEqual(await rows('member_free_notifications', `&event_id=eq.${report.event.id}`), outbox);
     report.responses.manual = await request(api, '/notifications/test', 'POST', {}, tokens.A);
-    assert.equal(report.responses.manual.status, 200); assert.equal(report.responses.manual.body.sent, 0);
-    report.checks.push('normal entrypoint: B then A ON produces one pending row; re-ON deduplicated; manual push sends zero with no tokens');
+    assert.equal(report.responses.manual.status, 404);
+    report.checks.push('normal entrypoint: B then A ON produces one pending row; re-ON deduplicated; manual push route retired');
     report.apiLogs = await stop(normal, false);
 
     const worker = await start(true);

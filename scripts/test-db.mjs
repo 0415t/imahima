@@ -12,11 +12,18 @@ const setup = [
   'supabase/migrations/20261111000000_group_management_mvp.sql',
   'supabase/tests/fixtures/chat_mvp_environment.sql',
   'supabase/migrations/20261113000000_group_chat_mvp.sql',
+  'supabase/migrations/20261017000000_create_user_device_tokens.sql',
+  'supabase/tests/fixtures/device_registration_legacy_row.sql',
+  'supabase/migrations/20261125000000_device_registration_recovery_foundation.sql',
+  'supabase/migrations/20261126000000_device_registration_recovery_rpc.sql',
 ];
 const required = {
   'group_mvp.test.sql': 3,
   'group_availability.test.sql': 2,
   'group_chat_mvp.test.sql': 8,
+  'logout_device_tokens.test.sql': 3,
+  'device_registration_recovery.test.sql': 3,
+  'device_registration_rpc.test.sql': 8,
 };
 const deferred = {
   'extend_from_notification.test.sql': '通知からの延長RPCとAuth互換fixture',

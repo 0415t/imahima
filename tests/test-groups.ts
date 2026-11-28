@@ -37,13 +37,11 @@ describe('Group API authorization and contracts', () => {
     const freeUntil = new Date(Date.now() + 60 * 60_000).toISOString();
     server = createServer(createApp({
       getUserId: deps.getUserId,
+      authenticateNotificationSession: async () => ({ userId: 'actor', status: 200 }),
       toggleIsFree: async () => ({ isFree: false, error: null }),
       setIsFree: async (_id, isFree) => ({ isFree, freeUntil, error: null }),
       extendIsFree: async () => ({ isFree: true, freeUntil, error: null }),
       extendIsFreeFromNotification: async () => ({ isFree: true, freeUntil, error: null }),
-    }, {
-      getDeviceTokens: async () => ({ tokens: ['test-device'], error: null }),
-      sendPushNotifications: async () => ({ sent: 1, error: null }),
     }, deps, {
       getUserId: token => deps.getUserId(token),
       isMember: (actor, room) => deps.isMember(actor, room),
@@ -146,7 +144,6 @@ describe('Group API authorization and contracts', () => {
       ['/profiles/me/is-free', 'PUT', { is_free: true, duration_minutes: 30 }],
       ['/profiles/me/is-free/extend', 'POST', {}],
       ['/profiles/me/is-free/extend-from-notification', 'POST', { claim_id: '12345678-1234-4234-8234-123456789abc' }],
-      ['/notifications/test', 'POST', {}],
     ] as const) {
       const response = await fetch(root + path, {
         method, headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
@@ -154,9 +151,10 @@ describe('Group API authorization and contracts', () => {
       });
       assert.equal(response.status, 200, path);
       const data = await response.json();
-      if (path === '/notifications/test') assert.equal(data.sent, 1);
-      else assert.equal(data.is_free, true);
+      assert.equal(data.is_free, true);
     }
+    assert.equal((await fetch(root + '/notifications/test', { method: 'POST',
+      headers: { Authorization: 'Bearer test-token' } })).status, 404);
     assert.deepEqual(calls.map(call => call.operation), ['list']);
     const clientId = '22222222-2222-4222-8222-222222222222';
     for (const [path, method, body, status] of [

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { PushSendError } from '../server/services/notifications';
+import { createAuthorizedNotificationSender } from '../server/services/notification-delivery';
 
 import {
   createFreeEndNotificationPoller,
@@ -21,7 +22,7 @@ type CallLog = {
   claims: number;
   validations: { claimId: string; leaseToken: string }[];
   tokenFetches: string[];
-  sends: { tokens: string[]; message: Parameters<FreeEndNotificationDependencies['sendPushNotifications']>[1] }[];
+  sends: { tokens: string[]; message: Parameters<NonNullable<FreeEndNotificationDependencies['sendPushNotifications']>>[1] }[];
   completions: { claimId: string; leaseToken: string; status: string; error?: string }[];
 };
 
@@ -54,6 +55,55 @@ function createMocks(overrides: Partial<FreeEndNotificationDependencies> = {}) {
 }
 
 describe('free-end notification poller', () => {
+  for (const delayedPage of [null, '1']) {
+    it(`skips the Expo request if authorization for page ${delayedPage ?? 'first'} returns at expiration`, async t => {
+      const expiry = Date.parse(baseClaim.freeUntil);
+      t.mock.timers.enable({ apis: ['Date'], now: expiry - 1000 });
+      const transport = t.mock.method(globalThis, 'fetch', async (_url: string, init?: RequestInit) => {
+        const [payload] = JSON.parse(init?.body as string);
+        assert.equal(payload.data.expectedFreeUntil, baseClaim.freeUntil);
+        return Response.json({ data: [{ status: 'ok', id: 'ticket' }] });
+      });
+      const sendAuthorized = createAuthorizedNotificationSender({
+    allowTarget: () => true,
+        async authorize(_kind, _id, _lease, after) {
+          if (after === delayedPage) t.mock.timers.setTime(expiry);
+          return { eligible: true, cursor: after === null ? '1' : null, targets: [{
+            id: after ?? '0', token: `ExponentPushToken[device-${after ?? 'first'}]`,
+            userId: 'user-1', installationId: 'install', generation: '1', revision: '1', version: 'v',
+          }] };
+        },
+        async deleteInvalid() { assert.fail('No invalid ticket'); },
+      })('free_end');
+      const { dependencies, log } = createMocks({ sendAuthorized });
+      await createFreeEndNotificationPoller(dependencies).runOnce();
+      assert.equal(transport.mock.callCount(), delayedPage === null ? 0 : 1);
+      assert.equal(log.completions[0]?.status, delayedPage === null ? 'cancelled' : 'sent');
+    });
+  }
+
+  it('cancels a malformed authorized reminder deadline before sending', async () => {
+    const { dependencies, log } = createMocks({
+      async claimNotifications() {
+        return { claims: [{ ...baseClaim, freeUntil: 'invalid' }], error: null };
+      },
+      async sendAuthorized() { assert.fail('Malformed deadline must not reach delivery'); },
+    });
+    await createFreeEndNotificationPoller(dependencies).runOnce();
+    assert.equal(log.completions[0]?.status, 'cancelled');
+  });
+
+  it('retains confirmed acceptance if authorized delivery throws during cleanup', async () => {
+    const { dependencies, log } = createMocks({
+      async sendAuthorized(_id, _lease, _message, _signal, accepted) {
+        accepted?.(1);
+        throw new Error('Cleanup interrupted');
+      },
+    });
+    await createFreeEndNotificationPoller(dependencies).runOnce();
+    assert.equal(log.completions[0]?.status, 'sent');
+    assert.equal(log.completions[0]?.leaseToken, baseClaim.leaseToken);
+  });
   it('claims, validates, sends, and marks sent', async () => {
     const { dependencies, log } = createMocks();
     const poller = createFreeEndNotificationPoller(dependencies);

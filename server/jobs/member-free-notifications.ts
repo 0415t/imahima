@@ -1,5 +1,6 @@
 import { PushSendError, type PushMessage, type SendPushResult } from '../services/notifications';
 import { withRequestTimeout } from './request-timeout';
+import type { AuthorizedSend } from '../services/notification-delivery';
 
 export function parseMemberFreeMaxAttempts(value: string | undefined): number {
   const attempts = Number(value ?? 3);
@@ -22,8 +23,9 @@ export type MemberFreeDependencies = {
   validateNotification: (id: string, lease: string, signal?: AbortSignal) => Promise<{
     validation: { owned: boolean; stillValid: boolean } | null; error: unknown | null;
   }>;
-  getDeviceTokens: (userId: string, signal?: AbortSignal) => Promise<{ tokens: string[]; error: unknown | null }>;
-  sendPushNotifications: (tokens: string[], message: PushMessage, signal?: AbortSignal,
+  sendAuthorized?: AuthorizedSend;
+  getDeviceTokens?: (userId: string, signal?: AbortSignal) => Promise<{ tokens: string[]; error: unknown | null }>;
+  sendPushNotifications?: (tokens: string[], message: PushMessage, signal?: AbortSignal,
     onAccepted?: (confirmedCount: number) => void) => Promise<SendPushResult>;
   completeNotification: (id: string, lease: string, status: 'sent' | 'failed' | 'cancelled',
     error?: string, acceptedCount?: number, signal?: AbortSignal) => Promise<{ completed: boolean; error: unknown | null }>;
@@ -78,19 +80,29 @@ export function createMemberFreeNotificationPoller(dependencies: MemberFreeDepen
     let confirmedAccepted = 0;
     try {
       if (!await validate(claim)) return;
-      const { tokens, error } = await request((signal) => dependencies.getDeviceTokens(claim.recipientUserId, signal));
-      if (error) { await complete(claim, 'failed', 'Device lookup failed'); return; }
-      if (!tokens.length) { await complete(claim, 'cancelled', 'No registered devices'); return; }
+      let tokens: string[] = [];
+      if (!dependencies.sendAuthorized) {
+        const result = await request(signal => dependencies.getDeviceTokens!(claim.recipientUserId, signal));
+        if (result.error) { await complete(claim, 'failed', 'Device lookup failed'); return; }
+        if (!result.tokens.length) { await complete(claim, 'cancelled', 'No registered devices'); return; }
+        tokens = result.tokens;
+      }
       // Token取得中の状態変化・lease期限切れも検出する。以降の外部通信との競合は残る。
       if (stopped) return;
       if (!await validate(claim) || stopped) return;
       const name = claim.actorName?.trim();
-      const result = await request((signal) => dependencies.sendPushNotifications([...new Set(tokens)], {
+      const outbound = {
         title: 'imahima', body: name ? `${name}さんが暇になりました！` : 'メンバーが暇になりました！',
         data: { type: 'member_free', eventId: claim.eventId, notificationId: claim.notificationId },
-      }, signal, (count) => {
-        if (!signal.aborted) confirmedAccepted = Math.max(confirmedAccepted, count);
-      }));
+      };
+      const result = await request(signal => {
+        const onAccepted = (count: number) => {
+          if (!signal.aborted) confirmedAccepted = Math.max(confirmedAccepted, count);
+        };
+        return dependencies.sendAuthorized
+          ? dependencies.sendAuthorized(claim.notificationId, claim.leaseToken, outbound, signal, onAccepted)
+          : dependencies.sendPushNotifications!([...new Set(tokens)], outbound, signal, onAccepted);
+      });
       const summary = `temporary=${result.failures.temporary}, permanent=${result.failures.permanent}, unknown=${result.failures.unknown}`;
       if (result.sent > 0) {
         // A方式: 受信者内の部分成功はsent。成功済み端末への再送を避ける。

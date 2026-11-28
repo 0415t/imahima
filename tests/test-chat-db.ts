@@ -31,7 +31,7 @@ it('isolated HTTP -> chat service -> real PostgreSQL RPC lifecycle', { skip: pro
     return { data: JSON.parse(sql(`begin;set local role service_role;select public.${name}(${parameters});commit;`)), error: null };
   };
   const chat = chatService({ rpc } as unknown as Parameters<typeof chatService>[0], identity);
-  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, undefined, chat));
+  const server = createServer(createApp({ ...disabledTimerDependencies, getUserId: identity.getUserId, toggleIsFree: async () => ({ isFree: false, error: null }) }, undefined, chat));
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const base = `http://127.0.0.1:${address.port}/groups/${room}`;

@@ -100,18 +100,3 @@ it('reports an entirely timed-out send as unknown and consumes a late SDK reject
   sdk.reject(new Error('late transport failure'));
   await setImmediate();
 });
-
-for (const body of [{ sent: 0, message: 'No registered devices' }, { sent: 1 }, null, { sent: '1' }]) {
-  it(`checks actual Expo acceptance in the live Push test: ${JSON.stringify(body)}`, async () => {
-    const errors: unknown[] = [];
-    const logs: string[] = [];
-    const fakeProcess = { env: { TEST_EMAIL: 'test@example.test', TEST_PASSWORD: 'dummy' }, exitCode: 0 };
-    loadSource('integration/test-push-send.ts', {
-      'dotenv/config': {}, '../lib/auth': { signInUser: async () => ({ session: { access_token: 'test', user: { id: 'self' } } }) },
-      '../lib/supabase': { hasSupabaseConfig: true },
-    }, { process: fakeProcess, fetch: async () => Response.json(body), console: { log: (...args: unknown[]) => logs.push(args.join(' ')), error: (error: unknown) => errors.push(error) } });
-    await setImmediate();
-    assert.equal(fakeProcess.exitCode, body?.sent === 1 ? 0 : 1);
-    assert.equal(errors.length, body?.sent === 1 ? 0 : 1);
-  });
-}

@@ -21,7 +21,9 @@ test('entrypoint rejects invalid max attempts before listening or claiming', () 
     const modules = {
       'dotenv/config': {}, './app': { createApp: () => ({ listen: () => { listened = true; return {}; } }) },
       './services/supabase': { serverSupabase: {} },
+      './device-verifier': { notificationSessionExtender: () => async () => ({ status: 503 }) },
       './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
+      './services/notification-delivery': require('../server/services/notification-delivery.ts'),
       './jobs/free-end-notifications': {},
       './jobs/chat-message-notifications': require('../server/jobs/chat-message-notifications.ts'),
       './services/groups': { groupService: () => ({}) },
@@ -41,7 +43,9 @@ function runEntrypoint({ supabase = {}, poller, server = {}, listeners = {}, ...
   const modules = {
     'dotenv/config': {}, './app': { createApp: () => ({ listen: () => server }) },
     './services/supabase': { serverSupabase: supabase },
+    './device-verifier': { notificationSessionExtender: () => async () => ({ status: 503 }) },
     './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
+    './services/notification-delivery': require('../server/services/notification-delivery.ts'),
     './jobs/free-end-notifications': {},
     './jobs/chat-message-notifications': require('../server/jobs/chat-message-notifications.ts'),
     './services/groups': { groupService: () => ({}) },
@@ -72,7 +76,7 @@ test('entrypoint passes cancellation into every real member-free PostgREST reque
     const calls = [
       (signal) => deps.claimNotifications(signal),
       (signal) => deps.validateNotification('n', 'lease', signal),
-      (signal) => deps.getDeviceTokens('user', signal),
+      (signal) => deps.sendAuthorized('n', 'lease', { title: 'test', body: 'test' }, signal),
       (signal) => deps.completeNotification('n', 'lease', 'failed', 'test', 0, signal),
     ];
     for (const call of calls) {
@@ -160,8 +164,10 @@ function runChatEntrypoint(env, supabase = {}) {
   const noop = () => {}; let listened = false, deps, options, started = 0;
   const modules = {
     'dotenv/config': {}, './app': { createApp: () => ({ listen: () => { listened = true; return {}; } }) },
+    './device-verifier': { notificationSessionExtender: () => async () => ({ status: 503 }) },
     './services/supabase': { serverSupabase: supabase },
     './services/notifications': { createPushNotificationService: () => ({ sendPushNotifications: noop }) },
+    './services/notification-delivery': require('../server/services/notification-delivery.ts'),
     './services/groups': { groupService: () => ({}) }, './services/chat': { chatService: () => ({}) },
     './jobs/free-end-notifications': {}, './jobs/member-free-notifications': {},
     './jobs/chat-message-notifications': { ...require('../server/jobs/chat-message-notifications.ts'),
@@ -177,15 +183,23 @@ test('chat worker is disabled by default and validates config before listen', ()
   for (const value of ['', '0', '11', '1.5']) assert.throws(() => runChatEntrypoint({ CHAT_MESSAGE_NOTIFICATIONS_ENABLED: 'true', CHAT_MESSAGE_NOTIFICATIONS_MAX_ATTEMPTS: value }), /CHAT_MESSAGE_NOTIFICATIONS_MAX_ATTEMPTS/);
 });
 
-test('chat entrypoint wires all RPCs and token lookup with cancellation and acceptance', async () => {
+test('chat entrypoint wires the claim, authorization and completion RPCs', async () => {
   const calls = []; const signal = new AbortController().signal;
-  const query = (name, args) => ({ abortSignal: async s => { assert.equal(s, signal); calls.push({ name, args }); return { data: [], error: null }; } });
-  const supabase = { rpc: query, from: table => ({ select: columns => ({ eq: (key, id) => query(table, { columns, key, id }) }) }) };
+  const query = (name, args) => ({
+    retry(value) { assert.equal(value, false); return this; },
+    async abortSignal(s) {
+      assert.ok(s instanceof AbortSignal);
+      calls.push({ name, args });
+      return { data: name === 'authorize_notification_delivery' ? { eligible: false, targets: [], cursor: null } : [], error: null };
+    },
+  });
+  const supabase = { rpc: query };
   const f = runChatEntrypoint({ CHAT_MESSAGE_NOTIFICATIONS_ENABLED: 'true', CHAT_MESSAGE_NOTIFICATIONS_MAX_ATTEMPTS: '4' }, supabase);
   assert.equal(f.started, 1); assert.equal(f.options.intervalMs, 5000);
   await f.deps.claimNotifications(signal); await f.deps.validateNotification('id', 'lease', signal);
-  await f.deps.getDeviceTokens('recipient', signal); await f.deps.completeNotification('id', 'lease', 'sent', 'safe', 2, signal);
-  assert.deepEqual(calls.map(c => c.name), ['claim_chat_message_notifications', 'validate_chat_message_notification', 'user_device_tokens', 'complete_chat_message_notification']);
+  await f.deps.sendAuthorized('id', 'lease', { title: 'test', body: 'test' }, signal);
+  await f.deps.completeNotification('id', 'lease', 'sent', 'safe', 2, signal);
+  assert.deepEqual(calls.map(c => c.name), ['claim_chat_message_notifications', 'validate_chat_message_notification', 'authorize_notification_delivery', 'complete_chat_message_notification']);
   assert.equal(calls[0].args.p_max_attempts, 4); assert.equal(calls[3].args.p_accepted_count, 2);
   assert.equal(calls[0].args.p_limit, 1); assert.equal(calls[0].args.p_lease_seconds, 120);
 });
