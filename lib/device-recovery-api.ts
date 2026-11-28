@@ -35,13 +35,17 @@ function randomNonce() {
 export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl: string | undefined): ManagedDeviceApi {
     const issuer = () => new URL('/auth/v1', supabaseUrl).href;
     let enrolled: string | undefined;
-    async function post(action: string, body: Record<string, unknown>, accessToken?: string) {
+    function endpoint(hasBearer: boolean) {
         const base = new URL(apiUrl ?? '');
-        const localDevelopmentHttp = base.protocol === 'http:' && !accessToken && __DEV__
+        const localDevelopmentHttp = base.protocol === 'http:' && !hasBearer && __DEV__
             && ['localhost', '127.0.0.1', '10.0.2.2'].includes(base.hostname);
         if (base.protocol !== 'https:' && !localDevelopmentHttp) {
             throw new Error('Secure device recovery API required');
         }
+        return base;
+    }
+    async function post(action: string, body: Record<string, unknown>, accessToken?: string) {
+        const base = endpoint(Boolean(accessToken));
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 12_000);
         try {
@@ -100,6 +104,7 @@ export function createDeviceRecoveryApi(apiUrl: string | undefined, supabaseUrl:
     }
 
     return {
+        validateConfiguration() { endpoint(true); issuer(); },
         async identity(create) {
             if (!apiUrl || !supabaseUrl) throw new Error('Device recovery API is not configured');
             if (Platform.OS !== 'ios' && Platform.OS !== 'android') return null;

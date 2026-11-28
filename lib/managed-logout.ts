@@ -11,6 +11,7 @@ type Journal = Intent & { stage: 'begin' | 'revoke' | 'confirm' | 'clear' | 'ack
 type Receipt = { recoveryId: string; status: 'pending' | 'confirmed' | 'cleared' };
 
 export type ManagedDeviceApi = {
+    validateConfiguration(): void;
     identity(create: boolean): Promise<string | null>;
     operationId(): string;
     ensureInstallation(session: LogoutSession, installationId: string): Promise<void>;
@@ -97,6 +98,7 @@ export function createManagedLogout(options: {
     }
 
     async function prepareAuthentication() {
+        api.validateConfiguration();
         const installation = await api.identity(false);
         const clean = await storage.getItem(cleanKey);
         if (installation && clean === installation) return;
@@ -233,6 +235,13 @@ export function createManagedLogout(options: {
         const userId = scope && ('user' in scope ? scope.user.id : scope.userId);
         const sessionId = scope && ('access_token' in scope ? jwtSessionId(scope.access_token) : scope.sessionId);
         if (!isUuid(userId) || !isUuid(sessionId)) throw new Error('Logout session unavailable');
+        const storedScope = await storage.getItem(bindingKey) ?? await storage.getItem(bootstrapKey);
+        if (storedScope !== null) {
+            const binding = readBinding(storedScope);
+            if (binding.userId !== userId || binding.sessionId !== sessionId) {
+                throw new Error('Logout session changed');
+            }
+        }
         await put(requestKey, { userId, sessionId,
             operationId: saved === null ? api.operationId() : (scope as Journal).operationId });
     }
@@ -247,6 +256,9 @@ export function createManagedLogout(options: {
             const bootstrap = await storage.getItem(bootstrapKey);
             const session = await options.session();
             if (session) {
+                if (request && (request.userId !== session.user.id || request.sessionId !== jwtSessionId(session.access_token))) {
+                    throw new Error('Logout request session changed');
+                }
                 await initialize(session, async () => {
                     const current = await options.session();
                     return Boolean(current && current.user.id === session.user.id
@@ -256,7 +268,7 @@ export function createManagedLogout(options: {
                 return finish(beforeAcknowledgement);
             }
             const clean = await storage.getItem(cleanKey);
-            if (!bootstrap && (!installation || clean === installation || clean === 'preflight')) return;
+            if (!request && !bootstrap && (!installation || clean === installation || clean === 'preflight')) return;
             throw new Error('Discovered logout has no verified local scope');
         }
         const installationId = await api.identity(false);

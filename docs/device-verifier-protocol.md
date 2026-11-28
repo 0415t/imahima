@@ -43,6 +43,19 @@ Do not combine this selector with `IMAHIMA_MVP_LOGOUT_ONLY` or archived-recovery
 
 The retained historical receipt-identity regression runs separately with `node --import tsx --test tests/test-device-logout-recovery-integration.mjs` and intentionally reconstructs through migration 36. It reads the committed recovery ID before retrying; it is not evidence that special automatic recovery is enabled in the MVP. Current registration/SQL-holder diagnostics run with `node --test tests/test-device-registration-recovery-integration.mjs` on the complete ledger. Existing constraints #31/#39/#40/#41 remain as documented above; these test changes do not implement recovery or enable production Push.
 
+### Review 45-54: development MVP boundary
+
+Authenticated device API configuration is checked before Auth starts, including when the installation has an existing clean marker. JWT-bearing requests still require HTTPS; the local development HTTP exception remains bearer-free only. Invalid present notification cutoff values fail closed. UI subscriber errors do not interrupt authentication/logout state transitions. A new logout target is checked against the retained binding/bootstrap before it is persisted. A pending scoped request prevents the clean-marker no-op from reporting logout success. Direct-read denial tests explicitly assume `imahima_device_verifier` inside a transaction, verify current_user and roll back between denied reads.
+
+The following **review findings**, not new Issue updates, are deferred:
+
+- #50: committed begin reply plus JWT loss remains blocked; no automatic signed operation discovery is added.
+- #51: the initial enrollment global challenge cap (4096, with per-user 8 and 60-second expiry) remains a known availability limit. Large-scale/many-account abuse protection is outside this controlled development MVP.
+- #52: the Android checkpoint source test does not yet detect every possible omission of the readback comparison. The production Kotlin comparison/failure branch remains intact. Native compilation, hardware and power-loss verification are still not proven by that static test.
+- #53: the signed enrollment race still inherits the pool's 7-second client query timeout. It is a remaining test reliability limit even though the server-side deliberate barrier bounds were extended and the targeted run passed; no client-timeout change is included in this release.
+
+Earlier constraints #31 and #39-41 remain unresolved as stated above. Controlled test destinations and production Push prohibition are unchanged. No migration or shared DB changes are required for these fixes.
+
 ---
 
 # Device verifier API v1

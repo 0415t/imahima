@@ -26,11 +26,17 @@ export function createLogoutFlow(deps: {
     let authenticating = false;
     let provisioning: { session: LogoutSession; promise: Promise<void> } | undefined;
 
+    function notify() {
+        for (const listener of listeners) {
+            try { listener(); } catch { /* UI observers cannot interrupt safety transitions. */ }
+        }
+    }
+
     function setBlocked(value: boolean) {
         if (blocked === value) return;
         blocked = value;
         revision++;
-        for (const listener of listeners) listener();
+        notify();
     }
 
     async function sessionAvailability(): Promise<'ready' | 'logout-pending' | 'read-failed'> {
@@ -55,7 +61,9 @@ export function createLogoutFlow(deps: {
             if (authenticating || !await canUseSession() || !await deps.managed.notificationReady()) return false;
             if (await deps.storage.getItem(notificationBlockKey) !== null) return false;
             const raw = await deps.storage.getItem(cutoffKey);
-            return (raw === null || (receivedAt !== undefined && receivedAt > Number(raw)))
+            const cutoff = raw === null ? null : Number(raw);
+            if (cutoff !== null && (!Number.isSafeInteger(cutoff) || cutoff <= 0)) return false;
+            return (cutoff === null || (receivedAt !== undefined && receivedAt > cutoff))
                 && await deps.storage.getItem(notificationBlockKey) === null
                 && await canUseSession() && !authenticating && started === revision;
         } catch {
@@ -76,7 +84,7 @@ export function createLogoutFlow(deps: {
         if (authenticating) throw new Error('認証処理を実行中です');
         authenticating = true;
         revision++;
-        for (const listener of listeners) listener();
+        notify();
         try {
             if (!await canUseSession()) throw new Error('ログアウト処理が完了していません');
             if (provisioning || await deps.session()) throw new Error('Sign out before starting another session');
@@ -88,7 +96,7 @@ export function createLogoutFlow(deps: {
         } finally {
             authenticating = false;
             revision++;
-            for (const listener of listeners) listener();
+            notify();
         }
     }
 
@@ -154,13 +162,13 @@ export function createLogoutFlow(deps: {
             return { error: null };
         }).catch((error: unknown) => {
             logoutError = error instanceof Error ? error : new Error(String(error));
-            for (const listener of listeners) listener();
+            notify();
             return { error: logoutError };
         }).finally(() => { logout = undefined; });
         const retrying = blocked;
         logoutError = null;
         setBlocked(true);
-        if (retrying) for (const listener of listeners) listener();
+        if (retrying) notify();
         return logout;
     }
 

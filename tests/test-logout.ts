@@ -31,6 +31,7 @@ function managedFixture(fresh = false) {
         if (fail === name) { fail = ''; throw new Error('interrupted ' + name); }
     };
     const api: ManagedDeviceApi = {
+        validateConfiguration() {},
         async identity(create) {
             if (create && keyAvailable) initialized = true;
             return keyAvailable && initialized ? installationId : null;
@@ -735,4 +736,71 @@ test('failed logout request persistence stops before any server invalidation', a
     assert.equal(events.includes('revoke'), false);
     assert.equal(flow.isBlocked(), true);
     assert.deepEqual(await flow.signOut(), { error: null });
+});
+
+
+test('review45 rejects an insecure authenticated endpoint before Auth even with a clean installation', async () => {
+    const { createDeviceRecoveryApi } = loadSource<{ createDeviceRecoveryApi: typeof import('../lib/device-recovery-api').createDeviceRecoveryApi }>(
+        'lib/device-recovery-api.ts', {
+            'expo-modules-core': { uuid: { v4: randomUUID } }, 'react-native': { Platform: { OS: 'android' } },
+            './session-identity': { jwtSessionId },
+        }, { URL, __DEV__: true });
+    assert.doesNotThrow(() => createDeviceRecoveryApi('https://express.example.test', 'https://auth.example.test').validateConfiguration());
+    for (const endpoint of ['http://10.0.2.2:3000', 'http://127.0.0.1:3000']) {
+        const { api, restart, replaceSession } = managedFixture();
+        // Use the production configuration validator with no network/native calls.
+        api.validateConfiguration = () => createDeviceRecoveryApi(endpoint, 'https://auth.example.test').validateConfiguration();
+        replaceSession(null);
+        let started = false;
+        await assert.rejects(restart().authenticate(async () => { started = true; }), /Secure device recovery API/);
+        assert.equal(started, false);
+    }
+});
+
+test('review46 rejects invalid present notification cutoffs while retaining valid and absent behavior', async () => {
+    const { a, stored, restart } = managedFixture();
+    const flow = restart(); await flow.save(a.user.id, 'ExpoPushToken[test]');
+    for (const value of ['', '   ', '0', '-1', 'NaN', 'Infinity', '9007199254740992']) {
+        stored.set('test:notification-cutoff', value);
+        assert.equal(await flow.canUseNotification(Date.now()), false, JSON.stringify(value));
+    }
+    stored.set('test:notification-cutoff', '100');
+    assert.equal(await flow.canUseNotification(100), false);
+    assert.equal(await flow.canUseNotification(101), true);
+    stored.delete('test:notification-cutoff');
+    assert.equal(await flow.canUseNotification(undefined), true);
+});
+
+test('review47 throwing subscribers cannot trap authentication or suppress healthy listeners', async () => {
+    const { restart, replaceSession } = managedFixture(); replaceSession(null);
+    const flow = restart(); const transitions: boolean[] = [];
+    flow.subscribe(() => { throw Error('subscriber failure'); });
+    flow.subscribe(() => { transitions.push(flow.isAuthenticating()); });
+    let starts = 0;
+    assert.equal(await flow.authenticate(async () => ++starts), 1);
+    assert.equal(flow.isAuthenticating(), false);
+    assert.equal(await flow.authenticate(async () => ++starts), 2);
+    assert.deepEqual(transitions, [true, false, true, false]);
+});
+
+test('review48 session substitution cannot poison the durable logout target', async () => {
+    const { a, restart, replaceSession, stored, events } = managedFixture();
+    await restart().prepareSession(a);
+    replaceSession({ ...a, access_token: sessionToken('06000000-0000-0000-0000-000000000006') });
+    assert.ok((await restart().signOut()).error);
+    assert.equal(stored.has('test:logout-v2-request'), false);
+    assert.equal(events.includes('revoke'), false);
+    replaceSession(a);
+    assert.deepEqual(await restart().signOut(), { error: null });
+});
+
+test('review49 a clean marker never proves completion of a pending scoped logout request', async () => {
+    const { a, stored, restart, replaceSession } = managedFixture();
+    stored.set('test:logout-v2-request', JSON.stringify({ userId: a.user.id,
+        sessionId: jwtSessionId(a.access_token), operationId: randomUUID() }));
+    replaceSession(null);
+    const flow = restart();
+    assert.ok((await flow.signOut()).error);
+    assert.equal(await restart().sessionAvailability(), 'logout-pending');
+    assert.equal(stored.has('test:logout-v2-request'), true);
 });

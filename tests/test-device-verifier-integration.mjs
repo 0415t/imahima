@@ -286,6 +286,7 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
           localSession = null;
         },
         api: {
+          validateConfiguration() {},
           identity: async () => clientTarget.installationId,
           operationId: randomUUID,
           async ensureInstallation() {
@@ -464,9 +465,20 @@ test('isolated GoTrue, Express and PostgreSQL verify device ownership without ex
         }
       });
       await t.test('dedicated verifier cannot directly read Auth sessions or registration rows', async () => {
-        for (const table of ['auth.users', 'auth.sessions', 'public.user_device_tokens']) {
-          await assert.rejects(pool.query('SELECT * FROM ' + table + ' LIMIT 1'), error => error.code === '42501');
-        }
+        const db = await pool.connect();
+        let discard = false;
+        try {
+          for (const table of ['auth.users', 'auth.sessions', 'public.user_device_tokens']) {
+            try {
+              await db.query('BEGIN');
+              await db.query('SET LOCAL ROLE imahima_device_verifier');
+              assert.equal((await db.query('SELECT current_user AS actor')).rows[0].actor, 'imahima_device_verifier');
+              await assert.rejects(db.query('SELECT * FROM ' + table + ' LIMIT 1'), error => error.code === '42501');
+            } finally {
+              try { await db.query('ROLLBACK'); } catch (error) { discard = true; throw error; }
+            }
+          }
+        } finally { db.release(discard); }
       });
       if (process.env.IMAHIMA_MVP_LOGOUT_ONLY === '1') return;
     }
