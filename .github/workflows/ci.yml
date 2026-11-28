@@ -66,6 +66,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+      - name: Verify Node and npm versions
+        run: |
+          test "$(node --version)" = "v$(cat .node-version)"
+          test "$(npm --version)" = "$(node -p "require('./package.json').engines.npm")"
       - name: Run isolated PostgreSQL tests
         timeout-minutes: 8
         run: npm run test:db
