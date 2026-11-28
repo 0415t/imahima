@@ -4,6 +4,12 @@
 
 Lv.1 は単体、Lv.2 はDB結合、Lv.3 は機能結合、Lv.4 はバックエンド全体結合、Lv.5 はフロント・バックエンド結合、Lv.6 はE2E・実機テスト。
 
+## 現行構成と検証状態
+
+今回の棚卸し対象は main の `09b67f58029d546a248c4a020afce8160090de94`。必須CIは `backend-static`、`backend-offline`、`backend-db` の3ジョブを維持する。Offlineの必須登録は20ファイルで、過去の19ファイルに `test-migration-ledger.mjs` が追加されている。DBは引き続きSQL 3本であり、台帳のOffline検査は全migrationのDB適用を検証しない。
+
+下の機能別マトリクスと「実行証跡と更新」の成功結果は、明記した過去SHAの記録として保持する。現行SHAに対するGitHub Actionsの結果は本更新では未検証で、過去の277件成功を現行20ファイルの結果として転記しない。今回のローカル検証は末尾の別記録で管理し、CI成功と区別する。専用環境が必要な延期DB・Integration・Deviceも現行SHAでは未検証。
+
 ## 機能別テストカバレッジマトリクス
 
 判定は末尾の実行証跡に記載した基準SHA `15ee3717c685f1f4eac9776b0cab71939e0d5be8` に対するもの。機能全体の保証範囲は直下の対応表で確認する。後続コミットへの成功の転記は行わない。
@@ -79,6 +85,7 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | SERVER-01 | 通常サーバーの依存配線とワーカー有効・無効 | 1 | `test-server-composition.ts` | 起動と下流を注入 |
 | SERVER-02 | 通知の配線・停止、通信境界、cleanup | 1/3 | `test-member-free-review.mjs` | 注入とループバック |
 | HARNESS-01 | ワーカー待機、拒否、タイムアウト | 1 | `test-worker-barrier.ts` | 補助コードの単体検証 |
+| LEDGER-01 | 台帳の固定prefix・依存順・適用前提・SQLハッシュ、追加migrationと改行差の検査 | 1 | `test-migration-ledger.mjs` | ファイルと一時fixtureのみ。DB接続・SQL適用なし。過去19ファイルのCI証跡には含まない |
 
 手動Offlineの `node --import tsx --test tests/test-chat-review.mjs` は、一時クローンへのGit操作と一時ファイル作成を伴うため今回の必須セットから外す。Issue #35 のOfflineは `npm --prefix verification/issue35 run test:offline`。22本時点の履歴を前提とする検査は、現行23本の合格証跡として使用しない。
 
@@ -108,7 +115,54 @@ lintは追跡済みのJS／TS系ソースと、Gitが無視しない新規ソー
 | UI-E2E | 実ExpoアプリとAPI／Authの結合、セッションの復元 | 5／Integration | 未実装。モックによる表示・ストレージ検証あり |
 | DEVICE-PUSH | Expo受付、端末受信、表示・操作 | 4/6／Device | 部分実装。送信入口は `npm run test:integration:push`。登録端末での結果は手動。実送信のためCI対象外 |
 
-## 実行証跡と更新
+## ローカルでの結果確認
+
+リポジトリのルートで Node 24.15.0／npm 11.12.1 を使用する。Offlineにはルートの依存が必要で、未導入なら `npm ci` を実行する。Staticを再現するときは上記プロファイル表の検証用2ディレクトリにも `npm ci` を実行する。DBランナーはNode組込みAPIとローカルLinux Dockerを使用し、npm依存の追加導入は不要。共有DBのURL・認証情報や実Pushを使用しない。
+
+以下はPowerShellの例。実行ごとに異なるディレクトリを使い、終了コードを直後に保存する。JSON内のSHAはHEADを示すため、未コミット変更がある場合は `git status --short` と差分も別途記録する。
+
+```powershell
+$runDirectory = ".runtime/local-tests/$(Get-Date -Format yyyyMMdd-HHmmss)-$([guid]::NewGuid().ToString('N'))"
+$env:OFFLINE_TEST_REPORT = "$runDirectory/offline/report.json"
+npm test
+$offlineExit = $LASTEXITCODE
+$offline = Get-Content -Raw $env:OFFLINE_TEST_REPORT | ConvertFrom-Json
+$offlineExit
+$offline | Select-Object sha, os, arch, node, npm, status, errors, counts
+$offline.files | Select-Object file, status, exitCode, signal, timedOut
+
+$env:DB_TEST_REPORT = "$runDirectory/db/report.json"
+npm run test:db
+$dbExit = $LASTEXITCODE
+$db = Get-Content -Raw $env:DB_TEST_REPORT | ConvertFrom-Json
+$dbExit
+$db | Select-Object sha, os, arch, node, image, status, cleanup, error, failure, cleanupError
+$db.setup
+$db.tests
+```
+
+Offlineの成功条件は終了コード0、`status=passed`、`errors` が空、全20ファイルが成功し、`fail/cancelled/skipped/todo` がすべて0であること。失敗したファイルの `stdout`、`stderr`、`error`、`timedOut` をJSONで確認する。`OFFLINE_TEST_REPORT` 未指定時はJSONを保存せず、端末ログのみになる。
+
+DBの成功条件は終了コード0、`status=passed`、setup 4項目とSQL 3本が成功し、各SQLの `completed=true`、`rollback=true`、検証ブロック数が順に3・2・8、`cleanup=passed` であること。失敗時は `failure` と各setup／testの `error`、`stderr`、`exitCode` を確認する。SQLの生ログは保存せず、SQLSTATE・入力行と安全な分類のみを残す。DB用環境変数の未指定時は `.runtime/backend-db/<runId>/report.json` が保存先になる。
+
+`running`／`pending`／`interrupted` は成功ではない。JSONが存在しない場合も成功とせず、起動・出力先のエラーを確認する。cleanup失敗や中断時は同じ `DB_TEST_REPORT` を維持して `node scripts/test-db.mjs --cleanup` を実行し、JSONのcleanup結果を再確認する。接続先・コンテナ所有確認のガードは解除しない。確認後は `Remove-Item Env:OFFLINE_TEST_REPORT, Env:DB_TEST_REPORT` でこのセッションの出力先指定を解除できる。
+
+GitHub Actionsでは各ジョブの終了結果と、常時保存する `backend-offline`／`backend-db` artifact内のJSONを照合する。版確認・依存導入などテスト開始前に失敗した場合、JSONがないこともあるためActionsの該当stepログを確認する。Push／PR作成前のローカル成功はGitHub Actions上の成功証跡ではない。
+
+## 今回のローカル検証（2026-11-28）
+
+対象は `chore/issue-39-test-ci`、HEAD `09b67f58029d546a248c4a020afce8160090de94` に本CI workflow・管理表の未コミット変更を加えた作業ツリー。Windows x64、Node 24.15.0／npm 11.12.1。GitHub Actionsは未実行。下記はローカル成功であり、上記の過去SHAの機能別CI判定を更新する根拠にはしない。
+
+| 検証 | 結果・証跡 |
+| --- | --- |
+| Static | `npm run typecheck`、`npm run lint` が終了コード0。既存の導入済み依存を使用し、pg解決エラーは再現せず。今回クリーンな `npm ci` は未実施。依存追加・lockfile変更なし |
+| Offline | `npm test` が終了コード0。20ファイル・287件成功、fail／cancelled／skipped／todoは各0。JSONは `.runtime/issue39-mvp/offline/report.json`、端末ログは同ディレクトリの `run.log` |
+| DB | `npm run test:db` が終了コード0。setup 4項目とSQL 3本成功、ブロック数3・2・8、全件完了マーカー・rollback確認、cleanup成功。JSONは `.runtime/issue39-mvp/db/report.json` |
+| Workflow | 既存依存のjs-yamlでYAMLを解析し、3ジョブ名と版確認スクリプトの一致を確認。追加した版確認をGit Bashで実行して終了コード0。Ubuntu／Actions上での実行・artifact保存は未検証 |
+
+初回のサンドボックス内テストはGitの所有者判定で開始前に停止したため、Git設定を変更せず通常ユーザー権限で再実行した。共有DBへの接続・変更、実Push送信は行っていない。ローカル成果物はGit管理対象外であり、別環境での再現時は上記手順で新しい証跡を採取する。
+
+## 実行証跡と更新（過去の基準run）
 
 基準は `main` の `15ee3717c685f1f4eac9776b0cab71939e0d5be8` と [Actions run 44941911947](https://github.com/0415t/imahima/actions/runs/44941911947)。OfflineとDBのJSONで、チェックアウトしたSHAが基準と一致することを確認した。
 
